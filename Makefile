@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -17,8 +17,11 @@ bootstrap: ## Install locked backend and frontend foundation dependencies.
 	@corepack prepare pnpm@10.28.2 --activate
 	pnpm --dir frontend install --frozen-lockfile
 
-up: ## Start the healthy local dependency stack and API.
-	docker compose up -d --build --wait fabricassist-postgres fabricassist-valkey fabricassist-minio fabricassist-minio-init fabricassist-api
+up: ## Start the healthy local dependency stack, API, and analysis worker.
+	docker compose up -d --build --wait fabricassist-postgres fabricassist-valkey fabricassist-minio fabricassist-minio-init fabricassist-api fabricassist-worker
+
+start: up ## Start the local backend stack and Expo web client.
+	pnpm --dir frontend --filter fabricassist-app web
 
 down: ## Stop the local FabricAssist Compose project without deleting volumes.
 	docker compose down

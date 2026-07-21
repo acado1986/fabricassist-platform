@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '../config/environment';
 import { secureSession } from '../platform/SecureSession';
 
 type SessionContextValue = {
+  refreshAccessToken: () => Promise<string | null>;
   token: string | null;
   signIn: (email: string, password: string, register: boolean) => Promise<void>;
   signOut: () => Promise<void>;
@@ -42,6 +43,22 @@ export function SessionProvider({
     setToken(payload.access_token);
     router.replace('/scan');
   }
+  async function refreshAccessToken(): Promise<string | null> {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/v1/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': '1' },
+      });
+      if (!response.ok) return null;
+      const payload = (await response.json()) as SessionResponse;
+      await secureSession.setAccessToken(payload.access_token);
+      setToken(payload.access_token);
+      return payload.access_token;
+    } catch {
+      return null;
+    }
+  }
   async function signOut(): Promise<void> {
     if (token)
       await fetch(`${getApiBaseUrl()}/api/v1/auth/logout`, {
@@ -53,7 +70,9 @@ export function SessionProvider({
     router.replace('/login');
   }
   return (
-    <SessionContext.Provider value={{ token, signIn, signOut }}>
+    <SessionContext.Provider
+      value={{ token, signIn, signOut, refreshAccessToken }}
+    >
       {children}
     </SessionContext.Provider>
   );

@@ -559,8 +559,7 @@ class VisionExtractionProvider(Protocol):
     async def extract_label(
         self,
         *,
-        image: NormalizedImageReference,
-        context: ExtractionContext,
+        images: tuple[TypedNormalizedImageReference, ...],
     ) -> LabelExtraction:
         ...
 ```
@@ -571,7 +570,11 @@ Adapters may include:
 - An OpenAI-compatible endpoint.
 - A future local model served through vLLM, Ollama, or another compatible gateway.
 
-The provider adapter owns provider-specific request formatting. It must return the same domain schema or a categorized failure.
+Each normalized image reference carries its explicit `garment` or `care_label`
+role. The provider adapter owns provider-specific multi-image request formatting
+and must return the same domain schema or a categorized failure. Care-label
+evidence remains authoritative; garment appearance can provide context but cannot
+authorize a care process.
 
 ### 10.2 Prompt strategy
 
@@ -706,22 +709,25 @@ sequenceDiagram
 
     Client->>API: POST /scans
     API->>DB: Create draft scan
-    API-->>Client: scan_id + presigned upload
-    Client->>Obj: PUT label image
-    Client->>API: POST /scans/{id}/uploads/complete
-    API->>DB: Mark upload complete
+    API-->>Client: scan_id + one presigned upload (+ optional second upload)
+    Client->>Obj: PUT selected image
+    opt Second image supplied
+        Client->>Obj: PUT second image
+    end
+    Client->>API: Complete supplied uploads
+    API->>DB: Mark supplied uploads complete
     Client->>API: POST /scans/{id}/analyse
     API->>DB: Transition to queued
     API->>Queue: Enqueue idempotent job
     API-->>Client: 202 Accepted
     Queue->>Worker: Deliver job
-    Worker->>Obj: Fetch image
-    Worker->>Worker: Validate, normalize, hash
+    Worker->>Obj: Fetch selected image(s)
+    Worker->>Worker: Validate, normalize, hash supplied images
     Worker->>DB: Search exact cache
     alt Safe exact cache hit
         Worker->>DB: Reuse extraction/result
     else Cache miss
-        Worker->>Model: Structured vision request
+        Worker->>Model: Structured request with label and optional garment roles
         Model-->>Worker: Structured extraction
         Worker->>Worker: Validate and apply rules
         Worker->>DB: Store model run, extraction, result

@@ -5,6 +5,24 @@ export type ClientOptions = {
 };
 
 /**
+ * AnalysisResponse
+ */
+export type AnalysisResponse = {
+    /**
+     * Operation Key
+     */
+    operation_key: string;
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * CompleteUploadRequest
  */
 export type CompleteUploadRequest = {
@@ -19,9 +37,9 @@ export type CompleteUploadRequest = {
 };
 
 /**
- * CreateScanRequest
+ * CreateScanImageRequest
  */
-export type CreateScanRequest = {
+export type CreateScanImageRequest = {
     /**
      * Content Type
      */
@@ -29,7 +47,17 @@ export type CreateScanRequest = {
     /**
      * Kind
      */
-    kind: 'garment' | 'care_label' | 'other';
+    kind: 'garment' | 'care_label';
+};
+
+/**
+ * CreateScanRequest
+ */
+export type CreateScanRequest = {
+    /**
+     * Images
+     */
+    images: Array<CreateScanImageRequest>;
     /**
      * Requested Language
      */
@@ -48,7 +76,10 @@ export type CreateScanResponse = {
      * Status
      */
     status: string;
-    upload: UploadInstruction;
+    /**
+     * Uploads
+     */
+    uploads: Array<UploadInstruction>;
 };
 
 /**
@@ -76,13 +107,45 @@ export type HttpValidationError = {
 };
 
 /**
+ * ResultResponse
+ */
+export type ResultResponse = {
+    /**
+     * Answer
+     */
+    answer: {
+        [key: string]: unknown;
+    };
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * ScanResponse
  */
 export type ScanResponse = {
     /**
+     * Analysis Stage
+     */
+    analysis_stage?: string | null;
+    /**
+     * Error Code
+     */
+    error_code?: string | null;
+    /**
      * Images Completed
      */
     images_completed: number;
+    /**
+     * Progress Percent
+     */
+    progress_percent?: number;
     /**
      * Scan Id
      */
@@ -125,6 +188,10 @@ export type UploadInstruction = {
     headers: {
         [key: string]: string;
     };
+    /**
+     * Kind
+     */
+    kind: 'garment' | 'care_label';
     /**
      * Upload Id
      */
@@ -353,6 +420,77 @@ export type ScanDetailApiV1ScansScanIdGetResponses = {
 };
 
 export type ScanDetailApiV1ScansScanIdGetResponse = ScanDetailApiV1ScansScanIdGetResponses[keyof ScanDetailApiV1ScansScanIdGetResponses];
+
+export type RequestAnalysisApiV1ScansScanIdAnalysePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/analyse';
+};
+
+export type RequestAnalysisApiV1ScansScanIdAnalysePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RequestAnalysisApiV1ScansScanIdAnalysePostError = RequestAnalysisApiV1ScansScanIdAnalysePostErrors[keyof RequestAnalysisApiV1ScansScanIdAnalysePostErrors];
+
+export type RequestAnalysisApiV1ScansScanIdAnalysePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: AnalysisResponse;
+};
+
+export type RequestAnalysisApiV1ScansScanIdAnalysePostResponse = RequestAnalysisApiV1ScansScanIdAnalysePostResponses[keyof RequestAnalysisApiV1ScansScanIdAnalysePostResponses];
+
+export type ScanResultApiV1ScansScanIdResultGetData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: {
+        /**
+         * Language
+         */
+        language?: 'en' | 'es';
+    };
+    url: '/api/v1/scans/{scan_id}/result';
+};
+
+export type ScanResultApiV1ScansScanIdResultGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ScanResultApiV1ScansScanIdResultGetError = ScanResultApiV1ScansScanIdResultGetErrors[keyof ScanResultApiV1ScansScanIdResultGetErrors];
+
+export type ScanResultApiV1ScansScanIdResultGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResultResponse;
+};
+
+export type ScanResultApiV1ScansScanIdResultGetResponse = ScanResultApiV1ScansScanIdResultGetResponses[keyof ScanResultApiV1ScansScanIdResultGetResponses];
 
 export type CompleteUploadApiV1ScansScanIdUploadsCompletePostData = {
     body: CompleteUploadRequest;

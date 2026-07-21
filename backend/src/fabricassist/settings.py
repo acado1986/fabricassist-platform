@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Literal
+import json
+from typing import Literal, cast
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +36,21 @@ class Settings(BaseSettings):
     s3_force_path_style: bool = True
     upload_max_bytes: int = Field(default=12 * 1024 * 1024, ge=1)
     upload_url_minutes: int = Field(default=10, ge=1, le=60)
+    analysis_lease_minutes: int = Field(default=5, ge=1, le=30)
+    vision_provider: Literal["mock", "openai_compatible", "openai_responses", "azure_openai"] = (
+        "mock"
+    )
+    vision_base_url: str = ""
+    vision_api_key: str = ""
+    vision_model: str = ""
+    vision_extra_headers_json: str = "{}"
+    vision_timeout_seconds: int = Field(default=120, ge=5, le=120)
+    vision_max_input_tokens: int = Field(default=128_000, ge=1_024, le=128_000)
+    vision_max_output_tokens: int = Field(default=16_000, ge=256, le=16_000)
+    azure_openai_endpoint: str = ""
+    azure_openai_api_key: str = ""
+    azure_openai_deployment: str = ""
+    azure_openai_api_version: str = "2024-10-21"
 
     database_url: str = Field(
         default=(
@@ -43,6 +59,7 @@ class Settings(BaseSettings):
         ),
         min_length=1,
     )
+    valkey_url: str = Field(default="valkey://fabricassist-valkey:6379/0", min_length=1)
 
     @model_validator(mode="after")
     def reject_insecure_production_defaults(self) -> Settings:
@@ -58,4 +75,37 @@ class Settings(BaseSettings):
             raise ValueError(message)
         if self.environment == "production" and "change-me" in self.access_token_secret:
             raise ValueError("FABRICASSIST_ACCESS_TOKEN_SECRET must be configured in production")
+        if self.vision_provider in {"openai_compatible", "openai_responses"} and (
+            not self.vision_base_url or not self.vision_api_key or not self.vision_model
+        ):
+            raise ValueError(
+                "FABRICASSIST_VISION_BASE_URL, FABRICASSIST_VISION_API_KEY, and "
+                "FABRICASSIST_VISION_MODEL are required for the OpenAI-compatible provider"
+            )
+        try:
+            headers = json.loads(self.vision_extra_headers_json)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                "FABRICASSIST_VISION_EXTRA_HEADERS_JSON must contain valid JSON"
+            ) from error
+        if not isinstance(headers, dict):
+            raise ValueError(
+                "FABRICASSIST_VISION_EXTRA_HEADERS_JSON must be a JSON object of string headers"
+            )
+        typed_headers = cast(dict[object, object], headers)
+        if not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in typed_headers.items()
+        ):
+            raise ValueError(
+                "FABRICASSIST_VISION_EXTRA_HEADERS_JSON must be a JSON object of string headers"
+            )
+        if self.vision_provider == "azure_openai" and (
+            not self.azure_openai_endpoint
+            or not self.azure_openai_api_key
+            or not self.azure_openai_deployment
+        ):
+            raise ValueError(
+                "FABRICASSIST_AZURE_OPENAI_ENDPOINT, FABRICASSIST_AZURE_OPENAI_API_KEY, and "
+                "FABRICASSIST_AZURE_OPENAI_DEPLOYMENT are required for the Azure OpenAI provider"
+            )
         return self

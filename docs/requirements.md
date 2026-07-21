@@ -96,7 +96,8 @@ The MVP may run for one cleaning company, but the schema must include `tenant_id
 ### 5.1 Label-led analysis
 
 1. The user selects a preferred answer language.
-2. The user captures or uploads a care-label image.
+2. The user captures or uploads either a care-label close-up or garment overview,
+   with the other image optional for context.
 3. The application checks image quality before upload or analysis.
 4. The backend searches exact-image and prior-extraction caches.
 5. If no safe reusable result exists, the vision provider extracts structured facts.
@@ -138,7 +139,9 @@ The MVP may run for one cleaning company, but the schema must include `tenant_id
 
 ### 6.2 Image capture and upload
 
-- **FR-IMG-001:** The Expo application must support camera capture and image-library selection on Android and iOS.
+- **FR-IMG-001:** The Expo application must support camera capture and image-library
+  selection on Android and iOS, presenting camera capture before the secondary
+  image-library action.
 - **FR-IMG-002:** The web application must support file selection, drag-and-drop, and browser camera capture when available.
 - **FR-IMG-003:** Images must upload directly to object storage using short-lived presigned URLs.
 - **FR-IMG-004:** The API must validate allowed MIME types, declared size, actual size, and image decodability.
@@ -478,7 +481,8 @@ Domain gates:
 The MVP is accepted when all of the following are demonstrable locally with Docker Compose:
 
 1. A user can register and sign in from Expo web and at least one native platform.
-2. A user can create a scan and upload a label image through a presigned URL.
+2. A user can create a scan and upload either image through a presigned URL, with
+   the other image optional through a second presigned URL.
 3. The scan is processed asynchronously by a Python worker.
 4. A configured vision provider returns a schema-validated extraction.
 5. The deterministic rules engine produces a result in Spanish and English.

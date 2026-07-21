@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses } from './types.gen';
+import type { CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -82,6 +82,18 @@ export const createScanApiV1ScansPost = <ThrowOnError extends boolean = false>(o
  * Scan Detail
  */
 export const scanDetailApiV1ScansScanIdGet = <ThrowOnError extends boolean = false>(options: Options<ScanDetailApiV1ScansScanIdGetData, ThrowOnError>) => (options.client ?? client).get<ScanDetailApiV1ScansScanIdGetResponses, ScanDetailApiV1ScansScanIdGetErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}', ...options });
+
+/**
+ * Request Analysis
+ *
+ * Queue the operation once; worker delivery is idempotent through persisted scan state.
+ */
+export const requestAnalysisApiV1ScansScanIdAnalysePost = <ThrowOnError extends boolean = false>(options: Options<RequestAnalysisApiV1ScansScanIdAnalysePostData, ThrowOnError>) => (options.client ?? client).post<RequestAnalysisApiV1ScansScanIdAnalysePostResponses, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/analyse', ...options });
+
+/**
+ * Scan Result
+ */
+export const scanResultApiV1ScansScanIdResultGet = <ThrowOnError extends boolean = false>(options: Options<ScanResultApiV1ScansScanIdResultGetData, ThrowOnError>) => (options.client ?? client).get<ScanResultApiV1ScansScanIdResultGetResponses, ScanResultApiV1ScansScanIdResultGetErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/result', ...options });
 
 /**
  * Complete Upload

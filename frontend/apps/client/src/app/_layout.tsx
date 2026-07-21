@@ -17,6 +17,10 @@ export default function RootLayout(): ReactNode {
             name="(customer)/scan"
             options={{ headerShown: false }}
           />
+          <Stack.Screen
+            name="(customer)/result"
+            options={{ headerShown: false }}
+          />
         </Stack>
       </SessionProvider>
     </AppProviders>

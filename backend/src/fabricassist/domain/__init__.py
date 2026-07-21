@@ -1,0 +1,1 @@
+"""Pure FabricAssist domain logic."""

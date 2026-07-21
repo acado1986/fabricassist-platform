@@ -13,7 +13,17 @@ const config: ExpoConfig = {
     fabricassistApiPublicUrl:
       process.env.FABRICASSIST_API_PUBLIC_URL ?? 'http://localhost:8000',
   },
-  plugins: ['expo-localization', 'expo-router'],
+  plugins: [
+    'expo-localization',
+    'expo-router',
+    [
+      'expo-image-picker',
+      {
+        cameraPermission:
+          'Allow FabricAssist to use your camera to photograph a garment or care label.',
+      },
+    ],
+  ],
   experiments: { typedRoutes: true },
 };
 

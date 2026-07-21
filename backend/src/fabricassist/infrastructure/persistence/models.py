@@ -143,6 +143,11 @@ class Scan(Base):
     requested_language: Mapped[str] = mapped_column(String(2), nullable=False, server_default="en")
     progress_percent: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    analysis_operation_key: Mapped[str | None] = mapped_column(String(255), unique=True)
+    analysis_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    analysis_lease_expires_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    analysis_error_code: Mapped[str | None] = mapped_column(String(100))
+    analysis_stage: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -245,6 +250,106 @@ class RulesetVersion(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="draft")
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class ModelRun(Base):
+    """Safe audit metadata for one provider invocation; private prompt/image bodies are excluded."""
+
+    __tablename__ = "model_runs"
+    __table_args__ = (Index("ix_model_runs_tenant_scan", "tenant_id", "scan_id"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
+    scan_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("scans.id", ondelete="CASCADE"))
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    estimated_cost_usd_micros: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class LabelExtraction(Base):
+    """Validated language-independent extraction facts and original visible text."""
+
+    __tablename__ = "label_extractions"
+    __table_args__ = (
+        UniqueConstraint("scan_id", name="uq_label_extractions_scan"),
+        Index("ix_label_extractions_tenant_id", "tenant_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
+    scan_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("scans.id", ondelete="CASCADE"))
+    model_run_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("model_runs.id", ondelete="SET NULL")
+    )
+    original_text: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    validated_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class CareResult(Base):
+    """Canonical deterministic care outcome; no provider prose is stored here."""
+
+    __tablename__ = "care_results"
+    __table_args__ = (
+        UniqueConstraint("scan_id", name="uq_care_results_scan"),
+        Index("ix_care_results_tenant_id", "tenant_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
+    scan_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("scans.id", ondelete="CASCADE"))
+    extraction_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("label_extractions.id", ondelete="SET NULL")
+    )
+    canonical_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    rules_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    detergent_rules_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class RenderedAnswer(Base):
+    """Durable localized rendering of a canonical result."""
+
+    __tablename__ = "rendered_answers"
+    __table_args__ = (
+        UniqueConstraint(
+            "care_result_id",
+            "language",
+            "template_version",
+            name="uq_rendered_answers_result_language_template",
+        ),
+        Index("ix_rendered_answers_tenant_id", "tenant_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
+    care_result_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("care_results.id", ondelete="CASCADE")
+    )
+    language: Mapped[str] = mapped_column(String(2), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    answer: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )

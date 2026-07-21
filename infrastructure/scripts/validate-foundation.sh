@@ -110,17 +110,6 @@ for required_backend_file in \
   [ -f "$required_backend_file" ] || fail "missing Phase 2 backend file $required_backend_file"
 done
 
-for later_phase_path in \
-  backend/src/fabricassist/worker \
-  backend/src/fabricassist/domain \
-  backend/src/fabricassist/services \
-  backend/src/fabricassist/repositories \
-  'frontend/apps/client/src/app/(operator)' \
-  'frontend/apps/client/src/app/(operator)'; do
-  [ ! -e "$later_phase_path" ] || fail "later-phase implementation found: $later_phase_path"
-done
-
-
 for required_frontend_file in \
   frontend/package.json \
   frontend/pnpm-lock.yaml \
@@ -149,4 +138,4 @@ if grep -R -n -E --exclude-dir=.git --exclude-dir=.venv --exclude-dir=node_modul
 fi
 
 docker compose config --quiet
-printf '%s\n' 'FabricAssist repository foundation checks passed.'
+printf '%s\n' 'FabricAssist repository structure and configuration checks passed.'

@@ -1,6 +1,30 @@
 {
   "components": {
     "schemas": {
+      "AnalysisResponse": {
+        "properties": {
+          "operation_key": {
+            "title": "Operation Key",
+            "type": "string"
+          },
+          "scan_id": {
+            "format": "uuid",
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scan_id",
+          "status",
+          "operation_key"
+        ],
+        "title": "AnalysisResponse",
+        "type": "object"
+      },
       "CompleteUploadRequest": {
         "properties": {
           "content_type": {
@@ -25,7 +49,7 @@
         "title": "CompleteUploadRequest",
         "type": "object"
       },
-      "CreateScanRequest": {
+      "CreateScanImageRequest": {
         "properties": {
           "content_type": {
             "enum": [
@@ -39,11 +63,29 @@
           "kind": {
             "enum": [
               "garment",
-              "care_label",
-              "other"
+              "care_label"
             ],
             "title": "Kind",
             "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "content_type"
+        ],
+        "title": "CreateScanImageRequest",
+        "type": "object"
+      },
+      "CreateScanRequest": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/CreateScanImageRequest"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Images",
+            "type": "array"
           },
           "requested_language": {
             "default": "en",
@@ -56,8 +98,7 @@
           }
         },
         "required": [
-          "kind",
-          "content_type"
+          "images"
         ],
         "title": "CreateScanRequest",
         "type": "object"
@@ -73,14 +114,18 @@
             "title": "Status",
             "type": "string"
           },
-          "upload": {
-            "$ref": "#/components/schemas/UploadInstruction"
+          "uploads": {
+            "items": {
+              "$ref": "#/components/schemas/UploadInstruction"
+            },
+            "title": "Uploads",
+            "type": "array"
           }
         },
         "required": [
           "scan_id",
           "status",
-          "upload"
+          "uploads"
         ],
         "title": "CreateScanResponse",
         "type": "object"
@@ -119,10 +164,62 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ResultResponse": {
+        "properties": {
+          "answer": {
+            "additionalProperties": true,
+            "title": "Answer",
+            "type": "object"
+          },
+          "scan_id": {
+            "format": "uuid",
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scan_id",
+          "status",
+          "answer"
+        ],
+        "title": "ResultResponse",
+        "type": "object"
+      },
       "ScanResponse": {
         "properties": {
+          "analysis_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Stage"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
           "images_completed": {
             "title": "Images Completed",
+            "type": "integer"
+          },
+          "progress_percent": {
+            "default": 0,
+            "title": "Progress Percent",
             "type": "integer"
           },
           "scan_id": {
@@ -186,6 +283,14 @@
             "title": "Headers",
             "type": "object"
           },
+          "kind": {
+            "enum": [
+              "garment",
+              "care_label"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "upload_id": {
             "format": "uuid",
             "title": "Upload Id",
@@ -198,6 +303,7 @@
         },
         "required": [
           "upload_id",
+          "kind",
           "url",
           "headers",
           "expires_at"
@@ -583,6 +689,123 @@
           }
         },
         "summary": "Scan Detail",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/analyse": {
+      "post": {
+        "description": "Queue the operation once; worker delivery is idempotent through persisted scan state.",
+        "operationId": "request_analysis_api_v1_scans__scan_id__analyse_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Analysis",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/result": {
+      "get": {
+        "operationId": "scan_result_api_v1_scans__scan_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "default": "en",
+              "enum": [
+                "en",
+                "es"
+              ],
+              "title": "Language",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Result",
         "tags": [
           "scans"
         ]

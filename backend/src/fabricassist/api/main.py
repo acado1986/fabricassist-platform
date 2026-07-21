@@ -60,7 +60,7 @@ def create_app(
         allow_origins=[origin for origin in resolved_settings.cors_origins.split(",") if origin],
         allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-CSRF-Token"],
     )
     app.add_middleware(CorrelationIdMiddleware)
     app.add_exception_handler(ApiError, cast(ExceptionHandler, api_error_handler))

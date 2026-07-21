@@ -93,3 +93,9 @@ class S3Storage:
         return ObjectMetadata(
             content_type=content_type, byte_size=byte_size, width=width, height=height
         )
+
+    def read_object(self, key: str) -> bytes:
+        """Read a private object for worker-only processing; callers must authorize first."""
+        return cast(
+            bytes, self._client.get_object(Bucket=self._settings.s3_bucket, Key=key)["Body"].read()
+        )

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from fabricassist.api.main import create_app
+from fabricassist.api.routes.scans import CreateScanImageRequest, CreateScanRequest
 from fabricassist.settings import Settings
 
 
@@ -61,3 +64,53 @@ def test_correlation_id_is_propagated() -> None:
         response = client.get("/api/v1/health/live", headers={"X-Correlation-ID": correlation_id})
 
     assert response.headers["X-Correlation-ID"] == correlation_id
+
+
+def test_cors_preflight_accepts_analysis_idempotency_header() -> None:
+    with TestClient(create_app(Settings(environment="test"), AvailableDatabase())) as client:
+        response = client.options(
+            "/api/v1/scans/example/analyse",
+            headers={
+                "Origin": "http://localhost:8081",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,idempotency-key",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "idempotency-key" in response.headers["access-control-allow-headers"].lower()
+
+
+def test_scan_accepts_either_image_role_and_rejects_duplicates() -> None:
+    request = CreateScanRequest(
+        images=[
+            CreateScanImageRequest(kind="care_label", content_type="image/png"),
+            CreateScanImageRequest(kind="garment", content_type="image/jpeg"),
+        ]
+    )
+
+    assert {image.kind for image in request.images} == {"garment", "care_label"}
+    assert (
+        CreateScanRequest(
+            images=[CreateScanImageRequest(kind="care_label", content_type="image/jpeg")]
+        )
+        .images[0]
+        .kind
+        == "care_label"
+    )
+    assert (
+        CreateScanRequest(
+            images=[CreateScanImageRequest(kind="garment", content_type="image/jpeg")]
+        )
+        .images[0]
+        .kind
+        == "garment"
+    )
+
+    with pytest.raises(ValidationError):
+        CreateScanRequest(
+            images=[
+                CreateScanImageRequest(kind="garment", content_type="image/jpeg"),
+                CreateScanImageRequest(kind="garment", content_type="image/png"),
+            ]
+        )

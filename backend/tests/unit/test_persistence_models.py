@@ -20,6 +20,10 @@ def test_baseline_tables_are_registered() -> None:
         "scan_images",
         "idempotency_records",
         "ruleset_versions",
+        "model_runs",
+        "label_extractions",
+        "care_results",
+        "rendered_answers",
     }
 
 
@@ -31,6 +35,10 @@ def test_tenant_owned_baseline_tables_have_tenant_id_indexes() -> None:
         "scan_images",
         "idempotency_records",
         "ruleset_versions",
+        "model_runs",
+        "label_extractions",
+        "care_results",
+        "rendered_answers",
     ):
         table = Base.metadata.tables[table_name]
         assert "tenant_id" in table.c

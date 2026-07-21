@@ -73,5 +73,5 @@ def test_empty_upgrade_downgrade_round_trip_and_seed_idempotency(
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260721_0002"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260721_0003"
     engine.dispose()
