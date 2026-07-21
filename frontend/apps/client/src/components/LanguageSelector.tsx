@@ -1,31 +1,53 @@
 import type { ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { colors, radii, spacing } from '@fabricassist/design-tokens';
 
 import { useTranslation } from '../i18n/TranslationProvider';
 
 export function LanguageSelector(): ReactNode {
   const { locale, setLocale, translate } = useTranslation();
-
   return (
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel={translate('language')}
-      style={{ flexDirection: 'row', gap: 12 }}
+      style={styles.group}
     >
-      <Pressable
-        accessibilityRole="radio"
-        accessibilityState={{ selected: locale === 'en' }}
-        onPress={() => setLocale('en')}
-      >
-        <Text>{translate('languageEnglish')}</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="radio"
-        accessibilityState={{ selected: locale === 'es' }}
-        onPress={() => setLocale('es')}
-      >
-        <Text>{translate('languageSpanish')}</Text>
-      </Pressable>
+      {(['en', 'es'] as const).map((option) => {
+        const selected = locale === option;
+        return (
+          <Pressable
+            key={option}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            onPress={() => setLocale(option)}
+            style={[styles.option, selected && styles.optionSelected]}
+          >
+            <Text style={[styles.label, selected && styles.labelSelected]}>
+              {option.toUpperCase()}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
+const styles = StyleSheet.create({
+  group: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.pill,
+    flexDirection: 'row',
+    gap: spacing.xsmall,
+    padding: spacing.xsmall,
+  },
+  option: {
+    borderRadius: radii.pill,
+    minHeight: 36,
+    minWidth: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  optionSelected: { backgroundColor: colors.background },
+  label: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  labelSelected: { color: colors.primary },
+});

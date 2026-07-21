@@ -8,14 +8,14 @@ export default function RootLayout(): ReactNode {
       <SessionProvider>
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)/login" options={{ title: 'Sign in' }} />
+          <Stack.Screen name="(auth)/login" options={{ headerShown: false }} />
           <Stack.Screen
             name="(auth)/register"
-            options={{ title: 'Create account' }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="(customer)/scan"
-            options={{ title: 'New scan' }}
+            options={{ headerShown: false }}
           />
         </Stack>
       </SessionProvider>
