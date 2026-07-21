@@ -79,6 +79,12 @@ export const es: TranslationCatalog = {
     resultProfessional: 'Cuidado profesional',
     resultUncertainties: 'Lo que no pudimos confirmar',
     resultDetergent: 'Orientación sobre detergente',
+    resultContinueQuestion:
+      'Pudimos confirmar algunos datos de la etiqueta, pero no son una recomendación de cuidado completa. ¿Quieres verlos?',
+    resultContinuePartial: 'Continuar con datos parciales',
+    resultPartialEvidence: 'Lo que confirmó la etiqueta',
+    resultPartialNotice:
+      'No elijas temperatura, detergente ni programa de lavado hasta confirmar los datos que faltan.',
     backToScan: 'Analizar otra etiqueta',
     status: 'Todavía no hay funcionalidad de negocio disponible.',
     language: 'Idioma',

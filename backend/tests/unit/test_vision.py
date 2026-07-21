@@ -5,8 +5,9 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from fabricassist.application.vision import LabelExtractionPayload
+from fabricassist.application.vision import PROMPT_VERSION, LabelExtractionPayload
 from fabricassist.infrastructure.vision.providers import (
+    CARE_LABEL_SYSTEM_PROMPT,
     AzureOpenAIVisionProvider,
     MockVisionProvider,
     OpenAIResponsesVisionProvider,
@@ -149,3 +150,11 @@ def test_generic_responses_adapter_uses_strict_boundary_schema() -> None:
     assert isinstance(material_required, list)
     assert set(cast(list[str], material_required)) == set(material_properties)
     assert material["additionalProperties"] is False
+
+
+def test_care_symbol_prompt_focuses_confidence_on_decision_relevant_evidence() -> None:
+    """A readable label must not be downgraded merely because its material text is absent."""
+    assert PROMPT_VERSION == "care-label-extraction-v2"
+    assert "confidence in the extracted care instructions" in CARE_LABEL_SYSTEM_PROMPT
+    assert "square containing a circle" in CARE_LABEL_SYSTEM_PROMPT
+    assert "decision-relevant field names" in CARE_LABEL_SYSTEM_PROMPT

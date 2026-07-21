@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fabricassist.application.vision import LabelExtractionPayload
 
-CARE_RULES_VERSION = "care-v1"
+CARE_RULES_VERSION = "care-v3"
 DETERGENT_RULES_VERSION = "detergent-v1"
 
 
@@ -21,6 +21,7 @@ class CanonicalCareResult(BaseModel):
     actions: list[str] = Field(default_factory=list)
     prohibitions: list[str] = Field(default_factory=list)
     professional_only: list[str] = Field(default_factory=list)
+    confirmed_evidence: list[str] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     detergent: str
     wash_temperature_c: int | None = None
@@ -29,7 +30,7 @@ class CanonicalCareResult(BaseModel):
 def decide_care(extraction: LabelExtractionPayload) -> CanonicalCareResult:
     """Apply prohibition-first rules; insufficient evidence always requires review."""
     uncertainties = list(extraction.uncertain_fields)
-    if extraction.image_type != "care_label" or extraction.overall_confidence < 70:
+    if extraction.image_type not in {"care_label", "both"} or extraction.overall_confidence < 70:
         return CanonicalCareResult(
             status="needs_review",
             uncertainties=uncertainties or ["insufficient_label_evidence"],
@@ -49,6 +50,7 @@ def decide_care(extraction: LabelExtractionPayload) -> CanonicalCareResult:
     if extraction.wash_permission != "allowed" or extraction.max_wash_temperature_c is None:
         return CanonicalCareResult(
             status="needs_review",
+            confirmed_evidence=confirmed_care_evidence(extraction),
             uncertainties=uncertainties or ["wash_instruction_unknown"],
             detergent="no_domestic_detergent",
         )
@@ -73,3 +75,22 @@ def decide_care(extraction: LabelExtractionPayload) -> CanonicalCareResult:
         detergent=detergent,
         wash_temperature_c=extraction.max_wash_temperature_c,
     )
+
+
+def confirmed_care_evidence(extraction: LabelExtractionPayload) -> list[str]:
+    """Return only high-confidence, label-backed facts for an opt-in partial view."""
+    if extraction.image_type not in {"care_label", "both"} or extraction.overall_confidence < 70:
+        return []
+
+    facts: list[str] = []
+    if extraction.wash_permission == "allowed":
+        facts.append("water_washing_allowed_temperature_unknown")
+    if extraction.bleach_permission == "prohibited":
+        facts.append("bleach_prohibited")
+    if extraction.tumble_permission == "allowed":
+        facts.append("tumble_drying_allowed")
+    if extraction.iron_permission == "allowed":
+        facts.append("ironing_allowed")
+    if extraction.dry_clean_permission == "prohibited":
+        facts.append("dry_cleaning_prohibited")
+    return facts

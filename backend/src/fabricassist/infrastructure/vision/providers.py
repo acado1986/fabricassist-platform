@@ -24,16 +24,42 @@ from fabricassist.application.vision import (
 )
 from fabricassist.settings import Settings
 
-_SYSTEM_PROMPT = """Extract care evidence from the separately identified care-label image and,
-when supplied, the garment image.
-The care label is authoritative for every care process. Use the garment image only for visible
-garment context and never infer permission to wash, bleach, dry, iron, or dry-clean from appearance.
-When both supplied images are usable, image_type must be both; for a label-only request it must be
-care_label; for a garment-only request it must be garment. Return JSON only with keys:
-image_type, original_visible_text, materials, wash_permission, max_wash_temperature_c,
-wash_process, bleach_permission, tumble_permission, iron_permission, dry_clean_permission,
-written_warnings, overall_confidence, uncertain_fields.
-Preserve visible text exactly. Use unknown when absent; never infer a missing symbol."""
+CARE_LABEL_SYSTEM_PROMPT = "\n".join(
+    (
+        "Extract structured care evidence from the separately identified care-label image and,",
+        "when supplied, the garment image. Inspect the care-label image carefully before filling",
+        "every field.",
+        "",
+        "The care label is authoritative for every care process. Use the garment image only for",
+        "visible garment context; never infer permission to wash, bleach, tumble dry, iron, or",
+        "dry-clean from garment appearance.",
+        "When both supplied images are usable, image_type must be both. For a label-only request",
+        "it must be care_label; for a garment-only request it must be garment.",
+        "",
+        "Interpret only clearly visible standard care-label symbols:",
+        "- A wash tub without a cross permits water washing. Read a visible number as",
+        "  max_wash_temperature_c; read one or two underline bars as mild or very_mild",
+        "  wash_process, otherwise normal.",
+        "- A crossed wash tub prohibits water washing.",
+        "- A triangle without a cross permits bleach; a crossed triangle prohibits bleach.",
+        "- A square containing a circle without a cross permits tumble drying; a crossed",
+        "  square/circle prohibits it.",
+        "- An iron without a cross permits ironing; a crossed iron prohibits it.",
+        "- A circle without a cross permits dry cleaning; a crossed circle prohibits it.",
+        "Do not guess a temperature, process, material, or written text that cannot be read.",
+        "A missing material composition or unreadable incidental text must not lower confidence in",
+        "clearly visible care symbols or be included in uncertain_fields unless it changes a care",
+        "decision. overall_confidence is confidence in the extracted care instructions, not",
+        "confidence in reading every part of the label.",
+        "",
+        "Return JSON only with keys: image_type, original_visible_text, materials,",
+        "wash_permission, max_wash_temperature_c, wash_process, bleach_permission,",
+        "tumble_permission, iron_permission, dry_clean_permission, written_warnings,",
+        "overall_confidence, uncertain_fields. Preserve visible text exactly. Use unknown only",
+        "when the relevant symbol or text is absent, obscured, or ambiguous; include only those",
+        "decision-relevant field names in uncertain_fields.",
+    )
+)
 
 logger = logging.getLogger("fabricassist.vision")
 
@@ -55,7 +81,7 @@ def _debug_request(
             {
                 "provider": provider,
                 "model": model,
-                "system_prompt": _SYSTEM_PROMPT,
+                "system_prompt": CARE_LABEL_SYSTEM_PROMPT,
                 "images": [
                     {
                         "kind": image.kind,
@@ -157,7 +183,7 @@ class OpenAICompatibleVisionProvider:
             "max_tokens": self._max_output_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": CARE_LABEL_SYSTEM_PROMPT},
                 {"role": "user", "content": request_content},
             ],
         }
@@ -317,7 +343,10 @@ class OpenAIResponsesVisionProvider:
             "max_output_tokens": self._max_output_tokens,
             "text": {"format": self.response_format()},
             "input": [
-                {"role": "system", "content": [{"type": "input_text", "text": _SYSTEM_PROMPT}]},
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": CARE_LABEL_SYSTEM_PROMPT}],
+                },
                 {"role": "user", "content": request_content},
             ],
         }
@@ -414,7 +443,7 @@ class AzureOpenAIVisionProvider:
             "max_tokens": self._max_output_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": CARE_LABEL_SYSTEM_PROMPT},
                 {"role": "user", "content": request_content},
             ],
         }

@@ -9,7 +9,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-PROMPT_VERSION = "care-label-extraction-v1"
+PROMPT_VERSION = "care-label-extraction-v2"
 SCHEMA_VERSION = "label-extraction-v1"
 
 

@@ -11,9 +11,12 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.application.analysis import render_result
+from fabricassist.application.analysis import TEMPLATE_VERSION, render_result
+from fabricassist.application.vision import LabelExtractionPayload
+from fabricassist.domain.care import confirmed_care_evidence
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
+    LabelExtraction,
     RenderedAnswer,
     Scan,
     ScanImage,
@@ -268,7 +271,7 @@ async def scan_result(
         select(RenderedAnswer).where(
             RenderedAnswer.care_result_id == result.id,
             RenderedAnswer.language == language,
-            RenderedAnswer.template_version == "result-v1",
+            RenderedAnswer.template_version == TEMPLATE_VERSION,
         )
     )
     if rendered is None:
@@ -276,9 +279,26 @@ async def scan_result(
             tenant_id=scan.tenant_id,
             care_result_id=result.id,
             language=language,
-            template_version="result-v1",
-            answer=render_result(result.canonical_data, language),
+            template_version=TEMPLATE_VERSION,
+            answer=render_result(
+                _canonical_data_for_rendering(
+                    result, await session.get(LabelExtraction, result.extraction_id)
+                ),
+                language,
+            ),
         )
         session.add(rendered)
         await session.commit()
     return ResultResponse(scan_id=scan.id, status=result.status, answer=rendered.answer)
+
+
+def _canonical_data_for_rendering(
+    result: CareResult, extraction: LabelExtraction | None
+) -> dict[str, object]:
+    """Backfill opt-in partial evidence for results created before care-rule v3."""
+    canonical = dict(result.canonical_data)
+    if result.status != "needs_review" or canonical.get("confirmed_evidence") or extraction is None:
+        return canonical
+    payload = LabelExtractionPayload.model_validate(extraction.validated_data)
+    canonical["confirmed_evidence"] = confirmed_care_evidence(payload)
+    return canonical

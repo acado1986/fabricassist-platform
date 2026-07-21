@@ -24,6 +24,8 @@ type Answer = {
   professional_only?: string[];
   detergent?: string;
   uncertainties: string[];
+  confirmed_evidence?: string[];
+  can_continue?: boolean;
 };
 
 export default function Result(): ReactNode {
@@ -32,6 +34,7 @@ export default function Result(): ReactNode {
   const { locale, translate } = useTranslation();
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [failed, setFailed] = useState(false);
+  const [showPartialEvidence, setShowPartialEvidence] = useState(false);
 
   useEffect(() => {
     if (!scanId || !token) return;
@@ -68,6 +71,33 @@ export default function Result(): ReactNode {
           <>
             <Text style={styles.answerTitle}>{answer.title}</Text>
             <Text style={styles.summary}>{answer.summary}</Text>
+            {answer.can_continue && !showPartialEvidence ? (
+              <View style={styles.continuePanel}>
+                <Text style={styles.continueQuestion}>
+                  {translate('resultContinueQuestion')}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setShowPartialEvidence(true)}
+                  style={styles.continueButton}
+                >
+                  <Text style={styles.continueButtonText}>
+                    {translate('resultContinuePartial')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+            {showPartialEvidence ? (
+              <>
+                <Section
+                  title={translate('resultPartialEvidence')}
+                  values={answer.confirmed_evidence ?? []}
+                />
+                <Text style={styles.partialNotice}>
+                  {translate('resultPartialNotice')}
+                </Text>
+              </>
+            ) : null}
             <Section
               title={translate('resultActions')}
               values={answer.actions}
@@ -116,8 +146,8 @@ function Section({
   return (
     <View style={[styles.section, warning && styles.warning]}>
       <Text style={styles.sectionTitle}>{title}</Text>
-      {values.map((value) => (
-        <Text key={value} style={styles.value}>
+      {values.map((value, index) => (
+        <Text key={`${title}-${value}-${index}`} style={styles.value}>
           • {value}
         </Text>
       ))}
@@ -144,6 +174,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textTransform: 'uppercase',
   },
+  continuePanel: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.medium,
+    gap: spacing.small,
+    padding: spacing.medium,
+  },
+  continueQuestion: { color: colors.text, lineHeight: 21 },
+  continueButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radii.medium,
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  continueButtonText: { color: colors.background, fontWeight: '800' },
+  partialNotice: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   value: { color: colors.text, lineHeight: 21 },
   button: {
     alignItems: 'center',

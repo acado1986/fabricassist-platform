@@ -75,6 +75,12 @@ export const en = {
     resultProfessional: 'Professional care',
     resultUncertainties: 'What we could not confirm',
     resultDetergent: 'Detergent guidance',
+    resultContinueQuestion:
+      'We confirmed some label facts, but they are not a complete care recommendation. Do you want to view them?',
+    resultContinuePartial: 'Continue with partial details',
+    resultPartialEvidence: 'What the label confirmed',
+    resultPartialNotice:
+      'Do not choose a wash temperature, detergent, or wash cycle until the missing details are confirmed.',
     backToScan: 'Analyse another label',
     status: 'No business functionality is available yet.',
     language: 'Language',

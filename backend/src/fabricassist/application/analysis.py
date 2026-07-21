@@ -29,7 +29,7 @@ from fabricassist.infrastructure.vision.providers import (
 )
 from fabricassist.settings import Settings
 
-TEMPLATE_VERSION = "result-v1"
+TEMPLATE_VERSION = "result-v2"
 
 
 def normalize_image(raw: bytes, *, kind: str = "care_label") -> NormalizedImage:
@@ -64,7 +64,8 @@ def render_result(canonical: dict[str, object], language: str) -> dict[str, obje
     """Render the safety-approved canonical object without an additional model call."""
     spanish = language == "es"
     status = str(canonical["status"])
-    if status != "completed":
+    uncertainties = _render_uncertainties(canonical.get("uncertainties"), spanish)
+    if status == "needs_better_image":
         return {
             "title": "Necesitamos una foto más clara" if spanish else "We need a clearer photo",
             "summary": "No podemos confirmar las instrucciones de cuidado todavía."
@@ -74,7 +75,26 @@ def render_result(canonical: dict[str, object], language: str) -> dict[str, obje
             "prohibitions": [],
             "professional_only": [],
             "detergent": "",
-            "uncertainties": canonical["uncertainties"],
+            "uncertainties": uncertainties,
+        }
+    if status == "needs_review":
+        confirmed_evidence = _render_confirmed_evidence(
+            canonical.get("confirmed_evidence"), spanish
+        )
+        return {
+            "title": "Necesitamos verificar algunos detalles"
+            if spanish
+            else "We need to verify some details",
+            "summary": "La etiqueta no aporta evidencia suficiente para dar instrucciones seguras."
+            if spanish
+            else "The label does not provide enough evidence for safe care instructions.",
+            "actions": [],
+            "prohibitions": [],
+            "professional_only": [],
+            "detergent": "",
+            "uncertainties": uncertainties,
+            "confirmed_evidence": confirmed_evidence,
+            "can_continue": bool(confirmed_evidence),
         }
     temperature = canonical.get("wash_temperature_c")
     action_codes = cast(list[str], canonical["actions"])
@@ -100,6 +120,18 @@ def render_result(canonical: dict[str, object], language: str) -> dict[str, obje
             "Consult a professional cleaner.",
         ),
     }
+    detergent_labels = {
+        "delicates_detergent": ("Detergente para prendas delicadas.", "Delicates detergent."),
+        "standard_colour_detergent": (
+            "Detergente normal apto para ropa de color.",
+            "Standard colour-safe detergent.",
+        ),
+        "no_domestic_detergent": (
+            "No usar detergente doméstico.",
+            "Do not use domestic detergent.",
+        ),
+    }
+    detergent_code = str(canonical["detergent"])
     return {
         "title": "Instrucciones de cuidado" if spanish else "Care instructions",
         "summary": "Basadas en la etiqueta detectada."
@@ -108,15 +140,76 @@ def render_result(canonical: dict[str, object], language: str) -> dict[str, obje
         "actions": actions,
         "prohibitions": [labels[value][0 if spanish else 1] for value in prohibition_codes],
         "professional_only": [labels[value][0 if spanish else 1] for value in professional_codes],
-        "detergent": "Detergente para prendas delicadas."
-        if canonical["detergent"] == "delicates_detergent" and spanish
-        else (
-            "Delicates detergent."
-            if canonical["detergent"] == "delicates_detergent"
-            else ("No usar detergente doméstico." if spanish else "Do not use domestic detergent.")
-        ),
-        "uncertainties": canonical["uncertainties"],
+        "detergent": detergent_labels.get(
+            detergent_code,
+            ("Consultar a un profesional.", "Consult a professional."),
+        )[0 if spanish else 1],
+        "uncertainties": uncertainties,
+        "confirmed_evidence": [],
+        "can_continue": False,
     }
+
+
+def _render_confirmed_evidence(value: object, spanish: bool) -> list[str]:
+    """Render label-backed partial facts without presenting a complete care recommendation."""
+    raw_values = cast(list[object], value) if isinstance(value, list) else []
+    labels = {
+        "water_washing_allowed_temperature_unknown": (
+            "La etiqueta permite lavar con agua, pero no pudimos confirmar la temperatura.",
+            "The label allows water washing, but we could not confirm the temperature.",
+        ),
+        "bleach_prohibited": ("No usar lejía.", "Do not bleach."),
+        "tumble_drying_allowed": ("Se permite usar secadora.", "Tumble drying is allowed."),
+        "ironing_allowed": ("Se permite planchar.", "Ironing is allowed."),
+        "dry_cleaning_prohibited": ("No limpiar en seco.", "Do not dry clean."),
+    }
+    return [
+        labels[raw][0 if spanish else 1]
+        for raw in raw_values
+        if isinstance(raw, str) and raw in labels
+    ]
+
+
+def _render_uncertainties(value: object, spanish: bool) -> list[str]:
+    """Translate stable internal uncertainty codes before returning a user-facing answer."""
+    raw_values = cast(list[object], value) if isinstance(value, list) else []
+    labels = {
+        "insufficient_label_evidence": (
+            "No pudimos verificar suficientes símbolos de la etiqueta.",
+            "We could not verify enough care-label symbols.",
+        ),
+        "wash_instruction_unknown": (
+            "No pudimos confirmar si se puede lavar con agua.",
+            "We could not confirm whether water washing is allowed.",
+        ),
+        "wash_process": (
+            "No pudimos confirmar el programa de lavado.",
+            "We could not confirm the wash cycle.",
+        ),
+        "tumble_permission": (
+            "No pudimos confirmar si se puede usar secadora.",
+            "We could not confirm whether tumble drying is allowed.",
+        ),
+        "iron_permission": (
+            "No pudimos confirmar las instrucciones de planchado.",
+            "We could not confirm the ironing instructions.",
+        ),
+        "materials": (
+            "No pudimos confirmar la composición del tejido.",
+            "We could not confirm the fabric composition.",
+        ),
+        "original_visible_text": (
+            "No pudimos leer todo el texto visible de la etiqueta.",
+            "We could not read all visible label text.",
+        ),
+    }
+    fallback = (
+        "No pudimos confirmar algunos detalles de cuidado.",
+        "We could not confirm some care details.",
+    )
+    return [
+        labels.get(raw, fallback)[0 if spanish else 1] for raw in raw_values if isinstance(raw, str)
+    ]
 
 
 async def analyse_scan(
