@@ -5,9 +5,9 @@ professional cleaning companies. The planned product will analyse garment and
 care-label images, validate structured evidence, and use deterministic Python
 rules to produce authoritative cleaning guidance.
 
-> **Implementation status — Phase 4 only:** the repository has typed API and
-> Expo foundations plus a healthy local dependency stack. It has no
-> authentication, uploads, scans, image analysis, model integration, care rules,
+> **Implementation status — Phase 7 only:** the repository has typed API and
+> Expo foundations, local infrastructure, a migration-managed storage baseline, authenticated sessions, and direct private-image uploads. It has no
+> image analysis, model integration, care rules,
 > background processing, or customer-facing business functionality.
 
 ## Sources of truth
@@ -80,13 +80,18 @@ Never commit `.env` or real credentials.
 | `make down` / `make logs` | Stops or follows the Compose project. |
 | `make smoke` | Verifies service health, private bucket access, and API liveness. |
 | `make reset-local CONFIRM=1` | Removes only FabricAssist local volumes after an explicit guard. |
+| `make migrate` / `make seed` | Applies the Phase 5 schema and idempotent non-loginable development seed. |
+| `make migration-test` | Runs Phase 5 migrations against isolated Compose PostgreSQL. |
 | `make test` | Runs foundation checks plus backend and frontend unit tests. |
 | `make lint` | Runs configuration validation, Ruff/Pyright, Prettier, ESLint, and TypeScript. |
 | `make openapi` | Regenerates `docs/api/openapi.json` and the read-only frontend API client. |
-| `make check` | Runs the complete Phase 3 local quality gate. |
+| `make check` | Runs the complete default Phase 5 local quality gate. |
 
-`make migrate` and `make seed` intentionally fail with phase-deferred messages:
-there is no business schema or seed data in Phase 3.
+`make migrate` applies the Phase 5 storage baseline through the running API container.
+`make seed` creates one idempotent development tenant and a deliberately
+**non-loginable** admin record; authentication is still deferred to Phase 6.
+`make migration-test` runs empty-upgrade, downgrade/upgrade, metadata, and seed
+idempotency checks against the isolated Compose PostgreSQL service.
 
 ### Health-only API
 
@@ -125,9 +130,9 @@ environments.
 
 The Docker Compose project name is `fabricassist`.
 
-| Service | Local port(s) | Phase 1 status |
+| Service | Local port(s) | Current purpose |
 |---|---:|---|
-| `fabricassist-postgres` | 5432 | PostgreSQL 17 with pgvector image; no business schema |
+| `fabricassist-postgres` | 5432 | PostgreSQL 17 with pgvector and the Phase 5 baseline schema |
 | `fabricassist-valkey` | 6379 | Valkey foundation service |
 | `fabricassist-minio` | 9000, 9001 | S3-compatible storage with a private development bucket |
 | `fabricassist-api` | 8000 | Health-only FastAPI foundation; Phase 2 |
@@ -138,7 +143,5 @@ development placeholders. They are not production defaults.
 
 ## Phase boundary
 
-Authentication and tenant isolation are deliberately deferred, but must be
-implemented before tenant-owned uploads, scan records, review workflows, or
-customer history. No LLM, vision provider, OCR, image analysis, deterministic care logic, cache,
-AWS deployment, or production secret is part of Phase 4.
+Authentication and tenant isolation remain deliberately deferred to Phase 6. Phase 5
+creates only their storage baseline and does not expose authentication endpoints. No LLM, vision provider, OCR, scan processing, deterministic care logic, cache, AWS deployment, or production secret is part of Phase 7.

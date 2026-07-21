@@ -7,9 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md alembic.ini ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
+COPY migrations ./migrations
+COPY scripts ./scripts
 RUN uv sync --frozen --no-dev
 
 RUN useradd --create-home --uid 10001 fabricassist

@@ -1,12 +1,24 @@
 import type { ReactNode } from 'react';
 import { Stack } from 'expo-router';
-
 import { AppProviders } from '../providers/AppProviders';
-
+import { SessionProvider } from '../auth/session';
 export default function RootLayout(): ReactNode {
   return (
     <AppProviders>
-      <Stack screenOptions={{ headerShown: false }} />
+      <SessionProvider>
+        <Stack>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="(auth)/login" options={{ title: 'Sign in' }} />
+          <Stack.Screen
+            name="(auth)/register"
+            options={{ title: 'Create account' }}
+          />
+          <Stack.Screen
+            name="(customer)/scan"
+            options={{ title: 'New scan' }}
+          />
+        </Stack>
+      </SessionProvider>
     </AppProviders>
   );
 }

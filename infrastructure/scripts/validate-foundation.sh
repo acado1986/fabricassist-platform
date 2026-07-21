@@ -115,8 +115,7 @@ for later_phase_path in \
   backend/src/fabricassist/domain \
   backend/src/fabricassist/services \
   backend/src/fabricassist/repositories \
-  'frontend/apps/client/src/app/(auth)' \
-  'frontend/apps/client/src/app/(customer)' \
+  'frontend/apps/client/src/app/(operator)' \
   'frontend/apps/client/src/app/(operator)'; do
   [ ! -e "$later_phase_path" ] || fail "later-phase implementation found: $later_phase_path"
 done

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses } from './types.gen';
+import type { CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -19,6 +19,40 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
+ * Login
+ */
+export const loginApiV1AuthLoginPost = <ThrowOnError extends boolean = false>(options: Options<LoginApiV1AuthLoginPostData, ThrowOnError>) => (options.client ?? client).post<LoginApiV1AuthLoginPostResponses, LoginApiV1AuthLoginPostErrors, ThrowOnError>({
+    url: '/api/v1/auth/login',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Logout
+ */
+export const logoutApiV1AuthLogoutPost = <ThrowOnError extends boolean = false>(options?: Options<LogoutApiV1AuthLogoutPostData, ThrowOnError>) => (options?.client ?? client).post<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError>({ url: '/api/v1/auth/logout', ...options });
+
+/**
+ * Refresh
+ */
+export const refreshApiV1AuthRefreshPost = <ThrowOnError extends boolean = false>(options?: Options<RefreshApiV1AuthRefreshPostData, ThrowOnError>) => (options?.client ?? client).post<RefreshApiV1AuthRefreshPostResponses, RefreshApiV1AuthRefreshPostErrors, ThrowOnError>({ url: '/api/v1/auth/refresh', ...options });
+
+/**
+ * Register
+ */
+export const registerApiV1AuthRegisterPost = <ThrowOnError extends boolean = false>(options: Options<RegisterApiV1AuthRegisterPostData, ThrowOnError>) => (options.client ?? client).post<RegisterApiV1AuthRegisterPostResponses, RegisterApiV1AuthRegisterPostErrors, ThrowOnError>({
+    url: '/api/v1/auth/register',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Live
  *
  * Report process liveness without checking dependencies.
@@ -31,3 +65,32 @@ export const liveApiV1HealthLiveGet = <ThrowOnError extends boolean = false>(opt
  * Report readiness only when PostgreSQL accepts a safe probe.
  */
 export const readyApiV1HealthReadyGet = <ThrowOnError extends boolean = false>(options?: Options<ReadyApiV1HealthReadyGetData, ThrowOnError>) => (options?.client ?? client).get<ReadyApiV1HealthReadyGetResponses, unknown, ThrowOnError>({ url: '/api/v1/health/ready', ...options });
+
+/**
+ * Create Scan
+ */
+export const createScanApiV1ScansPost = <ThrowOnError extends boolean = false>(options: Options<CreateScanApiV1ScansPostData, ThrowOnError>) => (options.client ?? client).post<CreateScanApiV1ScansPostResponses, CreateScanApiV1ScansPostErrors, ThrowOnError>({
+    url: '/api/v1/scans',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Scan Detail
+ */
+export const scanDetailApiV1ScansScanIdGet = <ThrowOnError extends boolean = false>(options: Options<ScanDetailApiV1ScansScanIdGetData, ThrowOnError>) => (options.client ?? client).get<ScanDetailApiV1ScansScanIdGetResponses, ScanDetailApiV1ScansScanIdGetErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}', ...options });
+
+/**
+ * Complete Upload
+ */
+export const completeUploadApiV1ScansScanIdUploadsCompletePost = <ThrowOnError extends boolean = false>(options: Options<CompleteUploadApiV1ScansScanIdUploadsCompletePostData, ThrowOnError>) => (options.client ?? client).post<CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, ThrowOnError>({
+    url: '/api/v1/scans/{scan_id}/uploads/complete',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});

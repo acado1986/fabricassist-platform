@@ -4,6 +4,261 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+/**
+ * CompleteUploadRequest
+ */
+export type CompleteUploadRequest = {
+    /**
+     * Content Type
+     */
+    content_type: 'image/jpeg' | 'image/png' | 'image/webp';
+    /**
+     * Upload Id
+     */
+    upload_id: string;
+};
+
+/**
+ * CreateScanRequest
+ */
+export type CreateScanRequest = {
+    /**
+     * Content Type
+     */
+    content_type: 'image/jpeg' | 'image/png' | 'image/webp';
+    /**
+     * Kind
+     */
+    kind: 'garment' | 'care_label' | 'other';
+    /**
+     * Requested Language
+     */
+    requested_language?: 'en' | 'es';
+};
+
+/**
+ * CreateScanResponse
+ */
+export type CreateScanResponse = {
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Status
+     */
+    status: string;
+    upload: UploadInstruction;
+};
+
+/**
+ * Credentials
+ */
+export type Credentials = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * HTTPValidationError
+ */
+export type HttpValidationError = {
+    /**
+     * Detail
+     */
+    detail?: Array<ValidationError>;
+};
+
+/**
+ * ScanResponse
+ */
+export type ScanResponse = {
+    /**
+     * Images Completed
+     */
+    images_completed: number;
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
+ * SessionResponse
+ */
+export type SessionResponse = {
+    /**
+     * Access Token
+     */
+    access_token: string;
+    /**
+     * Refresh Token
+     */
+    refresh_token?: string | null;
+    /**
+     * Token Type
+     */
+    token_type?: string;
+};
+
+/**
+ * UploadInstruction
+ */
+export type UploadInstruction = {
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Headers
+     */
+    headers: {
+        [key: string]: string;
+    };
+    /**
+     * Upload Id
+     */
+    upload_id: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * ValidationError
+ */
+export type ValidationError = {
+    /**
+     * Location
+     */
+    loc: Array<string | number>;
+    /**
+     * Message
+     */
+    msg: string;
+    /**
+     * Error Type
+     */
+    type: string;
+};
+
+export type LoginApiV1AuthLoginPostData = {
+    body: Credentials;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/login';
+};
+
+export type LoginApiV1AuthLoginPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LoginApiV1AuthLoginPostError = LoginApiV1AuthLoginPostErrors[keyof LoginApiV1AuthLoginPostErrors];
+
+export type LoginApiV1AuthLoginPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SessionResponse;
+};
+
+export type LoginApiV1AuthLoginPostResponse = LoginApiV1AuthLoginPostResponses[keyof LoginApiV1AuthLoginPostResponses];
+
+export type LogoutApiV1AuthLogoutPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/logout';
+};
+
+export type LogoutApiV1AuthLogoutPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LogoutApiV1AuthLogoutPostError = LogoutApiV1AuthLogoutPostErrors[keyof LogoutApiV1AuthLogoutPostErrors];
+
+export type LogoutApiV1AuthLogoutPostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type LogoutApiV1AuthLogoutPostResponse = LogoutApiV1AuthLogoutPostResponses[keyof LogoutApiV1AuthLogoutPostResponses];
+
+export type RefreshApiV1AuthRefreshPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Csrf-Token
+         */
+        'X-CSRF-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/refresh';
+};
+
+export type RefreshApiV1AuthRefreshPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RefreshApiV1AuthRefreshPostError = RefreshApiV1AuthRefreshPostErrors[keyof RefreshApiV1AuthRefreshPostErrors];
+
+export type RefreshApiV1AuthRefreshPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SessionResponse;
+};
+
+export type RefreshApiV1AuthRefreshPostResponse = RefreshApiV1AuthRefreshPostResponses[keyof RefreshApiV1AuthRefreshPostResponses];
+
+export type RegisterApiV1AuthRegisterPostData = {
+    body: Credentials;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/register';
+};
+
+export type RegisterApiV1AuthRegisterPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RegisterApiV1AuthRegisterPostError = RegisterApiV1AuthRegisterPostErrors[keyof RegisterApiV1AuthRegisterPostErrors];
+
+export type RegisterApiV1AuthRegisterPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SessionResponse;
+};
+
+export type RegisterApiV1AuthRegisterPostResponse = RegisterApiV1AuthRegisterPostResponses[keyof RegisterApiV1AuthRegisterPostResponses];
+
 export type LiveApiV1HealthLiveGetData = {
     body?: never;
     path?: never;
@@ -43,3 +298,88 @@ export type ReadyApiV1HealthReadyGetResponses = {
 };
 
 export type ReadyApiV1HealthReadyGetResponse = ReadyApiV1HealthReadyGetResponses[keyof ReadyApiV1HealthReadyGetResponses];
+
+export type CreateScanApiV1ScansPostData = {
+    body: CreateScanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/scans';
+};
+
+export type CreateScanApiV1ScansPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateScanApiV1ScansPostError = CreateScanApiV1ScansPostErrors[keyof CreateScanApiV1ScansPostErrors];
+
+export type CreateScanApiV1ScansPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: CreateScanResponse;
+};
+
+export type CreateScanApiV1ScansPostResponse = CreateScanApiV1ScansPostResponses[keyof CreateScanApiV1ScansPostResponses];
+
+export type ScanDetailApiV1ScansScanIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}';
+};
+
+export type ScanDetailApiV1ScansScanIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ScanDetailApiV1ScansScanIdGetError = ScanDetailApiV1ScansScanIdGetErrors[keyof ScanDetailApiV1ScansScanIdGetErrors];
+
+export type ScanDetailApiV1ScansScanIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ScanResponse;
+};
+
+export type ScanDetailApiV1ScansScanIdGetResponse = ScanDetailApiV1ScansScanIdGetResponses[keyof ScanDetailApiV1ScansScanIdGetResponses];
+
+export type CompleteUploadApiV1ScansScanIdUploadsCompletePostData = {
+    body: CompleteUploadRequest;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/uploads/complete';
+};
+
+export type CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompleteUploadApiV1ScansScanIdUploadsCompletePostError = CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors[keyof CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors];
+
+export type CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ScanResponse;
+};
+
+export type CompleteUploadApiV1ScansScanIdUploadsCompletePostResponse = CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses[keyof CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses];

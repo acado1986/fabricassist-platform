@@ -1,8 +1,12 @@
-# Backend foundation
+# FabricAssist backend
 
-This directory will contain the Python `fabricassist` namespace.
+The backend uses the `backend/src/fabricassist/` Python namespace. Phase 5 adds
+Alembic and storage-only SQLAlchemy metadata under
+`fabricassist.infrastructure.persistence`.
 
-Phase 2 will initialize `backend/src/fabricassist/` and the
-`fabricassist.api` package. Phase 8 will add `fabricassist.worker`. Phase 1
-intentionally contains no Python package, dependency metadata, API, worker,
-database model, migration, or business logic.
+Run `make migrate` after `make up` to apply the PostgreSQL baseline. Run
+`make seed` only for the idempotent development tenant and a non-loginable admin
+record; Phase 6 will add authentication and tenant authorization.
+
+The baseline stores object metadata only. Image bytes remain outside PostgreSQL in
+private S3-compatible storage, which is implemented in a later phase.

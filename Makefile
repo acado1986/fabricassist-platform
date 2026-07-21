@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up down logs reset-local smoke migrate seed test lint openapi frontend-build check
+.PHONY: help bootstrap up down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -18,7 +18,7 @@ bootstrap: ## Install locked backend and frontend foundation dependencies.
 	pnpm --dir frontend install --frozen-lockfile
 
 up: ## Start the healthy local dependency stack and API.
-	docker compose up -d fabricassist-postgres fabricassist-valkey fabricassist-minio fabricassist-minio-init fabricassist-api
+	docker compose up -d --build --wait fabricassist-postgres fabricassist-valkey fabricassist-minio fabricassist-minio-init fabricassist-api
 
 down: ## Stop the local FabricAssist Compose project without deleting volumes.
 	docker compose down
@@ -33,13 +33,16 @@ reset-local: ## Remove local FabricAssist volumes only with CONFIRM=1.
 smoke: ## Verify local PostgreSQL, Valkey, MinIO, bucket privacy, and API health.
 	@./infrastructure/scripts/smoke.sh
 
-migrate: ## Apply migrations once Phase 5 implements them.
-	@printf '%s\n' "make migrate is deferred to Phase 5; no database schema exists in Phase 1." >&2
-	@exit 2
+migrate: ## Apply the Alembic schema baseline through the API Compose service.
+	docker compose exec -T fabricassist-api alembic -c /app/alembic.ini upgrade head
 
-seed: ## Seed development data once Phase 5 implements it.
-	@printf '%s\n' "make seed is deferred to Phase 5; no business data exists in Phase 1." >&2
-	@exit 2
+seed: ## Seed the idempotent non-loginable development tenant and admin.
+	docker compose exec -T fabricassist-api python /app/scripts/seed.py
+
+migration-test: ## Run Alembic integration tests against the isolated Compose PostgreSQL service.
+	docker compose --profile test up -d fabricassist-postgres-test
+	@until docker compose exec -T fabricassist-postgres-test pg_isready -U fabricassist_test -d fabricassist_test >/dev/null 2>&1; do sleep 1; done
+	cd backend && FABRICASSIST_TEST_DATABASE_URL=postgresql://fabricassist_test:change-me-local-postgres-test@localhost:$${FABRICASSIST_POSTGRES_TEST_PORT:-5433}/fabricassist_test uv run pytest tests/integration
 
 test: ## Run foundation checks plus backend and frontend unit tests.
 	@./infrastructure/scripts/validate-foundation.sh
@@ -65,4 +68,4 @@ openapi: ## Generate deterministic FastAPI OpenAPI and the frontend client.
 frontend-build: ## Build the Phase 3 Expo web artifact in Docker.
 	docker build --file frontend/Dockerfile frontend
 
-check: bootstrap lint test ## Run the complete Phase 4 local quality gate.
+check: bootstrap lint test ## Run the complete default Phase 5 local quality gate.

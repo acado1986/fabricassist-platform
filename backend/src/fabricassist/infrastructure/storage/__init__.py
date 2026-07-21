@@ -1,0 +1,1 @@
+"""Replaceable object-storage adapters."""
