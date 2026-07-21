@@ -185,6 +185,22 @@ at or below those ceilings to avoid gateway rejection or incomplete responses
 unrelated to image quality.
 `FABRICASSIST_VISION_TIMEOUT_SECONDS` defaults to `120` for the same reason.
 
+### Local vision debugging
+
+For a local debugging session only, set this in the ignored `.env` and restart
+the worker:
+
+```bash
+FABRICASSIST_VISION_DEBUG_LOGGING=true
+docker compose up -d --build fabricassist-worker
+docker compose logs -f --tail=100 fabricassist-worker
+```
+
+This emits `vision_model_request` with the prompt, model limits, and normalized
+image metadata, plus `vision_model_response` with the model's text output. It
+never logs image bytes, API keys, gateway headers, or endpoint URLs. Disable it
+again after debugging because model output can include care-label text.
+
 ## Local infrastructure
 
 `make up` waits for PostgreSQL, Valkey, and MinIO health checks. The one-shot

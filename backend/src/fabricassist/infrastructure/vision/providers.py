@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from collections.abc import Callable
 from typing import cast
@@ -34,6 +35,71 @@ wash_process, bleach_permission, tumble_permission, iron_permission, dry_clean_p
 written_warnings, overall_confidence, uncertain_fields.
 Preserve visible text exactly. Use unknown when absent; never infer a missing symbol."""
 
+logger = logging.getLogger("fabricassist.vision")
+
+
+def _debug_request(
+    settings: Settings,
+    *,
+    provider: str,
+    model: str,
+    images: tuple[NormalizedImage, ...],
+    output_tokens: int,
+) -> None:
+    """Emit opt-in diagnostics without image bytes, headers, keys, or endpoint URLs."""
+    if not settings.vision_debug_logging:
+        return
+    logger.warning(
+        "vision_model_request %s",
+        json.dumps(
+            {
+                "provider": provider,
+                "model": model,
+                "system_prompt": _SYSTEM_PROMPT,
+                "images": [
+                    {
+                        "kind": image.kind,
+                        "normalized_sha256": image.sha256,
+                        "width": image.width,
+                        "height": image.height,
+                        "jpeg_bytes": len(image.jpeg_bytes),
+                    }
+                    for image in images
+                ],
+                "max_input_tokens": settings.vision_max_input_tokens,
+                "max_output_tokens": output_tokens,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+    )
+
+
+def _debug_response(
+    settings: Settings,
+    *,
+    provider: str,
+    model: str,
+    output_text: str | None,
+    status: str | None = None,
+) -> None:
+    """Emit the model's text answer only for explicit local debug sessions."""
+    if not settings.vision_debug_logging:
+        return
+    logger.warning(
+        "vision_model_response %s",
+        json.dumps(
+            {
+                "provider": provider,
+                "model": model,
+                "status": status,
+                "model_output": output_text,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+    )
+
 
 class MockVisionProvider:
     """No-network local provider that deliberately produces a review-safe output."""
@@ -56,6 +122,7 @@ class OpenAICompatibleVisionProvider:
     """Uses the standard OpenAI-compatible chat-completions protocol with strict JSON parsing."""
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._base_url = settings.vision_base_url.rstrip("/")
         self._api_key = settings.vision_api_key
         self._model = settings.vision_model
@@ -63,6 +130,13 @@ class OpenAICompatibleVisionProvider:
         self._max_output_tokens = settings.vision_max_output_tokens
 
     async def extract_label(self, images: tuple[NormalizedImage, ...]) -> ProviderResult:
+        _debug_request(
+            self._settings,
+            provider="openai_compatible",
+            model=self._model,
+            images=images,
+            output_tokens=self._max_output_tokens,
+        )
         request_content: list[dict[str, object]] = [
             {"type": "text", "text": "Analyse both supplied images together."}
         ]
@@ -106,6 +180,12 @@ class OpenAICompatibleVisionProvider:
         try:
             body = response.json()
             output_text = body["choices"][0]["message"]["content"]
+            _debug_response(
+                self._settings,
+                provider="openai_compatible",
+                model=self._model,
+                output_text=output_text if isinstance(output_text, str) else None,
+            )
             payload = LabelExtractionPayload.model_validate(json.loads(output_text))
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as error:
             raise VisionProviderError(
@@ -130,6 +210,7 @@ class OpenAIResponsesVisionProvider:
     """
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._base_url = settings.vision_base_url.rstrip("/")
         self._api_key = settings.vision_api_key
         self._model = settings.vision_model
@@ -212,6 +293,13 @@ class OpenAIResponsesVisionProvider:
             raise VisionProviderError("INCOMPLETE", "Vision provider reached its response limit.")
 
     async def extract_label(self, images: tuple[NormalizedImage, ...]) -> ProviderResult:
+        _debug_request(
+            self._settings,
+            provider="openai_responses",
+            model=self._model,
+            images=images,
+            output_tokens=self._max_output_tokens,
+        )
         request_content: list[dict[str, object]] = [
             {"type": "input_text", "text": "Analyse both supplied images together."}
         ]
@@ -251,8 +339,16 @@ class OpenAIResponsesVisionProvider:
             if not isinstance(raw_body, dict):
                 raise ValueError("Response body is not an object.")
             body = cast(dict[str, object], raw_body)
+            status = body.get("status")
             self.reject_incomplete_response(body)
             output_text = self.extract_output_text(body)
+            _debug_response(
+                self._settings,
+                provider="openai_responses",
+                model=self._model,
+                output_text=output_text,
+                status=status if isinstance(status, str) else None,
+            )
             payload = LabelExtractionPayload.model_validate(json.loads(output_text))
         except (TypeError, ValueError, json.JSONDecodeError, ValidationError) as error:
             raise VisionProviderError(
@@ -276,6 +372,7 @@ class AzureOpenAIVisionProvider:
     """Azure deployment-based chat-completions adapter using the Azure API-key header."""
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._endpoint = settings.azure_openai_endpoint.rstrip("/")
         self._api_key = settings.azure_openai_api_key
         self._deployment = settings.azure_openai_deployment
@@ -291,6 +388,13 @@ class AzureOpenAIVisionProvider:
         )
 
     async def extract_label(self, images: tuple[NormalizedImage, ...]) -> ProviderResult:
+        _debug_request(
+            self._settings,
+            provider="azure_openai",
+            model=self._deployment,
+            images=images,
+            output_tokens=self._max_output_tokens,
+        )
         request_content: list[dict[str, object]] = [
             {"type": "text", "text": "Analyse both supplied images together."}
         ]
@@ -333,6 +437,12 @@ class AzureOpenAIVisionProvider:
         try:
             body = response.json()
             output_text = body["choices"][0]["message"]["content"]
+            _debug_response(
+                self._settings,
+                provider="azure_openai",
+                model=self._deployment,
+                output_text=output_text if isinstance(output_text, str) else None,
+            )
             payload = LabelExtractionPayload.model_validate(json.loads(output_text))
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as error:
             raise VisionProviderError(

@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     vision_timeout_seconds: int = Field(default=120, ge=5, le=120)
     vision_max_input_tokens: int = Field(default=128_000, ge=1_024, le=128_000)
     vision_max_output_tokens: int = Field(default=16_000, ge=256, le=16_000)
+    vision_debug_logging: bool = False
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
     azure_openai_deployment: str = ""
