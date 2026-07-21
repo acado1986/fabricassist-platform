@@ -1,0 +1,31 @@
+{
+  "name": "fabricassist-app",
+  "version": "0.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "test": "jest --config jest.config.js"
+  },
+  "dependencies": {
+    "@fabricassist/api-client": "workspace:*",
+    "@fabricassist/design-tokens": "workspace:*",
+    "@fabricassist/translations": "workspace:*",
+    "@tanstack/react-query": "^5.66.0",
+    "expo": "~56.0.0",
+    "expo-constants": "~56.0.21",
+    "expo-localization": "~56.0.6",
+    "expo-router": "~56.2.15",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-web": "~0.21.0"
+  },
+  "devDependencies": {
+    "@testing-library/react-native": "^13.0.0"
+  }
+}

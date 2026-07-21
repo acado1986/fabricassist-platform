@@ -541,7 +541,7 @@ The MVP is accepted when all of the following are demonstrable locally with Dock
 
 ## 15. Instructions for the implementation agent
 
-1. Read `requirements.md` and `architecture.md` completely before changing code.
+1. Read `docs/requirements.md` and `docs/architecture.md` completely before changing code.
 2. Implement one vertical slice at a time and keep the application runnable after each slice.
 3. Do not replace the selected core technologies without recording an architecture decision and explaining the migration impact.
 4. Do not put business rules in prompts, route handlers, React components, or database triggers.

@@ -10,8 +10,8 @@ FabricAssist analyses garment and care-label images and returns safe cleaning in
 
 Before changing code, read these files completely:
 
-1. `requirements.md` — product scope, functional requirements, security requirements, and acceptance criteria.
-2. `architecture.md` — selected technologies, module boundaries, data model, runtime architecture, and implementation order.
+1. `docs/requirements.md` — product scope, functional requirements, security requirements, and acceptance criteria.
+2. `docs/architecture.md` — selected technologies, module boundaries, data model, runtime architecture, and implementation order.
 3. The nearest nested `AGENTS.md`, when one exists.
 
 Instruction precedence is:
@@ -19,8 +19,8 @@ Instruction precedence is:
 1. Explicit user instructions in the current task.
 2. The nearest `AGENTS.md` to the file being edited.
 3. This root `AGENTS.md`.
-4. `architecture.md`.
-5. `requirements.md`.
+4. `docs/architecture.md`.
+5. `docs/requirements.md`.
 6. Existing code conventions.
 
 Do not silently contradict the requirements or architecture. When a change requires an architectural deviation, add or update an Architecture Decision Record under `docs/adr/` and explain the compatibility and migration impact.
@@ -45,7 +45,7 @@ Naming rules:
 - Write **FabricAssist** in user-facing copy, headings, application metadata, and product documentation.
 - Use lowercase `fabricassist` for Python modules, package scopes, service identifiers, image names, URLs, and machine-readable configuration.
 - Use `fabricassist-<component>` for deployable service names.
-- Do not introduce `CareLens`, `CleanLens`, `CleanAssistant`, `Fabric Assistant`, or the previous generic project title in new code or documentation.
+- Do not introduce previous candidate product names or the previous generic project title in new code or documentation.
 - Generic domain phrases such as “clothing care assistant” may be used descriptively, but not as the product name.
 - Keep naming changes atomic and update application metadata, container names, examples, documentation, and tests together.
 
@@ -112,8 +112,6 @@ Expected top-level layout:
 ```text
 .
 ├── AGENTS.md
-├── requirements.md
-├── architecture.md
 ├── README.md
 ├── Makefile
 ├── .env.example
@@ -122,6 +120,9 @@ Expected top-level layout:
 ├── frontend/
 ├── infrastructure/
 ├── docs/
+│   ├── requirements.md
+│   ├── architecture.md
+│   └── IMPLEMENTATION_PLAN.md
 └── .github/workflows/
 ```
 
@@ -146,7 +147,7 @@ Do not leave placeholder behavior presented as complete. Clearly mark intentiona
 
 ## Initial implementation order
 
-Follow the commit sequence in `architecture.md` unless the task says otherwise:
+Follow the commit sequence in `docs/architecture.md` unless the task says otherwise:
 
 1. Repository foundation
 2. Backend foundation
@@ -209,7 +210,7 @@ infrastructure adapters
 
 ### Domain isolation
 
-Code under `backend/app/domain/` must not import:
+Code under `backend/src/fabricassist/domain/` must not import:
 
 - FastAPI
 - SQLAlchemy sessions or ORM repositories

@@ -1,7 +1,7 @@
 # FabricAssist — Architecture
 
 **Document status:** Initial implementation architecture  
-**Related documents:** `requirements.md`, `AGENTS.md`  
+**Related documents:** `docs/requirements.md`, `AGENTS.md`
 **Last updated:** 2026-07-20
 
 ## 0. Product identity and canonical names
@@ -153,44 +153,46 @@ This separation permits independent horizontal scaling without introducing netwo
 
 ```text
 backend/
-├── app/
-│   ├── api/
-│   │   ├── dependencies/
-│   │   ├── routes/
-│   │   │   ├── auth.py
-│   │   │   ├── scans.py
-│   │   │   ├── results.py
-│   │   │   ├── reviews.py
-│   │   │   └── health.py
-│   │   └── errors.py
-│   ├── application/
-│   │   ├── commands/
-│   │   ├── queries/
-│   │   ├── dto/
-│   │   └── ports/
-│   ├── domain/
-│   │   ├── auth/
-│   │   ├── scans/
-│   │   ├── extraction/
-│   │   ├── care_rules/
-│   │   ├── detergents/
-│   │   ├── review/
-│   │   └── shared/
-│   ├── infrastructure/
-│   │   ├── database/
-│   │   ├── repositories/
-│   │   ├── object_storage/
-│   │   ├── valkey/
-│   │   ├── jobs/
-│   │   ├── vision_providers/
-│   │   ├── telemetry/
-│   │   └── security/
-│   ├── workers/
-│   │   ├── analyse_scan.py
-│   │   ├── delete_scan_assets.py
-│   │   └── retention.py
-│   ├── settings.py
-│   └── main.py
+├── src/
+│   └── fabricassist/
+│       ├── api/
+│       │   ├── dependencies/
+│       │   ├── routes/
+│       │   │   ├── auth.py
+│       │   │   ├── scans.py
+│       │   │   ├── results.py
+│       │   │   ├── reviews.py
+│       │   │   └── health.py
+│       │   ├── errors.py
+│       │   └── main.py
+│       ├── services/
+│       │   ├── commands/
+│       │   ├── queries/
+│       │   ├── dto/
+│       │   └── ports/
+│       ├── domain/
+│       │   ├── auth/
+│       │   ├── scans/
+│       │   ├── extraction/
+│       │   ├── care_rules/
+│       │   ├── detergents/
+│       │   ├── review/
+│       │   └── shared/
+│       ├── repositories/
+│       ├── infrastructure/
+│       │   ├── database/
+│       │   ├── object_storage/
+│       │   ├── valkey/
+│       │   ├── jobs/
+│       │   ├── vision_providers/
+│       │   ├── telemetry/
+│       │   └── security/
+│       ├── worker/
+│       │   ├── analyse_scan.py
+│       │   ├── delete_scan_assets.py
+│       │   └── retention.py
+│       ├── settings.py
+│       └── __init__.py
 ├── migrations/
 ├── tests/
 │   ├── unit/
@@ -261,8 +263,7 @@ Business-facing components, validation, API hooks, result rendering, and transla
 ```text
 fabricassist-platform/
 ├── AGENTS.md
-├── requirements.md
-├── architecture.md
+├── README.md
 ├── backend/
 ├── frontend/
 ├── infrastructure/
@@ -270,14 +271,16 @@ fabricassist-platform/
 │   ├── terraform/
 │   └── scripts/
 ├── docs/
+│   ├── requirements.md
+│   ├── architecture.md
+│   ├── IMPLEMENTATION_PLAN.md
 │   ├── adr/
 │   ├── api/
 │   └── runbooks/
 ├── .github/workflows/
 ├── Makefile
 ├── docker-compose.yml
-├── .env.example
-└── README.md
+└── .env.example
 ```
 
 The repository root must provide predictable commands such as:
@@ -684,7 +687,7 @@ pgvector search is optional and must be introduced only after enough human-appro
 Valkey key pattern:
 
 ```text
-cca:answer:{result_id}:{language}:{template_version}
+fabricassist:answer:v1:{result_id}:{language}:{template_version}
 ```
 
 The durable rendered answer remains in PostgreSQL. Valkey TTL is an optimization.
@@ -836,16 +839,16 @@ Never accept a client-provided key. Bucket access remains private. CORS must all
 
 ## 18. Local Docker architecture
 
-Initial `docker-compose.yml` services:
+Initial `docker-compose.yml` services use canonical service identifiers:
 
 ```text
-postgres     PostgreSQL with pgvector
-valkey       Valkey
-minio        S3-compatible object storage
-minio-init   Creates local bucket and policy
-api          FastAPI development server
-worker       Celery worker
-mailpit      Optional local email capture
+fabricassist-postgres     PostgreSQL with pgvector
+fabricassist-valkey       Valkey
+fabricassist-minio        S3-compatible object storage
+fabricassist-minio-init   Creates the local bucket and policy in a later infrastructure phase
+fabricassist-api          FastAPI development server
+fabricassist-worker       Celery worker
+fabricassist-mailpit      Optional local email capture
 ```
 
 Recommended local ports:
@@ -943,39 +946,39 @@ Configuration must use typed environment settings. Provide `.env.example` withou
 Minimum settings groups:
 
 ```text
-APP_ENV
-APP_BASE_URL
-API_PUBLIC_URL
-CORS_ALLOWED_ORIGINS
+FABRICASSIST_ENVIRONMENT
+FABRICASSIST_APP_BASE_URL
+FABRICASSIST_API_PUBLIC_URL
+FABRICASSIST_CORS_ALLOWED_ORIGINS
 
-DATABASE_URL
-VALKEY_URL
-CELERY_BROKER_URL
-CELERY_RESULT_BACKEND
+FABRICASSIST_DATABASE_URL
+FABRICASSIST_VALKEY_URL
+FABRICASSIST_CELERY_BROKER_URL
+FABRICASSIST_CELERY_RESULT_BACKEND
 
-OBJECT_STORAGE_ENDPOINT
-OBJECT_STORAGE_REGION
-OBJECT_STORAGE_BUCKET
-OBJECT_STORAGE_ACCESS_KEY_ID
-OBJECT_STORAGE_SECRET_ACCESS_KEY
-OBJECT_STORAGE_FORCE_PATH_STYLE
+FABRICASSIST_S3_ENDPOINT_URL
+FABRICASSIST_S3_REGION
+FABRICASSIST_S3_BUCKET
+FABRICASSIST_S3_ACCESS_KEY
+FABRICASSIST_S3_SECRET_KEY
+FABRICASSIST_S3_FORCE_PATH_STYLE
 
-VISION_PROVIDER
-VISION_MODEL
-VISION_API_BASE
-VISION_API_KEY
-VISION_TIMEOUT_SECONDS
-VISION_MAX_CONCURRENCY
+FABRICASSIST_VISION_PROVIDER
+FABRICASSIST_VISION_MODEL
+FABRICASSIST_VISION_API_BASE
+FABRICASSIST_VISION_API_KEY
+FABRICASSIST_VISION_TIMEOUT_SECONDS
+FABRICASSIST_VISION_MAX_CONCURRENCY
 
-JWT_SIGNING_KEY
-ACCESS_TOKEN_TTL_SECONDS
-REFRESH_TOKEN_TTL_DAYS
+FABRICASSIST_JWT_SIGNING_KEY
+FABRICASSIST_ACCESS_TOKEN_TTL_SECONDS
+FABRICASSIST_REFRESH_TOKEN_TTL_DAYS
 
-DEFAULT_IMAGE_RETENTION_DAYS
-MAX_UPLOAD_BYTES
+FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS
+FABRICASSIST_MAX_UPLOAD_BYTES
 
-OTEL_EXPORTER_OTLP_ENDPOINT
-LOG_LEVEL
+FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT
+FABRICASSIST_LOG_LEVEL
 ```
 
 Production must validate that insecure development defaults are absent at startup.
@@ -985,8 +988,8 @@ Production must validate that insecure development defaults are absent at startu
 Initial rules should be stored as reviewed code/data files in the repository, for example:
 
 ```text
-backend/app/domain/care_rules/data/v1.yaml
-backend/app/domain/detergents/data/v1.yaml
+backend/src/fabricassist/domain/care_rules/data/v1.json
+backend/src/fabricassist/domain/detergents/data/v1.json
 frontend/packages/translations/src/es.json
 frontend/packages/translations/src/en.json
 ```

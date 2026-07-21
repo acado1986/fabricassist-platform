@@ -133,9 +133,9 @@ as configuration before its implementation phase is accepted.
 
 1. The repository is intentionally greenfield; only instruction and design
    documents exist today.
-2. `docs/requirements.md` and `docs/architecture.md` are the intended source
-   documents despite references that currently expect them at the repository
-   root. No source document is changed by this plan.
+2. `docs/requirements.md`, `docs/architecture.md`, and
+   `docs/IMPLEMENTATION_PLAN.md` are the approved source-document locations.
+   Root documentation links to these paths without duplicating them.
 3. The first release serves one cleaning company operationally, while all
    business records and authorization paths are tenant-scoped from the first
    migration.
@@ -180,7 +180,7 @@ as configuration before its implementation phase is accepted.
 
 | Decision | Alternatives | Recommendation and reason | Blocks implementation? |
 |---|---|---|---|
-| Source-document location | Move `docs/requirements.md` and `docs/architecture.md` to root; keep them in `docs/` and update every reference; duplicate them | **Move once, preserving Git history, to the root** because all three sources define the root layout and root precedence. Never keep duplicate sources of truth. | **Blocks Phase 1 only.** The present files were still usable for this plan. |
+| Source-document location | Move the source documents to root; keep them in `docs/`; duplicate them | **Resolved: keep `docs/requirements.md`, `docs/architecture.md`, and `docs/IMPLEMENTATION_PLAN.md` in `docs/` and update every reference.** Duplicate sources are prohibited. | No. Resolved before Phase 1 implementation. |
 | Python baseline | 3.12, 3.13, or 3.14 | **Python 3.13** pinned to a tested patch. It satisfies 3.12+, remains broadly compatible, and avoids beginning on the 3.12 security-fixes-only branch. Re-evaluate 3.14 after dependency compatibility tests. | No; choose and pin in Phase 2. |
 | PostgreSQL baseline | PostgreSQL 17 or 18 | **PostgreSQL 17 + a compatible pgvector release** for a conservative RDS/container baseline; upgrade by normal migration testing when 18 support is confirmed across local and AWS targets. | No; pin in Phase 4. |
 | Python type checker | Pyright or mypy | **Pyright**, with strict checks for domain/application modules and documented exceptions at dynamic boundaries. One checker avoids duplicate configuration. | No; decide in Phase 2. |
@@ -205,31 +205,24 @@ as configuration before its implementation phase is accepted.
 
 ## Detected contradictions and sequencing tensions
 
-1. **Source paths:** all three documents describe `requirements.md` and
-   `architecture.md` at root, but the repository currently stores them under
-   `docs/`. The recommended resolution is the first open decision above; this
-   plan does not move them.
-2. **Python package path:** the canonical namespace is `fabricassist`, while the
-   architecture illustration places modules directly under `backend/app/` and
-   the root instructions refer to `backend/app/domain/`. The target tree uses
-   `backend/app/fabricassist/` so imports are `fabricassist.*`; the same domain
-   isolation rule applies to `backend/app/fabricassist/domain/`. This naming
-   correction should be acknowledged in ADR-001 rather than hidden.
-3. **Environment-variable names:** the canonical project prefix is
-   `FABRICASSIST_`, while the architecture configuration examples are unprefixed
-   (`DATABASE_URL`, `VISION_PROVIDER`, and so on). The implementation should use
-   `FABRICASSIST_DATABASE_URL`, `FABRICASSIST_VISION_PROVIDER`, etc., and permit
-   narrowly documented standard variables only when a third-party process
-   requires them.
-4. **Valkey render-cache example:** architecture shows
-   `cca:answer:{result_id}:{language}:{template_version}`, which does not use the
-   canonical FabricAssist namespace. The implementation should use a versioned
-   `fabricassist:` prefix, with the final key format documented before Phase 12.
-5. **Compose process names:** the canonical API and worker service/container
-   names are `fabricassist-api` and `fabricassist-worker`, while the local Docker
-   architecture uses shorthand `api` and `worker` service labels. Compose and
-   deployment definitions should use the canonical names; documentation may call
-   them “API” and “worker” descriptively.
+1. **Source paths (resolved):** source documents remain at
+   `docs/requirements.md`, `docs/architecture.md`, and
+   `docs/IMPLEMENTATION_PLAN.md`; root `README.md` and `AGENTS.md` link to them.
+2. **Python package path (resolved):** source packages use a `src` layout under
+   `backend/src/fabricassist/`. The API and worker entry-point packages are
+   `fabricassist.api` and `fabricassist.worker`; domain isolation applies to
+   `backend/src/fabricassist/domain/`. ADR-001 records this correction.
+3. **Environment-variable names (resolved):** application-owned settings use the
+   `FABRICASSIST_` prefix, including `FABRICASSIST_DATABASE_URL` and
+   `FABRICASSIST_VISION_PROVIDER`. Narrowly documented standard variables are
+   permitted only when a third-party process requires them.
+4. **Valkey render-cache example (resolved):** all cache keys use the versioned
+   `fabricassist:` namespace; the precise Phase 12 key material remains subject
+   to its safety tests and documentation.
+5. **Compose process names (resolved):** Compose definitions use canonical
+   `fabricassist-<component>` service identifiers, including `fabricassist-api`,
+   `fabricassist-worker`, `fabricassist-postgres`, `fabricassist-valkey`, and
+   `fabricassist-minio`. Descriptive prose may still say “API” or “worker.”
 6. **Requested phase list versus required dependency order:** the prompt lists
    authentication and tenant isolation after review, while the architecture's
    implementation order and ownership requirements put authentication before
@@ -246,15 +239,11 @@ as configuration before its implementation phase is accepted.
 
 The tree below is the proposed end-state. Empty directories are not created
 merely to match the diagram; each appears in the phase that gives it executable
-behavior or documentation. `requirements.md` and `architecture.md` at root are
-conditional on resolving the source-location decision.
+behavior or documentation. Product source documents remain under `docs/`.
 
 ```text
 fabricassist-platform/
 ├── AGENTS.md
-├── requirements.md
-├── architecture.md
-├── IMPLEMENTATION_PLAN.md
 ├── README.md
 ├── Makefile
 ├── .env.example
@@ -264,12 +253,12 @@ fabricassist-platform/
 ├── .node-version
 ├── docker-compose.yml
 ├── backend/
-│   ├── app/
+│   ├── src/
 │   │   └── fabricassist/
 │   │       ├── __init__.py
-│   │       ├── main.py
 │   │       ├── settings.py
 │   │       ├── api/
+│   │       │   ├── main.py
 │   │       │   ├── dependencies/
 │   │       │   │   ├── auth.py
 │   │       │   │   ├── database.py
@@ -285,11 +274,10 @@ fabricassist-platform/
 │   │       │   ├── errors.py
 │   │       │   ├── middleware.py
 │   │       │   └── schemas.py
-│   │       ├── application/
+│   │       ├── services/
 │   │       │   ├── commands/
 │   │       │   ├── queries/
 │   │       │   ├── dto/
-│   │       │   ├── services/
 │   │       │   └── ports/
 │   │       │       ├── clock.py
 │   │       │       ├── jobs.py
@@ -308,10 +296,10 @@ fabricassist-platform/
 │   │       │   ├── rendering/
 │   │       │   ├── review/
 │   │       │   └── shared/
+│   │       ├── repositories/
 │   │       ├── infrastructure/
 │   │       │   ├── database/
 │   │       │   │   ├── models/
-│   │       │   │   └── repositories/
 │   │       │   ├── jobs/
 │   │       │   ├── object_storage/
 │   │       │   ├── security/
@@ -320,7 +308,7 @@ fabricassist-platform/
 │   │       │   └── vision_providers/
 │   │       │       ├── mock.py
 │   │       │       └── openai_compatible.py
-│   │       └── workers/
+│   │       └── worker/
 │   │           ├── celery_app.py
 │   │           ├── analyse_scan.py
 │   │           ├── delete_scan_assets.py
@@ -436,6 +424,9 @@ fabricassist-platform/
 │       ├── reset-local.sh
 │       └── smoke.sh
 ├── docs/
+│   ├── requirements.md
+│   ├── architecture.md
+│   ├── IMPLEMENTATION_PLAN.md
 │   ├── adr/
 │   │   ├── 001-modular-monolith.md
 │   │   ├── 002-postgresql-jsonb-pgvector.md
@@ -554,7 +545,7 @@ so retention work is not hidden inside human review or production hardening.
 
 - **Objective:** Establish the canonical monorepo layout and stable developer
   interface without generating FastAPI or Expo code.
-- **Scope:** Resolve the source-document location decision; add root README,
+- **Scope:** Apply the resolved `docs/` source-document locations; add root README,
   Makefile targets, safe `.env.example`, ignore/editor/version files, license
   notices, directory ownership notes, ADR templates, CI workflow skeletons, and
   a minimal Compose file that can validate configuration. Record ADR-001 through
@@ -562,8 +553,8 @@ so retention work is not hidden inside human review or production hardening.
 - **Explicitly excluded:** Python/Node dependencies, FastAPI/Expo scaffolding,
   business logic, database tables, deployable cloud resources, live secrets.
 - **Files/directories:** Root metadata and commands; `backend/`, `frontend/`,
-  `infrastructure/`, `docs/adr/`, `docs/runbooks/`, `.github/workflows/`. Move
-  source documents only if the open decision is approved.
+  `infrastructure/`, `docs/adr/`, `docs/runbooks/`, `.github/workflows/`. Keep
+  all three source documents in `docs/` and link to them from root documents.
 - **Database changes:** None.
 - **API endpoints:** None.
 - **Frontend screens/components:** None.
@@ -575,7 +566,8 @@ so retention work is not hidden inside human review or production hardening.
   noninteractive; commands for implemented scope succeed; README documents
   ports/commands and phased limitations; no secret or application scaffold is
   present; canonical names are consistent.
-- **Dependencies:** Approved implementation plan and source-location decision.
+- **Dependencies:** Approved implementation plan and resolved source-location
+  decision.
 - **Suggested commit:** `chore(repo): establish FabricAssist repository foundation`
 
 ## Phase 2 — Backend foundation
@@ -589,7 +581,7 @@ so retention work is not hidden inside human review or production hardening.
 - **Explicitly excluded:** Business tables/migrations, authentication, scans,
   Celery tasks, object storage, model calls, care rules.
 - **Files/directories:** `backend/pyproject.toml`, `backend/uv.lock`,
-  `backend/app/fabricassist/{main.py,settings.py,api,infrastructure}`, backend
+  `backend/src/fabricassist/{settings.py,api,infrastructure}`, backend
   tests and Dockerfile; root Makefile/Compose entries needed by the API.
 - **Database changes:** No business schema; readiness performs a safe connectivity
   probe only.
@@ -601,7 +593,7 @@ so retention work is not hidden inside human review or production hardening.
 - **Validation commands:** `uv sync --frozen`; `uv run ruff format --check backend`;
   `uv run ruff check backend`; `uv run pyright backend`;
   `uv run pytest backend/tests/unit`;
-  `docker compose up -d postgres fabricassist-api`;
+  `docker compose up -d fabricassist-postgres fabricassist-api`;
   `curl --fail http://localhost:8000/api/v1/health/live`.
 - **Acceptance criteria:** API container starts without insecure production
   defaults, health semantics are correct, OpenAPI is generated deterministically,
@@ -665,8 +657,8 @@ so retention work is not hidden inside human review or production hardening.
   default, path-style upload smoke, Valkey ping, PostgreSQL connection, clean
   reset/recreate.
 - **Validation commands:** `make up`; `docker compose ps`;
-  `docker compose exec postgres pg_isready`;
-  `docker compose exec valkey valkey-cli ping`;
+  `docker compose exec fabricassist-postgres pg_isready`;
+  `docker compose exec fabricassist-valkey valkey-cli ping`;
   MinIO health/API and bucket-policy checks; `make down`; local reset smoke.
 - **Acceptance criteria:** Fresh `.env` from `.env.example` starts without paid
   services; healthy services use documented ports; no public bucket; reset only
@@ -1303,7 +1295,7 @@ fetch a model or require a paid account.
 
 - `.env.example` contains safe local placeholders only; `.env` is ignored.
 - Application-owned variables use `FABRICASSIST_`, including:
-  `APP_ENV`, URLs/CORS, PostgreSQL, Valkey/Celery, object storage,
+  `FABRICASSIST_ENVIRONMENT`, URLs/CORS, PostgreSQL, Valkey/Celery, object storage,
   provider/model/timeout/concurrency, JWT/refresh hash keys, retention/upload
   limits, OTEL, and log level under that prefix.
 - `FABRICASSIST_VISION_PROVIDER=mock` is the local/default test value.
@@ -1329,7 +1321,7 @@ for example
 Keep dependency services running, then:
 
 ```bash
-uv run --project backend uvicorn fabricassist.main:app --reload --host 0.0.0.0 --port 8000
+uv run --project backend uvicorn fabricassist.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Use `FABRICASSIST_DATABASE_URL` and related `.env` settings pointing to Compose.
@@ -1341,7 +1333,7 @@ parity is always testable.
 After Phase 8:
 
 ```bash
-uv run --project backend celery --app fabricassist.workers.celery_app:app worker --loglevel=INFO
+uv run --project backend celery --app fabricassist.worker.celery_app:app worker --loglevel=INFO
 ```
 
 Do not use a production queue/database from a developer `.env`.
@@ -1424,11 +1416,11 @@ be a hidden part of `make down`.
 open http://localhost:9001
 
 # Valkey (never print secrets or full cached private content)
-docker compose exec valkey valkey-cli PING
-docker compose exec valkey valkey-cli --scan --pattern 'fabricassist:*'
+docker compose exec fabricassist-valkey valkey-cli PING
+docker compose exec fabricassist-valkey valkey-cli --scan --pattern 'fabricassist:*'
 
 # PostgreSQL
-docker compose exec postgres psql -U fabricassist -d fabricassist
+docker compose exec fabricassist-postgres psql -U fabricassist -d fabricassist
 
 # API health
 curl --fail http://localhost:8000/api/v1/health/live

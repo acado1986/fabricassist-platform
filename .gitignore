@@ -1,0 +1,35 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python (Phase 2 and later)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Node and Expo (Phase 3 and later)
+node_modules/
+.expo/
+.turbo/
+coverage/
+web-build/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local Docker and tool output
+*.log
+tmp/
