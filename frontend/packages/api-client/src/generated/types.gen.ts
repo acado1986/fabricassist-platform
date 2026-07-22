@@ -517,8 +517,10 @@ export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses = {
     /**
      * Successful Response
      */
-    200: unknown;
+    204: void;
 };
+
+export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponse = RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses[keyof RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses];
 
 export type ScanResultApiV1ScansScanIdResultGetData = {
     body?: never;

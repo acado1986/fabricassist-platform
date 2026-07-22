@@ -20,7 +20,11 @@ export function LanguageSelector(): ReactNode {
             accessibilityRole="radio"
             accessibilityState={{ selected }}
             onPress={() => setLocale(option)}
-            style={[styles.option, selected && styles.optionSelected]}
+            style={({ pressed }) => [
+              styles.option,
+              selected && styles.optionSelected,
+              pressed && styles.optionPressed,
+            ]}
           >
             <Text style={[styles.label, selected && styles.labelSelected]}>
               {option.toUpperCase()}
@@ -33,6 +37,8 @@ export function LanguageSelector(): ReactNode {
 }
 const styles = StyleSheet.create({
   group: {
+    borderColor: colors.border,
+    borderWidth: 1,
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.pill,
     flexDirection: 'row',
@@ -48,6 +54,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   optionSelected: { backgroundColor: colors.background },
+  optionPressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   label: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   labelSelected: { color: colors.primary },
 });

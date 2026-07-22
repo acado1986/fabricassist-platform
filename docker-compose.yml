@@ -199,12 +199,33 @@ services:
       MINIO_ROOT_PASSWORD: change-me-local-minio-test
     volumes:
       - fabricassist-minio-test-data:/data
+    ports:
+      - "${FABRICASSIST_MINIO_TEST_PORT:-9002}:9000"
     networks: [fabricassist-test-network]
     healthcheck:
       test: [CMD, mc, ready, local]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  fabricassist-minio-test-init:
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    profiles: [test]
+    depends_on:
+      fabricassist-minio-test:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: fabricassist-test
+      MINIO_ROOT_PASSWORD: change-me-local-minio-test
+      FABRICASSIST_S3_BUCKET: fabricassist-test
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - >-
+        mc alias set fabricassist-test http://fabricassist-minio-test:9000
+        "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" &&
+        mc mb --ignore-existing "fabricassist-test/$${FABRICASSIST_S3_BUCKET}" &&
+        mc anonymous set none "fabricassist-test/$${FABRICASSIST_S3_BUCKET}"
+    networks: [fabricassist-test-network]
 
 networks:
   fabricassist-network:

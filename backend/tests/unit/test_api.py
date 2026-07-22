@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from uuid import uuid4
+
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from fabricassist.api.main import create_app
-from fabricassist.api.routes.scans import CreateScanRequest
+from fabricassist.api.routes.scans import CreateScanRequest, ImageRequest
 from fabricassist.settings import Settings
 
 
@@ -81,3 +88,302 @@ def test_cors_preflight_accepts_analysis_idempotency_header() -> None:
 
 def test_draft_scan_request_has_no_embedded_images() -> None:
     assert CreateScanRequest().requested_language == "en"
+    with pytest.raises(ValidationError):
+        CreateScanRequest.model_validate(
+            {"requested_language": "en", "images": [{"kind": "garment"}]}
+        )
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        "garment_overview",
+        "care_label",
+        "composition_label",
+        "barcode_brand_label",
+        "stain_closeup",
+        "damage_closeup",
+        "construction_detail",
+        "other",
+    ],
+)
+def test_image_request_accepts_only_new_typed_roles(role: str) -> None:
+    request = ImageRequest.model_validate({"role": role, "content_type": "image/jpeg"})
+
+    assert request.role.value == role
+
+
+@pytest.mark.parametrize("legacy_role", ["garment", "label", "care-tag"])
+def test_image_request_rejects_legacy_roles(legacy_role: str) -> None:
+    with pytest.raises(ValidationError):
+        ImageRequest.model_validate({"role": legacy_role, "content_type": "image/jpeg"})
+
+
+class ImageLifecycleSession:
+    def __init__(self, responses: list[object | None]) -> None:
+        self.responses = responses
+        self.added: list[object] = []
+        self.committed = False
+
+    async def scalar(self, statement: object) -> object | None:
+        return self.responses.pop(0)
+
+    def add(self, value: object) -> None:
+        self.added.append(value)
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def delete(self, value: object) -> None:
+        self.added.append(value)
+
+
+class PresigningStorage:
+    def presign_put(self, *, key: str, content_type: str) -> tuple[str, dict[str, str], datetime]:
+        return "https://storage.invalid/upload", {"Content-Type": content_type}, datetime.now(UTC)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_image_request_reuses_image_without_persisting_a_url() -> None:
+    from fabricassist.api.routes.scans import ImageRequest, add_image
+    from fabricassist.domain.evidence import ImageRole
+    from fabricassist.infrastructure.persistence.models import (
+        IdempotencyRecord,
+        Scan,
+        ScanImage,
+        User,
+    )
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(), tenant_id=tenant_id, user_id=user.id, status="draft", requested_language="en"
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="care_label",
+        display_order=0,
+        object_key="private/test",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+    record = IdempotencyRecord(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        operation=f"scan-image:{scan.id}",
+        idempotency_key="repeat",
+        request_fingerprint="",
+        response_body={"image_id": str(image.id)},
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+    request = ImageRequest(role=ImageRole.CARE_LABEL, content_type="image/jpeg")
+    record.request_fingerprint = sha256(
+        json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()
+    ).hexdigest()
+    session = ImageLifecycleSession([scan, record, image])
+
+    response = await add_image(
+        scan.id,
+        request,
+        session,  # type: ignore[arg-type]
+        user,
+        PresigningStorage(),  # type: ignore[arg-type]
+        Settings(environment="test"),
+        "repeat",
+    )
+
+    assert response.image_id == image.id
+    assert response.role.value == "care_label"
+    assert session.added == []
+    assert not session.committed
+
+
+@pytest.mark.asyncio
+async def test_image_creation_uses_configured_limit_and_persists_one_photo() -> None:
+    from fastapi import HTTPException
+
+    from fabricassist.api.routes.scans import add_image
+    from fabricassist.domain.evidence import ImageRole
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(), tenant_id=tenant_id, user_id=user.id, status="draft", requested_language="en"
+    )
+    request = ImageRequest(role=ImageRole.STAIN_CLOSEUP, content_type="image/jpeg", display_order=4)
+    session = ImageLifecycleSession([scan, 0, 0])
+
+    response = await add_image(
+        scan.id,
+        request,
+        session,  # type: ignore[arg-type]
+        user,
+        PresigningStorage(),  # type: ignore[arg-type]
+        Settings(environment="test", max_images_per_scan=1),
+        None,
+    )
+
+    image = next(value for value in session.added if isinstance(value, ScanImage))
+    assert response.image_id == image.id
+    assert image.role == "stain_closeup"
+    assert image.display_order == 4
+    assert session.committed
+
+    full_session = ImageLifecycleSession([scan, 1, 0])
+    with pytest.raises(HTTPException, match="Maximum image count"):
+        await add_image(
+            scan.id,
+            request,
+            full_session,  # type: ignore[arg-type]
+            user,
+            PresigningStorage(),  # type: ignore[arg-type]
+            Settings(environment="test", max_images_per_scan=1),
+            None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_image_removal_keeps_database_reference_when_object_deletion_fails() -> None:
+    from fabricassist.api.routes.scans import remove_image
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    class FailingStorage:
+        def delete_object(self, key: str) -> None:
+            raise OSError("storage unavailable")
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="uploading",
+        requested_language="en",
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="care_label",
+        display_order=0,
+        object_key="private/test",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+    session = ImageLifecycleSession([scan, image])
+
+    with pytest.raises(OSError, match="storage unavailable"):
+        await remove_image(
+            scan.id,
+            image.id,
+            session,  # type: ignore[arg-type]
+            user,
+            FailingStorage(),  # type: ignore[arg-type]
+        )
+
+    assert session.added == []
+    assert not session.committed
+
+
+@pytest.mark.asyncio
+async def test_other_tenant_cannot_access_scan() -> None:
+    from fastapi import HTTPException
+
+    from fabricassist.api.routes.scans import owned_scan
+    from fabricassist.infrastructure.persistence.models import User
+
+    user = User(id=uuid4(), tenant_id=uuid4(), email="customer@example.com", password_hash="x" * 32)
+    session = ImageLifecycleSession([None])
+
+    with pytest.raises(HTTPException) as error:
+        await owned_scan(session, user, uuid4())  # type: ignore[arg-type]
+
+    assert error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_incomplete_upload_cannot_be_analysed() -> None:
+    from fastapi import HTTPException
+
+    from fabricassist.api.routes.scans import request_analysis
+    from fabricassist.infrastructure.persistence.models import Scan, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="uploading",
+        requested_language="en",
+    )
+    session = ImageLifecycleSession([scan, 0])
+
+    with pytest.raises(HTTPException, match="Complete at least one image") as error:
+        await request_analysis(scan.id, session, user)  # type: ignore[arg-type]
+
+    assert error.value.status_code == 409
+    assert not session.committed
+
+
+@pytest.mark.asyncio
+async def test_completed_image_can_be_removed_with_private_object_cleanup() -> None:
+    from fabricassist.api.routes.scans import remove_image
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    class DeletingStorage:
+        def __init__(self) -> None:
+            self.keys: list[str] = []
+
+        def delete_object(self, key: str) -> None:
+            self.keys.append(key)
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="uploading",
+        requested_language="en",
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="care_label",
+        display_order=0,
+        object_key="private/test/completed",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        completed_at=datetime.now(UTC),
+    )
+    session = ImageLifecycleSession([scan, image])
+    storage = DeletingStorage()
+
+    response = await remove_image(
+        scan.id,
+        image.id,
+        session,  # type: ignore[arg-type]
+        user,
+        storage,  # type: ignore[arg-type]
+    )
+
+    assert response.status_code == 204
+    assert storage.keys == [image.object_key]
+    assert session.added == [image]
+    assert session.committed

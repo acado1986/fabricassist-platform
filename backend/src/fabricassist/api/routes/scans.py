@@ -3,34 +3,42 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.domain.evidence import ImageRole
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
+    IdempotencyRecord,
     RenderedAnswer,
     Scan,
     ScanImage,
     User,
 )
 from fabricassist.infrastructure.storage.s3 import S3Storage
+from fabricassist.settings import Settings
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
 Mime = Literal["image/jpeg", "image/png", "image/webp"]
 
 
 class CreateScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     requested_language: Literal["en", "es"] = "en"
 
 
 class ImageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     role: ImageRole
     content_type: Mime
     display_order: int = Field(default=0, ge=0)
@@ -82,6 +90,10 @@ async def get_storage() -> S3Storage:
     raise RuntimeError("Storage dependency was not configured.")
 
 
+async def get_settings() -> Settings:
+    raise RuntimeError("Settings dependency was not configured.")
+
+
 async def owned_scan(session: AsyncSession, user: User, scan_id: UUID) -> Scan:
     scan = await session.scalar(
         select(Scan).where(
@@ -118,11 +130,47 @@ async def add_image(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     storage: Annotated[S3Storage, Depends(get_storage)],
+    settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> UploadInstruction:
     scan = await owned_scan(session, user, scan_id)
     if scan.status not in {"draft", "uploading"}:
         raise HTTPException(409, "Images cannot be added after analysis begins.")
+    fingerprint = hashlib.sha256(
+        json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()
+    ).hexdigest()
+    operation = f"scan-image:{scan.id}"
+    if idempotency_key:
+        existing = await session.scalar(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.tenant_id == user.tenant_id,
+                IdempotencyRecord.operation == operation,
+                IdempotencyRecord.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            if existing.request_fingerprint != fingerprint:
+                raise HTTPException(409, "Idempotency key was already used for another request.")
+            image_id = UUID(str((existing.response_body or {}).get("image_id", "")))
+            image = await session.scalar(
+                select(ScanImage).where(
+                    ScanImage.id == image_id,
+                    ScanImage.scan_id == scan.id,
+                    ScanImage.tenant_id == user.tenant_id,
+                )
+            )
+            if image is None:
+                raise HTTPException(409, "Idempotency record no longer has an active image.")
+            url, headers, expires = storage.presign_put(
+                key=image.object_key, content_type=request.content_type
+            )
+            return UploadInstruction(
+                image_id=image.id,
+                role=ImageRole(image.role),
+                url=url,
+                headers=headers,
+                expires_at=expires,
+            )
     completed = (
         await session.scalar(
             select(func.count())
@@ -139,7 +187,7 @@ async def add_image(
         )
         or 0
     )
-    if completed + pending >= 8:
+    if completed + pending >= settings.max_images_per_scan:
         raise HTTPException(422, "Maximum image count reached.")
     image_id = uuid4()
     key = f"private/{user.tenant_id}/{scan.id}/{image_id}/original"
@@ -156,6 +204,20 @@ async def add_image(
     session.add(image)
     url, headers, expires = storage.presign_put(key=key, content_type=request.content_type)
     image.upload_expires_at = expires
+    if idempotency_key:
+        session.add(
+            IdempotencyRecord(
+                id=uuid4(),
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                operation=operation,
+                idempotency_key=idempotency_key,
+                request_fingerprint=fingerprint,
+                response_status=201,
+                response_body={"image_id": str(image.id)},
+                expires_at=expires,
+            )
+        )
     scan.status = "uploading"
     await session.commit()
     return UploadInstruction(
@@ -163,14 +225,19 @@ async def add_image(
     )
 
 
-@router.delete("/{scan_id}/images/{image_id}", status_code=200, response_class=Response)
+@router.delete(
+    "/{scan_id}/images/{image_id}",
+    status_code=204,
+    response_class=Response,
+    response_model=None,
+)
 async def remove_image(
     scan_id: UUID,
     image_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     storage: Annotated[S3Storage, Depends(get_storage)],
-) -> None:
+) -> Response:
     await owned_scan(session, user, scan_id)
     image = await session.scalar(
         select(ScanImage).where(
@@ -181,15 +248,15 @@ async def remove_image(
     )
     if image is None:
         raise HTTPException(404, "Image was not found.")
-    try:
-        storage.delete_object(image.object_key)
-    except Exception:
-        pass
+    storage.delete_object(image.object_key)
     await session.delete(image)
     await session.commit()
+    return Response(status_code=204)
 
 
 class CompleteUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     image_id: UUID
     content_type: Mime
 

@@ -1,5 +1,12 @@
 import type { ReactNode } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 
 import { LanguageSelector } from './LanguageSelector';
@@ -17,6 +24,8 @@ export function FoundationShell({
   wide?: boolean;
 }): ReactNode {
   const { translate } = useTranslation();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 640;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -24,7 +33,7 @@ export function FoundationShell({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, isCompact && styles.topBarCompact]}>
           <View style={styles.brandRow}>
             <View style={styles.mark} accessibilityElementsHidden>
               <Text style={styles.markText}>FA</Text>
@@ -68,6 +77,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
     width: '100%',
+  },
+  topBarCompact: {
+    alignItems: 'flex-start',
+    flexDirection: 'column',
+    gap: spacing.medium,
   },
   brandRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   mark: {

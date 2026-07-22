@@ -155,7 +155,13 @@ async def analyse_scan(
         session.add(revision)
         await session.flush()
         for image in images:
-            session.add(RevisionImage(revision_id=revision.id, image_id=image.id))
+            session.add(
+                RevisionImage(
+                    tenant_id=scan.tenant_id,
+                    revision_id=revision.id,
+                    image_id=image.id,
+                )
+            )
         provider = get_vision_provider(settings)
         extracted = await provider.extract_evidence(normalized)
         dossier = merge_evidence(None, extracted.delta)
@@ -169,14 +175,16 @@ async def analyse_scan(
         planner = MockCarePlanningProvider()
         proposal = await planner.propose_plan(dossier)
         report = validate_care_plan(dossier, proposal)
+        retried = False
         if report.repairable and report.outcome == ValidationOutcome.BLOCKED:
+            retried = True
             proposal = await planner.propose_plan(dossier, tuple(report.violations))
             report = validate_care_plan(dossier, proposal)
         plan = ProposedPlan(
             id=uuid4(),
             tenant_id=scan.tenant_id,
             analysis_revision_id=revision.id,
-            retry_number=1 if report.repairable else 0,
+            retry_number=1 if retried else 0,
             payload=proposal.model_dump(mode="json"),
         )
         session.add(plan)

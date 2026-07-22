@@ -113,6 +113,7 @@ def create_app(
     app.dependency_overrides[scans.get_session] = get_session
     app.dependency_overrides[scans.get_current_user] = get_current_user
     app.dependency_overrides[scans.get_storage] = get_storage
+    app.dependency_overrides[scans.get_settings] = get_settings
     app.include_router(auth.router)
     app.include_router(scans.router)
 

@@ -110,8 +110,9 @@ idempotency checks against the isolated Compose PostgreSQL service.
 After `make up`, the API includes:
 
 - health endpoints under `/api/v1/health/`;
-- authenticated scan creation with either image upload (and an optional second
-  image), upload completion, `POST /api/v1/scans/{id}/analyse`, polling, and
+- authenticated draft scan creation, typed multi-photo collection (up to
+  `FABRICASSIST_MAX_IMAGES_PER_SCAN`, default eight), upload completion,
+  `POST /api/v1/scans/{id}/analyse`, polling, and
   `GET /api/v1/scans/{id}/result`.
 
 All HTTP failures use a stable JSON error envelope and return an
@@ -125,10 +126,10 @@ pnpm --dir frontend --filter fabricassist-app start
 pnpm --dir frontend --filter fabricassist-app web
 ```
 
-The shell supplies registration, login, camera-first image capture, image-library
-upload, processing polling, and localized result screens. The care-label field is
-shown first because it provides the most detailed evidence, but either field can
-start a scan.
+The shell supplies registration, login, camera-first multi-photo capture,
+image-library fallback, reordering/removal, processing polling, and localized
+rich result screens. Repeated roles are supported; photographed care-label
+evidence remains authoritative.
 Set `FABRICASSIST_API_PUBLIC_URL` in `.env` for a non-local API host before
 building a client.
 

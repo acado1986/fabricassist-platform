@@ -27,7 +27,39 @@ export const en = {
     haveAccount: 'Already have an account?',
     scanTitle: 'Add a garment or care label photo',
     scanDescription:
-      'Choose either photo. Include both when available for richer context.',
+      'Add up to eight photos. Start with the camera and add label or condition details as needed.',
+    imageCount: 'Photos: {count} of {maximum}',
+    addPhoto: 'Add photo',
+    addFromLibrary: 'Choose from library',
+    removePhoto: 'Remove photo {number}',
+    movePhotoEarlier: 'Move photo {number} earlier',
+    movePhotoLater: 'Move photo {number} later',
+    photoPreview: 'Preview of photo {number}',
+    photoRole: 'Photo role',
+    imageLimitReached: 'You can add up to eight photos.',
+    selectPhotoRole:
+      'Choose the photo type before taking or selecting a photo.',
+    garmentOverviewRole: 'Garment overview',
+    garmentOverviewGuidance:
+      'Show the full garment and its visible construction.',
+    careLabelRole: 'Care label',
+    careLabelGuidance:
+      'Keep all text and symbols in frame; avoid glare and blur.',
+    compositionLabelRole: 'Composition label',
+    compositionLabelGuidance: 'Capture fibre names and percentages clearly.',
+    barcodeBrandLabelRole: 'Barcode or brand label',
+    barcodeBrandLabelGuidance:
+      'Capture the complete barcode and any model or brand text.',
+    stainCloseupRole: 'Stain close-up',
+    stainCloseupGuidance:
+      'Use even light and include surrounding fabric for scale.',
+    damageCloseupRole: 'Damage close-up',
+    damageCloseupGuidance: 'Show the damage and nearby fabric detail.',
+    constructionDetailRole: 'Construction detail',
+    constructionDetailGuidance:
+      'Capture seams, trims, coatings, or other relevant details.',
+    otherRole: 'Other evidence',
+    otherGuidance: 'Add any detail that may affect safe care.',
     careLabelPhoto: 'CARE LABEL PHOTO',
     garmentPhoto: 'GARMENT PHOTO',
     takePhoto: 'Take photo',

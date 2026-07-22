@@ -42,9 +42,12 @@ migrate: ## Apply the Alembic schema baseline through the API Compose service.
 seed: ## Seed the idempotent non-loginable development tenant and admin.
 	docker compose exec -T fabricassist-api python /app/scripts/seed.py
 
-migration-test: ## Run Alembic integration tests against the isolated Compose PostgreSQL service.
-	docker compose --profile test up -d fabricassist-postgres-test
+migration-test: ## Run Alembic/storage integration tests against isolated Compose services.
+	docker compose --profile test up -d fabricassist-postgres-test fabricassist-minio-test fabricassist-minio-test-init
 	@until docker compose exec -T fabricassist-postgres-test pg_isready -U fabricassist_test -d fabricassist_test >/dev/null 2>&1; do sleep 1; done
+	@container_id=$$(docker compose ps -aq fabricassist-minio-test-init); \
+	until [ "$$(docker inspect -f '{{.State.Status}}' $$container_id)" = "exited" ]; do sleep 1; done; \
+	test "$$(docker inspect -f '{{.State.ExitCode}}' $$container_id)" = "0"
 	cd backend && FABRICASSIST_TEST_DATABASE_URL=postgresql://fabricassist_test:change-me-local-postgres-test@localhost:$${FABRICASSIST_POSTGRES_TEST_PORT:-5433}/fabricassist_test uv run pytest tests/integration
 
 test: ## Run foundation checks plus backend and frontend unit tests.

@@ -2,3 +2,7 @@ node_modules/
 .expo/
 dist/
 packages/api-client/src/generated/
+apps/client/android/.gradle/
+apps/client/android/build/
+apps/client/android/app/.cxx/
+apps/client/android/app/build/

@@ -9,6 +9,12 @@ applied history:
 - `20260721_0002` adds refresh rotation and direct-upload lifecycle fields.
 - `20260721_0003` adds asynchronous analysis state plus `model_runs`,
   `label_extractions`, `care_results`, and `rendered_answers`.
+- `20260722_0004` is the destructive Phases 10–13 cutover: it replaces legacy
+  two-photo metadata and extraction/result rows with revision-owned images,
+  evidence dossiers, proposals, validation reports, results, and rendered answers.
+- `20260722_0005` persists the constrained proposal retry count.
+- `20260722_0006` aligns revision-owned rendered answers with the ORM timestamp
+  required for auditable result history.
 
 Never edit those migrations to implement the approved redesign. Phase 10 of
 `IMPLEMENTATION_PLAN.md` must add a new revision after current head. The cutover
@@ -27,8 +33,10 @@ make migration-test
 
 `make migrate` and `make seed` run inside `fabricassist-api` so the service-name
 PostgreSQL URL works without exposing credentials in application commands.
-`make migration-test` uses the isolated `fabricassist-postgres-test` Compose
-service and `FABRICASSIST_POSTGRES_TEST_PORT` (default `5433`).
+`make migration-test` uses isolated PostgreSQL and MinIO Compose services. The
+database is exposed on `FABRICASSIST_POSTGRES_TEST_PORT` (default `5433`) and
+the private test bucket is initialized on `FABRICASSIST_MINIO_TEST_PORT`
+(default `9002`) before the real storage/worker integration test runs.
 
 ## Storage constraints
 
@@ -41,9 +49,9 @@ service and `FABRICASSIST_POSTGRES_TEST_PORT` (default `5433`).
   store image bytes or presigned URLs.
 - `scans.version` is the optimistic-concurrency counter for later workflows.
 
-## Planned expansion
+## Current garment-intelligence core
 
-The approved architecture adds:
+The current cutover adds:
 
 - multi-photo repeated roles and per-image declared/detected role/order;
 - physical `garments` separated from `product_profiles`;
@@ -54,11 +62,9 @@ The approved architecture adds:
 - conversation threads, messages, versioned summaries, revision references, and
   validation metadata.
 
-The current unique constraints on one `label_extractions.scan_id` and one
-`care_results.scan_id` are legacy v1 constraints. Replace them through a new
-migration after revision-aware uniqueness/indexes exist. Retained data may be
-transformed into revision-owned rows, after which the obsolete narrow result
-shape and constraints are removed. No old-schema read/write fallback remains.
+The former one-extraction/one-result-per-scan constraints were removed by the
+cutover migration. Retained data is transformed into revision-owned rows; no
+old-schema read/write fallback remains.
 
 All new tenant-owned rows require explicit `tenant_id`, UUID identifiers, UTC
 timestamps, ownership indexes, and deletion/retention behavior. Stable identity
@@ -66,9 +72,8 @@ and care facts remain separate from timestamped stains, damage, wear, and other
 condition observations. `analysed_before` comes from analysis history;
 `cleaned_before` requires a confirmed performed/completed service event.
 
-The downgrade removes only this baseline and its extensions. It is intended for
-empty and test databases, not a production rollback strategy after later schema
-revisions exist.
+The 0004 downgrade deliberately raises rather than restoring the deleted legacy
+schema. It is not a production rollback strategy after the destructive cutover.
 
 The development seed creates `fabricassist-development` and
 `admin@fabricassist.local`. Its authentication marker is intentionally not a

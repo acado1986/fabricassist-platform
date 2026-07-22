@@ -166,8 +166,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 52,
     paddingHorizontal: spacing.large,
+    shadowColor: colors.primary,
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  primaryButtonPressed: { backgroundColor: colors.primaryPressed },
+  primaryButtonPressed: {
+    backgroundColor: colors.primaryPressed,
+    transform: [{ translateY: 1 }],
+  },
   primaryButtonText: {
     color: colors.background,
     fontSize: 16,

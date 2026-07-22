@@ -26,6 +26,7 @@
         "type": "object"
       },
       "CompleteUploadRequest": {
+        "additionalProperties": false,
         "properties": {
           "content_type": {
             "enum": [
@@ -50,6 +51,7 @@
         "type": "object"
       },
       "CreateScanRequest": {
+        "additionalProperties": false,
         "properties": {
           "requested_language": {
             "default": "en",
@@ -118,6 +120,7 @@
         "type": "object"
       },
       "ImageRequest": {
+        "additionalProperties": false,
         "properties": {
           "content_type": {
             "enum": [
@@ -838,7 +841,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "204": {
             "description": "Successful Response"
           },
           "422": {

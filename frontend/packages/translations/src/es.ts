@@ -30,7 +30,40 @@ export const es: TranslationCatalog = {
     haveAccount: '¿Ya tienes una cuenta?',
     scanTitle: 'Añade una foto de la prenda o de la etiqueta',
     scanDescription:
-      'Elige cualquiera de las dos. Incluye ambas si las tienes para aportar más contexto.',
+      'Añade hasta ocho fotos. Empieza con la cámara y añade detalles de etiquetas o estado cuando sea necesario.',
+    imageCount: 'Fotos: {count} de {maximum}',
+    addPhoto: 'Añadir foto',
+    addFromLibrary: 'Elegir de la biblioteca',
+    removePhoto: 'Eliminar foto {number}',
+    movePhotoEarlier: 'Mover la foto {number} antes',
+    movePhotoLater: 'Mover la foto {number} después',
+    photoPreview: 'Vista previa de la foto {number}',
+    photoRole: 'Tipo de foto',
+    imageLimitReached: 'Puedes añadir hasta ocho fotos.',
+    selectPhotoRole: 'Elige el tipo de foto antes de hacerla o seleccionarla.',
+    garmentOverviewRole: 'Vista general de la prenda',
+    garmentOverviewGuidance:
+      'Muestra la prenda completa y sus detalles de confección visibles.',
+    careLabelRole: 'Etiqueta de cuidado',
+    careLabelGuidance:
+      'Incluye todo el texto y los símbolos; evita reflejos y desenfoques.',
+    compositionLabelRole: 'Etiqueta de composición',
+    compositionLabelGuidance:
+      'Captura claramente los nombres y porcentajes de fibras.',
+    barcodeBrandLabelRole: 'Código de barras o etiqueta de marca',
+    barcodeBrandLabelGuidance:
+      'Captura el código completo y cualquier texto de modelo o marca.',
+    stainCloseupRole: 'Primer plano de la mancha',
+    stainCloseupGuidance:
+      'Usa luz uniforme e incluye tela alrededor para dar escala.',
+    damageCloseupRole: 'Primer plano del daño',
+    damageCloseupGuidance: 'Muestra el daño y el detalle de tela cercano.',
+    constructionDetailRole: 'Detalle de confección',
+    constructionDetailGuidance:
+      'Captura costuras, adornos, revestimientos u otros detalles relevantes.',
+    otherRole: 'Otra evidencia',
+    otherGuidance:
+      'Añade cualquier detalle que pueda afectar al cuidado seguro.',
     careLabelPhoto: 'FOTO DE LA ETIQUETA',
     garmentPhoto: 'FOTO DE LA PRENDA',
     takePhoto: 'Hacer foto',
