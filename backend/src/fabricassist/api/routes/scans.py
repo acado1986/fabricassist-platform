@@ -1,4 +1,5 @@
-"""Tenant-protected direct upload endpoints for Phase 7."""
+"""Breaking revision-aware scan image collection API."""
+# pyright: reportUnknownMemberType=false
 
 from __future__ import annotations
 
@@ -6,17 +7,14 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.application.analysis import TEMPLATE_VERSION, render_result
-from fabricassist.application.vision import LabelExtractionPayload
-from fabricassist.domain.care import confirmed_care_evidence
+from fabricassist.domain.evidence import ImageRole
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
-    LabelExtraction,
     RenderedAnswer,
     Scan,
     ScanImage,
@@ -25,51 +23,39 @@ from fabricassist.infrastructure.persistence.models import (
 from fabricassist.infrastructure.storage.s3 import S3Storage
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
-
-
-class CreateScanImageRequest(BaseModel):
-    kind: Literal["garment", "care_label"]
-    content_type: Literal["image/jpeg", "image/png", "image/webp"]
+Mime = Literal["image/jpeg", "image/png", "image/webp"]
 
 
 class CreateScanRequest(BaseModel):
-    images: list[CreateScanImageRequest] = Field(min_length=1, max_length=2)
     requested_language: Literal["en", "es"] = "en"
 
-    @model_validator(mode="after")
-    def require_distinct_image_roles(self) -> CreateScanRequest:
-        roles = [image.kind for image in self.images]
-        if len(set(roles)) != len(roles):
-            raise ValueError("Provide at most one image for each role.")
-        return self
+
+class ImageRequest(BaseModel):
+    role: ImageRole
+    content_type: Mime
+    display_order: int = Field(default=0, ge=0)
 
 
 class UploadInstruction(BaseModel):
-    upload_id: UUID
-    kind: Literal["garment", "care_label"]
+    image_id: UUID
+    role: ImageRole
     url: str
     headers: dict[str, str]
     expires_at: datetime
-
-
-class CreateScanResponse(BaseModel):
-    scan_id: UUID
-    status: str
-    uploads: list[UploadInstruction]
-
-
-class CompleteUploadRequest(BaseModel):
-    upload_id: UUID
-    content_type: Literal["image/jpeg", "image/png", "image/webp"]
 
 
 class ScanResponse(BaseModel):
     scan_id: UUID
     status: str
     images_completed: int
-    progress_percent: int = 0
+    progress_percent: int
     analysis_stage: str | None = None
     error_code: str | None = None
+
+
+class CreateScanResponse(BaseModel):
+    scan_id: UUID
+    status: str
 
 
 class AnalysisResponse(BaseModel):
@@ -81,7 +67,7 @@ class AnalysisResponse(BaseModel):
 class ResultResponse(BaseModel):
     scan_id: UUID
     status: str
-    answer: dict[str, object]
+    result: dict[str, object]
 
 
 async def get_session() -> AsyncSession:
@@ -96,55 +82,116 @@ async def get_storage() -> S3Storage:
     raise RuntimeError("Storage dependency was not configured.")
 
 
+async def owned_scan(session: AsyncSession, user: User, scan_id: UUID) -> Scan:
+    scan = await session.scalar(
+        select(Scan).where(
+            Scan.id == scan_id, Scan.tenant_id == user.tenant_id, Scan.user_id == user.id
+        )
+    )
+    if scan is None:
+        raise HTTPException(404, "Scan was not found.")
+    return scan
+
+
 @router.post("", response_model=CreateScanResponse, status_code=201)
 async def create_scan(
     request: CreateScanRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[S3Storage, Depends(get_storage)],
 ) -> CreateScanResponse:
     scan = Scan(
         id=uuid4(),
         tenant_id=user.tenant_id,
         user_id=user.id,
-        status="uploading",
+        status="draft",
         requested_language=request.requested_language,
     )
     session.add(scan)
-    await session.flush()
-    uploads: list[UploadInstruction] = []
-    for requested_image in request.images:
-        image_id = uuid4()
-        object_key = f"tenants/{user.tenant_id}/scans/{scan.id}/images/{image_id}"
-        image = ScanImage(
-            id=image_id,
-            tenant_id=user.tenant_id,
-            scan_id=scan.id,
-            kind=requested_image.kind,
-            object_key=object_key,
-            upload_token=uuid4(),
-            upload_expires_at=datetime.now(UTC),
-        )
-        session.add(image)
-        url, headers, expires_at = storage.presign_put(
-            key=object_key, content_type=requested_image.content_type
-        )
-        image.upload_expires_at = expires_at
-        uploads.append(
-            UploadInstruction(
-                upload_id=image.upload_token,
-                kind=requested_image.kind,
-                url=url,
-                headers=headers,
-                expires_at=expires_at,
-            )
-        )
     await session.commit()
-    return CreateScanResponse(
-        scan_id=scan.id,
-        status=scan.status,
-        uploads=uploads,
+    return CreateScanResponse(scan_id=scan.id, status=scan.status)
+
+
+@router.post("/{scan_id}/images", response_model=UploadInstruction, status_code=201)
+async def add_image(
+    scan_id: UUID,
+    request: ImageRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[S3Storage, Depends(get_storage)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> UploadInstruction:
+    scan = await owned_scan(session, user, scan_id)
+    if scan.status not in {"draft", "uploading"}:
+        raise HTTPException(409, "Images cannot be added after analysis begins.")
+    completed = (
+        await session.scalar(
+            select(func.count())
+            .select_from(ScanImage)
+            .where(ScanImage.scan_id == scan.id, ScanImage.completed_at.is_not(None))
+        )
+        or 0
     )
+    pending = (
+        await session.scalar(
+            select(func.count())
+            .select_from(ScanImage)
+            .where(ScanImage.scan_id == scan.id, ScanImage.completed_at.is_(None))
+        )
+        or 0
+    )
+    if completed + pending >= 8:
+        raise HTTPException(422, "Maximum image count reached.")
+    image_id = uuid4()
+    key = f"private/{user.tenant_id}/{scan.id}/{image_id}/original"
+    image = ScanImage(
+        id=image_id,
+        tenant_id=user.tenant_id,
+        scan_id=scan.id,
+        role=request.role.value,
+        display_order=request.display_order,
+        object_key=key,
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC),
+    )
+    session.add(image)
+    url, headers, expires = storage.presign_put(key=key, content_type=request.content_type)
+    image.upload_expires_at = expires
+    scan.status = "uploading"
+    await session.commit()
+    return UploadInstruction(
+        image_id=image.id, role=request.role, url=url, headers=headers, expires_at=expires
+    )
+
+
+@router.delete("/{scan_id}/images/{image_id}", status_code=200, response_class=Response)
+async def remove_image(
+    scan_id: UUID,
+    image_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[S3Storage, Depends(get_storage)],
+) -> None:
+    await owned_scan(session, user, scan_id)
+    image = await session.scalar(
+        select(ScanImage).where(
+            ScanImage.id == image_id,
+            ScanImage.scan_id == scan_id,
+            ScanImage.tenant_id == user.tenant_id,
+        )
+    )
+    if image is None:
+        raise HTTPException(404, "Image was not found.")
+    try:
+        storage.delete_object(image.object_key)
+    except Exception:
+        pass
+    await session.delete(image)
+    await session.commit()
+
+
+class CompleteUploadRequest(BaseModel):
+    image_id: UUID
+    content_type: Mime
 
 
 @router.post("/{scan_id}/uploads/complete", response_model=ScanResponse)
@@ -155,31 +202,20 @@ async def complete_upload(
     user: Annotated[User, Depends(get_current_user)],
     storage: Annotated[S3Storage, Depends(get_storage)],
 ) -> ScanResponse:
+    scan = await owned_scan(session, user, scan_id)
     image = await session.scalar(
-        select(ScanImage).where(
-            ScanImage.scan_id == scan_id,
-            ScanImage.tenant_id == user.tenant_id,
-            ScanImage.upload_token == request.upload_id,
-        )
+        select(ScanImage).where(ScanImage.id == request.image_id, ScanImage.scan_id == scan.id)
     )
     if image is None:
-        raise HTTPException(status_code=404, detail="Upload was not found.")
-    if image.completed_at is not None:
-        return await scan_detail(scan_id, session, user)
-    if image.upload_expires_at < datetime.now(UTC):
-        raise HTTPException(status_code=400, detail="Upload instruction expired.")
-    try:
+        raise HTTPException(404, "Image was not found.")
+    if image.completed_at is None:
         metadata = storage.verify_image(image.object_key, request.content_type)
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    image.mime_type, image.byte_size, image.width, image.height = (
-        metadata.content_type,
-        metadata.byte_size,
-        metadata.width,
-        metadata.height,
-    )
-    image.completed_at = datetime.now(UTC)
-    await session.commit()
+        image.mime_type = metadata.content_type
+        image.byte_size = metadata.byte_size
+        image.width = metadata.width
+        image.height = metadata.height
+        image.completed_at = datetime.now(UTC)
+        await session.commit()
     return await scan_detail(scan_id, session, user)
 
 
@@ -190,40 +226,26 @@ async def request_analysis(
     user: Annotated[User, Depends(get_current_user)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnalysisResponse:
-    """Queue the operation once; worker delivery is idempotent through persisted scan state."""
-    scan = await session.scalar(
-        select(Scan).where(Scan.id == scan_id, Scan.tenant_id == user.tenant_id)
-    )
-    if scan is None:
-        raise HTTPException(status_code=404, detail="Scan was not found.")
-    completed_kinds = set(
-        (
-            await session.scalars(
-                select(ScanImage.kind).where(
-                    ScanImage.scan_id == scan.id, ScanImage.completed_at.is_not(None)
-                )
-            )
-        ).all()
-    )
-    if not completed_kinds:
-        raise HTTPException(
-            status_code=409,
-            detail="Complete at least one image before analysis.",
+    scan = await owned_scan(session, user, scan_id)
+    count = (
+        await session.scalar(
+            select(func.count())
+            .select_from(ScanImage)
+            .where(ScanImage.scan_id == scan.id, ScanImage.completed_at.is_not(None))
         )
-    operation_key = idempotency_key or f"scan:{scan.id}"
-    if scan.analysis_operation_key not in (None, operation_key):
-        raise HTTPException(
-            status_code=409, detail="A different analysis operation already exists."
-        )
-    scan.analysis_operation_key = operation_key
-    if scan.status not in {"processing", "completed", "needs_review", "needs_better_image"}:
-        scan.status, scan.analysis_stage, scan.progress_percent = "queued", "queued", 0
+        or 0
+    )
+    if not count:
+        raise HTTPException(409, "Complete at least one image before analysis.")
+    key = idempotency_key or f"scan:{scan.id}"
+    scan.analysis_operation_key = key
+    scan.status = "queued"
+    scan.analysis_stage = "queued"
     await session.commit()
-    if scan.status == "queued":
-        from fabricassist.worker.celery_app import celery_app
+    from fabricassist.worker.celery_app import celery_app
 
-        celery_app.send_task("fabricassist.analyse_scan", args=[str(scan.id)])  # pyright: ignore[reportUnknownMemberType]
-    return AnalysisResponse(scan_id=scan.id, status=scan.status, operation_key=operation_key)
+    celery_app.send_task("fabricassist.analyse_scan", args=[str(scan.id)])
+    return AnalysisResponse(scan_id=scan.id, status=scan.status, operation_key=key)
 
 
 @router.get("/{scan_id}", response_model=ScanResponse)
@@ -232,20 +254,19 @@ async def scan_detail(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> ScanResponse:
-    scan = await session.scalar(
-        select(Scan).where(Scan.id == scan_id, Scan.tenant_id == user.tenant_id)
-    )
-    if scan is None:
-        raise HTTPException(status_code=404, detail="Scan was not found.")
-    completed = await session.scalar(
-        select(func.count())
-        .select_from(ScanImage)
-        .where(ScanImage.scan_id == scan.id, ScanImage.completed_at.is_not(None))
+    scan = await owned_scan(session, user, scan_id)
+    completed = (
+        await session.scalar(
+            select(func.count())
+            .select_from(ScanImage)
+            .where(ScanImage.scan_id == scan.id, ScanImage.completed_at.is_not(None))
+        )
+        or 0
     )
     return ScanResponse(
         scan_id=scan.id,
         status=scan.status,
-        images_completed=completed or 0,
+        images_completed=completed,
         progress_percent=scan.progress_percent,
         analysis_stage=scan.analysis_stage,
         error_code=scan.analysis_error_code,
@@ -259,46 +280,19 @@ async def scan_result(
     user: Annotated[User, Depends(get_current_user)],
     language: Literal["en", "es"] = "en",
 ) -> ResultResponse:
-    scan = await session.scalar(
-        select(Scan).where(Scan.id == scan_id, Scan.tenant_id == user.tenant_id)
-    )
-    if scan is None:
-        raise HTTPException(status_code=404, detail="Scan was not found.")
-    result = await session.scalar(select(CareResult).where(CareResult.scan_id == scan.id))
+    scan = await owned_scan(session, user, scan_id)
+    if scan.active_result_id is None:
+        raise HTTPException(409, "Analysis result is not available yet.")
+    result = await session.get(CareResult, scan.active_result_id)
     if result is None:
-        raise HTTPException(status_code=409, detail="Analysis result is not available yet.")
+        raise HTTPException(409, "Analysis result is not available yet.")
     rendered = await session.scalar(
         select(RenderedAnswer).where(
-            RenderedAnswer.care_result_id == result.id,
-            RenderedAnswer.language == language,
-            RenderedAnswer.template_version == TEMPLATE_VERSION,
+            RenderedAnswer.care_result_id == result.id, RenderedAnswer.language == language
         )
     )
-    if rendered is None:
-        rendered = RenderedAnswer(
-            tenant_id=scan.tenant_id,
-            care_result_id=result.id,
-            language=language,
-            template_version=TEMPLATE_VERSION,
-            answer=render_result(
-                _canonical_data_for_rendering(
-                    result, await session.get(LabelExtraction, result.extraction_id)
-                ),
-                language,
-            ),
-        )
-        session.add(rendered)
-        await session.commit()
-    return ResultResponse(scan_id=scan.id, status=result.status, answer=rendered.answer)
-
-
-def _canonical_data_for_rendering(
-    result: CareResult, extraction: LabelExtraction | None
-) -> dict[str, object]:
-    """Backfill opt-in partial evidence for results created before care-rule v3."""
-    canonical = dict(result.canonical_data)
-    if result.status != "needs_review" or canonical.get("confirmed_evidence") or extraction is None:
-        return canonical
-    payload = LabelExtractionPayload.model_validate(extraction.validated_data)
-    canonical["confirmed_evidence"] = confirmed_care_evidence(payload)
-    return canonical
+    return ResultResponse(
+        scan_id=scan.id,
+        status=result.status,
+        result=rendered.answer if rendered else result.canonical_data,
+    )

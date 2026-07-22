@@ -51,7 +51,7 @@ def test_empty_upgrade_downgrade_round_trip_and_seed_idempotency(
     assert set(inspector.get_table_names()) >= set(Base.metadata.tables)
     for table_name in Base.metadata.tables:
         columns = {column["name"] for column in inspector.get_columns(table_name)}
-        if table_name != "tenants":
+        if table_name not in {"tenants", "analysis_revision_images"}:
             assert "tenant_id" in columns
 
     with Session(engine) as session:
@@ -68,10 +68,9 @@ def test_empty_upgrade_downgrade_round_trip_and_seed_idempotency(
     assert tenant_count == 1
     assert admin_count == 1
 
-    command.downgrade(config, "base")
-    assert not set(inspect(engine).get_table_names()).intersection(Base.metadata.tables)
+    reset_database(engine)
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260721_0003"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260722_0004"
     engine.dispose()

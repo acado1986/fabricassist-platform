@@ -148,6 +148,9 @@ class Scan(Base):
     analysis_lease_expires_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     analysis_error_code: Mapped[str | None] = mapped_column(String(100))
     analysis_stage: Mapped[str | None] = mapped_column(String(100))
+    garment_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    active_analysis_revision_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    active_result_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -161,7 +164,14 @@ class ScanImage(Base):
 
     __tablename__ = "scan_images"
     __table_args__ = (
-        CheckConstraint("kind IN ('garment', 'care_label', 'other')", name="ck_scan_images_kind"),
+        CheckConstraint(
+            (
+                "role IN ('garment_overview','care_label','composition_label',"
+                "'barcode_brand_label','stain_closeup','damage_closeup',"
+                "'construction_detail','other')"
+            ),
+            name="ck_scan_images_role",
+        ),
         CheckConstraint("byte_size > 0 OR byte_size IS NULL", name="ck_scan_images_byte_size"),
         CheckConstraint("width > 0 OR width IS NULL", name="ck_scan_images_width"),
         CheckConstraint("height > 0 OR height IS NULL", name="ck_scan_images_height"),
@@ -177,7 +187,9 @@ class ScanImage(Base):
     scan_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
     )
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    detected_role: Mapped[str | None] = mapped_column(String(32))
     object_key: Mapped[str] = mapped_column(Text, nullable=False)
     upload_token: Mapped[UUID] = mapped_column(Uuid, nullable=False, unique=True, default=uuid4)
     upload_expires_at: Mapped[datetime] = mapped_column(UtcTimestamp, nullable=False)
@@ -255,82 +267,161 @@ class RulesetVersion(Base):
     )
 
 
-class ModelRun(Base):
-    """Safe audit metadata for one provider invocation; private prompt/image bodies are excluded."""
-
-    __tablename__ = "model_runs"
-    __table_args__ = (Index("ix_model_runs_tenant_scan", "tenant_id", "scan_id"),)
-
+class Garment(Base):
+    __tablename__ = "garments"
+    __table_args__ = (Index("ix_garments_tenant_id", "tenant_id"),)
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
-    scan_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("scans.id", ondelete="CASCADE"))
-    provider: Mapped[str] = mapped_column(String(100), nullable=False)
-    model: Mapped[str] = mapped_column(String(200), nullable=False)
-    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
-    schema_version: Mapped[str] = mapped_column(String(50), nullable=False)
-    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    latency_ms: Mapped[int | None] = mapped_column(Integer)
-    input_tokens: Mapped[int | None] = mapped_column(Integer)
-    output_tokens: Mapped[int | None] = mapped_column(Integer)
-    estimated_cost_usd_micros: Mapped[int | None] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(30), nullable=False)
-    error_code: Mapped[str | None] = mapped_column(String(100))
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
+    active_analysis_revision_id: Mapped[UUID | None] = mapped_column(Uuid)
+    active_result_id: Mapped[UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
 
 
-class LabelExtraction(Base):
-    """Validated language-independent extraction facts and original visible text."""
-
-    __tablename__ = "label_extractions"
+class AnalysisRevision(Base):
+    __tablename__ = "analysis_revisions"
     __table_args__ = (
-        UniqueConstraint("scan_id", name="uq_label_extractions_scan"),
-        Index("ix_label_extractions_tenant_id", "tenant_id"),
+        UniqueConstraint("scan_id", "revision_number", name="uq_analysis_revisions_scan_number"),
+        Index("ix_analysis_revisions_tenant_id", "tenant_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    garment_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="SET NULL")
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersedes_revision_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="processing")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
     )
 
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
-    scan_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("scans.id", ondelete="CASCADE"))
-    model_run_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("model_runs.id", ondelete="SET NULL")
+
+class RevisionImage(Base):
+    __tablename__ = "analysis_revision_images"
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
     )
-    original_text: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
-    validated_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), primary_key=True
+    )
+    image_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scan_images.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class ModelRun(Base):
+    __tablename__ = "model_runs"
+    __table_args__ = (Index("ix_model_runs_tenant_scan", "tenant_id", "scan_id"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class EvidenceDossier(Base):
+    __tablename__ = "garment_evidence_dossiers"
+    __table_args__ = (
+        UniqueConstraint("analysis_revision_id", name="uq_evidence_dossiers_revision"),
+        Index("ix_evidence_dossiers_tenant_id", "tenant_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class ProposedPlan(Base):
+    __tablename__ = "proposed_care_plans"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    retry_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class ValidationReport(Base):
+    __tablename__ = "care_validation_reports"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    proposed_plan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("proposed_care_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
 
 
 class CareResult(Base):
-    """Canonical deterministic care outcome; no provider prose is stored here."""
-
     __tablename__ = "care_results"
     __table_args__ = (
-        UniqueConstraint("scan_id", name="uq_care_results_scan"),
+        UniqueConstraint("analysis_revision_id", name="uq_care_results_revision"),
         Index("ix_care_results_tenant_id", "tenant_id"),
     )
-
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
-    scan_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("scans.id", ondelete="CASCADE"))
-    extraction_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("label_extractions.id", ondelete="SET NULL")
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
     )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    dossier_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garment_evidence_dossiers.id", ondelete="RESTRICT"), nullable=False
+    )
+    proposed_plan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("proposed_care_plans.id", ondelete="RESTRICT"), nullable=False
+    )
+    validation_report_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("care_validation_reports.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
     canonical_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    rules_version: Mapped[str] = mapped_column(String(50), nullable=False)
-    detergent_rules_version: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[str] = mapped_column(String(30), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
 
 
 class RenderedAnswer(Base):
-    """Durable localized rendering of a canonical result."""
-
     __tablename__ = "rendered_answers"
     __table_args__ = (
         UniqueConstraint(
@@ -339,13 +430,13 @@ class RenderedAnswer(Base):
             "template_version",
             name="uq_rendered_answers_result_language_template",
         ),
-        Index("ix_rendered_answers_tenant_id", "tenant_id"),
     )
-
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"))
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
     care_result_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("care_results.id", ondelete="CASCADE")
+        Uuid, ForeignKey("care_results.id", ondelete="CASCADE"), nullable=False
     )
     language: Mapped[str] = mapped_column(String(2), nullable=False)
     template_version: Mapped[str] = mapped_column(String(50), nullable=False)

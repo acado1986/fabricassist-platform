@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     s3_force_path_style: bool = True
     upload_max_bytes: int = Field(default=12 * 1024 * 1024, ge=1)
     upload_url_minutes: int = Field(default=10, ge=1, le=60)
+    max_images_per_scan: int = Field(default=8, ge=1, le=20)
     analysis_lease_minutes: int = Field(default=5, ge=1, le=30)
     vision_provider: Literal["mock", "openai_compatible", "openai_responses", "azure_openai"] = (
         "mock"

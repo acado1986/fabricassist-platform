@@ -10,114 +10,113 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
-
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { getApiBaseUrl } from '../../config/environment';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
-type Answer = {
-  title: string;
-  summary: string;
-  actions: string[];
-  prohibitions: string[];
-  professional_only?: string[];
-  detergent?: string;
-  uncertainties: string[];
-  confirmed_evidence?: string[];
-  can_continue?: boolean;
+type Source = {
+  kind: string;
+  image_id: string;
+  fact: string;
+  permission: string;
+  temperature_c: number | null;
 };
-
+type RichResult = {
+  title: string;
+  validation_state: string;
+  warnings: string[];
+  violations: string[];
+  sources: Source[];
+  preparation: string[];
+  stain_guidance: string[];
+  cleaning: { method: string; maximum_temperature_c: number | null };
+  detergent: string;
+  drying: string[];
+  ironing: string[];
+  professional_care: string[];
+  prohibitions: string[];
+  uncertainties: string[];
+  follow_up_questions: string[];
+  actionable: boolean;
+};
 export default function Result(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
   const { token } = useSession();
   const { locale, translate } = useTranslation();
-  const [answer, setAnswer] = useState<Answer | null>(null);
+  const [result, setResult] = useState<RichResult>();
   const [failed, setFailed] = useState(false);
-  const [showPartialEvidence, setShowPartialEvidence] = useState(false);
-
   useEffect(() => {
     if (!scanId || !token) return;
     void fetch(
       `${getApiBaseUrl()}/api/v1/scans/${scanId}/result?language=${locale}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
+      { headers: { Authorization: `Bearer ${token}` } },
     )
-      .then(async (response) => {
-        if (!response.ok) throw new Error('RESULT_UNAVAILABLE');
-        return response.json() as Promise<{ answer: Answer }>;
-      })
-      .then((payload) => setAnswer(payload.answer))
+      .then((r) =>
+        r.ok ? (r.json() as Promise<{ result: RichResult }>) : Promise.reject(),
+      )
+      .then((v) => setResult(v.result))
       .catch(() => setFailed(true));
   }, [locale, scanId, token]);
-
   return (
     <FoundationShell
       title={translate('resultTitle')}
       description={translate('resultDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
-        {!answer && !failed ? (
+        {!result && !failed ? (
           <ActivityIndicator color={colors.primary} />
         ) : null}
-        {!answer && !failed ? (
-          <Text style={styles.muted}>{translate('resultLoading')}</Text>
-        ) : null}
-        {failed ? (
-          <Text style={styles.error}>{translate('resultUnavailable')}</Text>
-        ) : null}
-        {answer ? (
+        {failed ? <Text>{translate('resultUnavailable')}</Text> : null}
+        {result ? (
           <>
-            <Text style={styles.answerTitle}>{answer.title}</Text>
-            <Text style={styles.summary}>{answer.summary}</Text>
-            {answer.can_continue && !showPartialEvidence ? (
-              <View style={styles.continuePanel}>
-                <Text style={styles.continueQuestion}>
-                  {translate('resultContinueQuestion')}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setShowPartialEvidence(true)}
-                  style={styles.continueButton}
-                >
-                  <Text style={styles.continueButtonText}>
-                    {translate('resultContinuePartial')}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-            {showPartialEvidence ? (
-              <>
-                <Section
-                  title={translate('resultPartialEvidence')}
-                  values={answer.confirmed_evidence ?? []}
-                />
-                <Text style={styles.partialNotice}>
-                  {translate('resultPartialNotice')}
-                </Text>
-              </>
-            ) : null}
+            <Text accessibilityRole="header" style={styles.title}>
+              {result.title}
+            </Text>
             <Section
-              title={translate('resultActions')}
-              values={answer.actions}
+              title={translate('richValidation')}
+              values={[result.validation_state]}
+            />
+            <Section
+              title={translate('richWarnings')}
+              values={[...result.warnings, ...result.violations]}
+            />
+            <Section
+              title={translate('richPreparation')}
+              values={result.preparation}
+            />
+            <Section
+              title={translate('richStain')}
+              values={result.stain_guidance}
+            />
+            <Section
+              title={translate('richCleaning')}
+              values={[
+                `${result.cleaning.method}${result.cleaning.maximum_temperature_c ? ` · ${result.cleaning.maximum_temperature_c} °C` : ''}`,
+                result.detergent,
+              ]}
             />
             <Section
               title={translate('resultProhibitions')}
-              values={answer.prohibitions}
+              values={result.prohibitions}
               warning
             />
+            <Section title={translate('richDrying')} values={result.drying} />
+            <Section title={translate('richIroning')} values={result.ironing} />
             <Section
-              title={translate('resultProfessional')}
-              values={answer.professional_only ?? []}
+              title={translate('richProfessional')}
+              values={result.professional_care}
             />
             <Section
-              title={translate('resultDetergent')}
-              values={answer.detergent ? [answer.detergent] : []}
+              title={translate('richSources')}
+              values={result.sources.map(
+                (s) =>
+                  `${s.kind}: ${s.fact} · ${s.permission}${s.temperature_c ? ` · ${s.temperature_c} °C` : ''}`,
+              )}
             />
             <Section
-              title={translate('resultUncertainties')}
-              values={answer.uncertainties}
+              title={translate('richUncertainty')}
+              values={[...result.uncertainties, ...result.follow_up_questions]}
             />
           </>
         ) : null}
@@ -126,13 +125,12 @@ export default function Result(): ReactNode {
           onPress={() => router.replace('/scan')}
           style={styles.button}
         >
-          <Text style={styles.buttonText}>{translate('backToScan')}</Text>
+          <Text>{translate('backToScan')}</Text>
         </Pressable>
       </ScrollView>
     </FoundationShell>
   );
 }
-
 function Section({
   title,
   values,
@@ -142,62 +140,31 @@ function Section({
   values: string[];
   warning?: boolean;
 }): ReactNode {
-  if (values.length === 0) return null;
+  if (!values.length) return null;
   return (
     <View style={[styles.section, warning && styles.warning]}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {values.map((value, index) => (
-        <Text key={`${title}-${value}-${index}`} style={styles.value}>
-          • {value}
-        </Text>
+      <Text style={styles.heading}>{title}</Text>
+      {values.map((value, i) => (
+        <Text key={`${title}-${i}`}>• {value}</Text>
       ))}
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   content: { gap: spacing.medium },
-  muted: { color: colors.muted, textAlign: 'center' },
-  error: { color: colors.danger, textAlign: 'center' },
-  answerTitle: { color: colors.text, fontSize: 20, fontWeight: '800' },
-  summary: { color: colors.muted, lineHeight: 21 },
+  title: { fontSize: 22, fontWeight: '800', color: colors.text },
   section: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.medium,
-    gap: 6,
-    padding: spacing.medium,
-  },
-  warning: { backgroundColor: '#FFF5F3' },
-  sectionTitle: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  continuePanel: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.medium,
     gap: spacing.small,
     padding: spacing.medium,
-  },
-  continueQuestion: { color: colors.text, lineHeight: 21 },
-  continueButton: {
-    alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radii.medium,
-    justifyContent: 'center',
-    minHeight: 50,
   },
-  continueButtonText: { color: colors.background, fontWeight: '800' },
-  partialNotice: { color: colors.muted, fontSize: 13, lineHeight: 19 },
-  value: { color: colors.text, lineHeight: 21 },
+  warning: { backgroundColor: colors.dangerSoft },
+  heading: { fontWeight: '800', color: colors.primary },
   button: {
-    alignItems: 'center',
-    borderColor: colors.primary,
+    padding: spacing.medium,
     borderRadius: radii.medium,
     borderWidth: 1,
-    minHeight: 50,
-    justifyContent: 'center',
+    borderColor: colors.primary,
   },
-  buttonText: { color: colors.primary, fontWeight: '800' },
 });

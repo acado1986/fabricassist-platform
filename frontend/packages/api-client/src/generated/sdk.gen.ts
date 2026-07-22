@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
+import type { AddImageApiV1ScansScanIdImagesPostData, AddImageApiV1ScansScanIdImagesPostErrors, AddImageApiV1ScansScanIdImagesPostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -85,10 +85,25 @@ export const scanDetailApiV1ScansScanIdGet = <ThrowOnError extends boolean = fal
 
 /**
  * Request Analysis
- *
- * Queue the operation once; worker delivery is idempotent through persisted scan state.
  */
 export const requestAnalysisApiV1ScansScanIdAnalysePost = <ThrowOnError extends boolean = false>(options: Options<RequestAnalysisApiV1ScansScanIdAnalysePostData, ThrowOnError>) => (options.client ?? client).post<RequestAnalysisApiV1ScansScanIdAnalysePostResponses, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/analyse', ...options });
+
+/**
+ * Add Image
+ */
+export const addImageApiV1ScansScanIdImagesPost = <ThrowOnError extends boolean = false>(options: Options<AddImageApiV1ScansScanIdImagesPostData, ThrowOnError>) => (options.client ?? client).post<AddImageApiV1ScansScanIdImagesPostResponses, AddImageApiV1ScansScanIdImagesPostErrors, ThrowOnError>({
+    url: '/api/v1/scans/{scan_id}/images',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove Image
+ */
+export const removeImageApiV1ScansScanIdImagesImageIdDelete = <ThrowOnError extends boolean = false>(options: Options<RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/images/{image_id}', ...options });
 
 /**
  * Scan Result

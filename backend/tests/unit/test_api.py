@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from fabricassist.api.main import create_app
-from fabricassist.api.routes.scans import CreateScanImageRequest, CreateScanRequest
+from fabricassist.api.routes.scans import CreateScanRequest
 from fabricassist.settings import Settings
 
 
@@ -81,36 +79,5 @@ def test_cors_preflight_accepts_analysis_idempotency_header() -> None:
     assert "idempotency-key" in response.headers["access-control-allow-headers"].lower()
 
 
-def test_scan_accepts_either_image_role_and_rejects_duplicates() -> None:
-    request = CreateScanRequest(
-        images=[
-            CreateScanImageRequest(kind="care_label", content_type="image/png"),
-            CreateScanImageRequest(kind="garment", content_type="image/jpeg"),
-        ]
-    )
-
-    assert {image.kind for image in request.images} == {"garment", "care_label"}
-    assert (
-        CreateScanRequest(
-            images=[CreateScanImageRequest(kind="care_label", content_type="image/jpeg")]
-        )
-        .images[0]
-        .kind
-        == "care_label"
-    )
-    assert (
-        CreateScanRequest(
-            images=[CreateScanImageRequest(kind="garment", content_type="image/jpeg")]
-        )
-        .images[0]
-        .kind
-        == "garment"
-    )
-
-    with pytest.raises(ValidationError):
-        CreateScanRequest(
-            images=[
-                CreateScanImageRequest(kind="garment", content_type="image/jpeg"),
-                CreateScanImageRequest(kind="garment", content_type="image/png"),
-            ]
-        )
+def test_draft_scan_request_has_no_embedded_images() -> None:
+    assert CreateScanRequest().requested_language == "en"

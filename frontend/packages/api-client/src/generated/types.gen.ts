@@ -31,33 +31,15 @@ export type CompleteUploadRequest = {
      */
     content_type: 'image/jpeg' | 'image/png' | 'image/webp';
     /**
-     * Upload Id
+     * Image Id
      */
-    upload_id: string;
-};
-
-/**
- * CreateScanImageRequest
- */
-export type CreateScanImageRequest = {
-    /**
-     * Content Type
-     */
-    content_type: 'image/jpeg' | 'image/png' | 'image/webp';
-    /**
-     * Kind
-     */
-    kind: 'garment' | 'care_label';
+    image_id: string;
 };
 
 /**
  * CreateScanRequest
  */
 export type CreateScanRequest = {
-    /**
-     * Images
-     */
-    images: Array<CreateScanImageRequest>;
     /**
      * Requested Language
      */
@@ -76,10 +58,6 @@ export type CreateScanResponse = {
      * Status
      */
     status: string;
-    /**
-     * Uploads
-     */
-    uploads: Array<UploadInstruction>;
 };
 
 /**
@@ -107,13 +85,33 @@ export type HttpValidationError = {
 };
 
 /**
+ * ImageRequest
+ */
+export type ImageRequest = {
+    /**
+     * Content Type
+     */
+    content_type: 'image/jpeg' | 'image/png' | 'image/webp';
+    /**
+     * Display Order
+     */
+    display_order?: number;
+    role: ImageRole;
+};
+
+/**
+ * ImageRole
+ */
+export type ImageRole = 'garment_overview' | 'care_label' | 'composition_label' | 'barcode_brand_label' | 'stain_closeup' | 'damage_closeup' | 'construction_detail' | 'other';
+
+/**
  * ResultResponse
  */
 export type ResultResponse = {
     /**
-     * Answer
+     * Result
      */
-    answer: {
+    result: {
         [key: string]: unknown;
     };
     /**
@@ -145,7 +143,7 @@ export type ScanResponse = {
     /**
      * Progress Percent
      */
-    progress_percent?: number;
+    progress_percent: number;
     /**
      * Scan Id
      */
@@ -189,13 +187,10 @@ export type UploadInstruction = {
         [key: string]: string;
     };
     /**
-     * Kind
+     * Image Id
      */
-    kind: 'garment' | 'care_label';
-    /**
-     * Upload Id
-     */
-    upload_id: string;
+    image_id: string;
+    role: ImageRole;
     /**
      * Url
      */
@@ -456,6 +451,74 @@ export type RequestAnalysisApiV1ScansScanIdAnalysePostResponses = {
 };
 
 export type RequestAnalysisApiV1ScansScanIdAnalysePostResponse = RequestAnalysisApiV1ScansScanIdAnalysePostResponses[keyof RequestAnalysisApiV1ScansScanIdAnalysePostResponses];
+
+export type AddImageApiV1ScansScanIdImagesPostData = {
+    body: ImageRequest;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/images';
+};
+
+export type AddImageApiV1ScansScanIdImagesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddImageApiV1ScansScanIdImagesPostError = AddImageApiV1ScansScanIdImagesPostErrors[keyof AddImageApiV1ScansScanIdImagesPostErrors];
+
+export type AddImageApiV1ScansScanIdImagesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: UploadInstruction;
+};
+
+export type AddImageApiV1ScansScanIdImagesPostResponse = AddImageApiV1ScansScanIdImagesPostResponses[keyof AddImageApiV1ScansScanIdImagesPostResponses];
+
+export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+        /**
+         * Image Id
+         */
+        image_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/images/{image_id}';
+};
+
+export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteError = RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors[keyof RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors];
+
+export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type ScanResultApiV1ScansScanIdResultGetData = {
     body?: never;

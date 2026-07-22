@@ -36,57 +36,21 @@
             "title": "Content Type",
             "type": "string"
           },
-          "upload_id": {
+          "image_id": {
             "format": "uuid",
-            "title": "Upload Id",
+            "title": "Image Id",
             "type": "string"
           }
         },
         "required": [
-          "upload_id",
+          "image_id",
           "content_type"
         ],
         "title": "CompleteUploadRequest",
         "type": "object"
       },
-      "CreateScanImageRequest": {
-        "properties": {
-          "content_type": {
-            "enum": [
-              "image/jpeg",
-              "image/png",
-              "image/webp"
-            ],
-            "title": "Content Type",
-            "type": "string"
-          },
-          "kind": {
-            "enum": [
-              "garment",
-              "care_label"
-            ],
-            "title": "Kind",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "content_type"
-        ],
-        "title": "CreateScanImageRequest",
-        "type": "object"
-      },
       "CreateScanRequest": {
         "properties": {
-          "images": {
-            "items": {
-              "$ref": "#/components/schemas/CreateScanImageRequest"
-            },
-            "maxItems": 2,
-            "minItems": 1,
-            "title": "Images",
-            "type": "array"
-          },
           "requested_language": {
             "default": "en",
             "enum": [
@@ -97,9 +61,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "images"
-        ],
         "title": "CreateScanRequest",
         "type": "object"
       },
@@ -113,19 +74,11 @@
           "status": {
             "title": "Status",
             "type": "string"
-          },
-          "uploads": {
-            "items": {
-              "$ref": "#/components/schemas/UploadInstruction"
-            },
-            "title": "Uploads",
-            "type": "array"
           }
         },
         "required": [
           "scan_id",
-          "status",
-          "uploads"
+          "status"
         ],
         "title": "CreateScanResponse",
         "type": "object"
@@ -164,11 +117,53 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ImageRequest": {
+        "properties": {
+          "content_type": {
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp"
+            ],
+            "title": "Content Type",
+            "type": "string"
+          },
+          "display_order": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Display Order",
+            "type": "integer"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ImageRole"
+          }
+        },
+        "required": [
+          "role",
+          "content_type"
+        ],
+        "title": "ImageRequest",
+        "type": "object"
+      },
+      "ImageRole": {
+        "enum": [
+          "garment_overview",
+          "care_label",
+          "composition_label",
+          "barcode_brand_label",
+          "stain_closeup",
+          "damage_closeup",
+          "construction_detail",
+          "other"
+        ],
+        "title": "ImageRole",
+        "type": "string"
+      },
       "ResultResponse": {
         "properties": {
-          "answer": {
+          "result": {
             "additionalProperties": true,
-            "title": "Answer",
+            "title": "Result",
             "type": "object"
           },
           "scan_id": {
@@ -184,7 +179,7 @@
         "required": [
           "scan_id",
           "status",
-          "answer"
+          "result"
         ],
         "title": "ResultResponse",
         "type": "object"
@@ -218,7 +213,6 @@
             "type": "integer"
           },
           "progress_percent": {
-            "default": 0,
             "title": "Progress Percent",
             "type": "integer"
           },
@@ -235,7 +229,8 @@
         "required": [
           "scan_id",
           "status",
-          "images_completed"
+          "images_completed",
+          "progress_percent"
         ],
         "title": "ScanResponse",
         "type": "object"
@@ -283,18 +278,13 @@
             "title": "Headers",
             "type": "object"
           },
-          "kind": {
-            "enum": [
-              "garment",
-              "care_label"
-            ],
-            "title": "Kind",
+          "image_id": {
+            "format": "uuid",
+            "title": "Image Id",
             "type": "string"
           },
-          "upload_id": {
-            "format": "uuid",
-            "title": "Upload Id",
-            "type": "string"
+          "role": {
+            "$ref": "#/components/schemas/ImageRole"
           },
           "url": {
             "title": "Url",
@@ -302,8 +292,8 @@
           }
         },
         "required": [
-          "upload_id",
-          "kind",
+          "image_id",
+          "role",
           "url",
           "headers",
           "expires_at"
@@ -696,7 +686,6 @@
     },
     "/api/v1/scans/{scan_id}/analyse": {
       "post": {
-        "description": "Queue the operation once; worker delivery is idempotent through persisted scan state.",
         "operationId": "request_analysis_api_v1_scans__scan_id__analyse_post",
         "parameters": [
           {
@@ -749,6 +738,121 @@
           }
         },
         "summary": "Request Analysis",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/images": {
+      "post": {
+        "operationId": "add_image_api_v1_scans__scan_id__images_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadInstruction"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Image",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/images/{image_id}": {
+      "delete": {
+        "operationId": "remove_image_api_v1_scans__scan_id__images__image_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Image",
         "tags": [
           "scans"
         ]

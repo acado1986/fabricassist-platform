@@ -75,3 +75,7 @@ The development seed creates `fabricassist-development` and
 usable credential; Phase 6 will replace it with real credential handling.
 
 For browser direct uploads, configure `FABRICASSIST_S3_PUBLIC_ENDPOINT_URL` to a browser-reachable MinIO/S3 URL; the API continues to use the internal `FABRICASSIST_S3_ENDPOINT_URL` for verification.
+
+## Breaking cutover rollback
+
+Migration `20260722_0004` is intentionally forward-only for retained data. It removes the legacy two-photo/extraction/result structures and does **not** recreate them on downgrade. Use a matching pre-cutover database backup plus the prior application release for an operational rollback; use forward fixes after the cutover is active.

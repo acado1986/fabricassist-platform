@@ -99,3 +99,7 @@ class S3Storage:
         return cast(
             bytes, self._client.get_object(Bucket=self._settings.s3_bucket, Key=key)["Body"].read()
         )
+
+    def delete_object(self, key: str) -> None:
+        """Delete a private object; callers retain retry/audit responsibility."""
+        self._client.delete_object(Bucket=self._settings.s3_bucket, Key=key)
