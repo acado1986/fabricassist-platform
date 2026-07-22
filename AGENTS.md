@@ -4,7 +4,7 @@
 
 This file contains repository-wide instructions for coding agents working on **FabricAssist**.
 
-FabricAssist analyses garment and care-label images and returns safe cleaning instructions. A vision-capable model extracts structured facts; deterministic Python rules produce the authoritative care decision.
+FabricAssist analyses multiple garment, label, condition, and barcode images and returns safe cleaning instructions. Vision-capable models extract structured evidence and may propose a typed care plan; deterministic, versioned Python validators decide whether every safety-relevant proposal may be released.
 
 ## Sources of truth
 
@@ -51,11 +51,14 @@ Naming rules:
 
 ## Project principles
 
-- The LLM extracts facts; it does not make the final care decision.
-- All model output must be validated by strict Pydantic schemas.
-- Final cleaning instructions must come from deterministic, versioned Python rules.
+- The LLM extracts structured evidence and may propose a typed care plan; free-form prose is never the sole authority for an actionable instruction.
+- All extraction, planning, and actionable chat output must be validated by strict Pydantic schemas.
+- Final cleaning instructions must pass deterministic, versioned Python validation before release.
+- Deterministic validators accept, warn, block, or route a proposal to review; they do not silently invent a replacement recommendation.
 - The label overrides material-based or generic recommendations.
+- Photographed label evidence overrides external product-catalog information.
 - Missing, contradictory, or low-confidence evidence must produce uncertainty, a better-image request, or human review.
+- Preserve durable garment identity, evidence revisions, conversations, and service history in PostgreSQL; do not confuse a product model with one physical garment.
 - PostgreSQL is the authoritative system of record.
 - Valkey is transient infrastructure and must not be the sole store for completed business data.
 - Images belong in private S3-compatible object storage, not PostgreSQL.
@@ -143,6 +146,12 @@ For every task:
 9. Update documentation when commands, configuration, behavior, schemas, or architecture change.
 10. Report what changed, validations run, and any remaining limitations.
 
+The garment-intelligence redesign is an intentional breaking cutover. Do not add
+compatibility shims, dual read/write behavior, deprecated image roles, legacy
+result fields, or fallback execution through the old two-photo/narrow
+`decide_care()` path. Update backend, OpenAPI/generated client, Expo UI, tests,
+fixtures, and documentation atomically for each replacement slice.
+
 Do not leave placeholder behavior presented as complete. Clearly mark intentionally deferred code with a linked issue or a specific TODO explaining the missing behavior.
 
 ## Initial implementation order
@@ -155,11 +164,13 @@ Follow the commit sequence in `docs/architecture.md` unless the task says otherw
 4. Authentication vertical slice
 5. Upload vertical slice
 6. Async analysis skeleton
-7. Care domain
-8. Real vision-provider adapter
-9. Caching
-10. Review and deletion
-11. Production readiness
+7. Multi-photo evidence and analysis revisions
+8. AI care planning and deterministic validation
+9. Rich results and multilingual rendering
+10. Garment identity, history, and product lookup
+11. Contextual conversation
+12. Caching, review, and deletion
+13. Production readiness
 
 Each step must leave the repository runnable and tests passing.
 
@@ -256,6 +267,10 @@ The domain layer may use standard-library modules and explicitly approved small 
 - Add a new migration instead.
 - Migrations must work on an empty database and on the previous supported schema.
 - Prefer expand/migrate/contract changes when rollback compatibility matters.
+- For the approved garment-intelligence cutover, use a new migration after the
+  current head to transform any retained data and then remove obsolete legacy
+  constraints/columns/tables. Do not preserve old API or code paths for mixed
+  client versions.
 - Include indexes, constraints, enum/check strategies, and downgrade behavior intentionally.
 
 ### Jobs
@@ -273,32 +288,45 @@ The domain layer may use standard-library modules and explicitly approved small 
 These rules are mandatory:
 
 1. Never use model prose as the authoritative care result.
-2. Require structured model output validated by Pydantic.
-3. Preserve visible label text in its original language.
-4. Normalize meaning into language-independent care codes.
-5. Record unknown fields explicitly; do not infer missing symbols.
-6. Store provider, model, prompt version, schema version, latency, token usage when available, and estimated cost.
-7. Keep provider selection configurable.
-8. Support an OpenAI-compatible HTTP adapter, but do not couple domain code to one provider.
-9. Never recommend professional cleaning solvents for consumer home use.
-10. Never recommend detergent when domestic water washing is prohibited.
-11. Do not claim washing or dry cleaning is permitted from a garment-only photograph.
-12. Force review for contradictions, low-confidence prohibitions, leather, suede, fur, or other configured sensitive cases.
-13. Version prompts, schemas, image normalization, rules, translations, signatures, and cache keys.
+2. Require structured extraction, proposed-plan, and actionable-chat output validated by Pydantic.
+3. Release a proposed care plan only after it passes the active deterministic validator version.
+4. A validator may accept, warn, block, or request review, but must not silently rewrite a rejected plan into a different recommendation.
+5. At most one constrained AI retry may use machine-readable validation violations; a second failure requires review or a better image.
+6. Preserve visible label text in its original language.
+7. Normalize meaning into language-independent care codes.
+8. Record unknown fields explicitly; do not infer missing symbols.
+9. Store provider, model, operation, prompt version, schema version, latency, token usage when available, and estimated cost.
+10. Keep evidence, planning, chat, and product-information providers configurable behind ports.
+11. Support an OpenAI-compatible HTTP adapter, but do not couple domain code to one provider.
+12. Never recommend professional cleaning solvents for consumer home use.
+13. Never recommend detergent when domestic water washing is prohibited.
+14. Do not claim washing or dry cleaning is permitted from a garment-only photograph.
+15. Treat visual stain identity as a hypothesis unless the user or verified evidence identifies it; never guarantee stain removal.
+16. Force review for contradictions, low-confidence prohibitions, leather, suede, fur, or other configured sensitive cases.
+17. Treat barcode, brand, model, catalog, and web information as sourced product evidence, not physical-garment proof.
+18. Never fetch an arbitrary QR/barcode URL without URL validation, outbound-network policy, and SSRF protection.
+19. Apply the same validation gate to safety-relevant chat claims as to the initial plan.
+20. Version prompts, schemas, image normalization, validation policies, translations, signatures, context summaries, and cache keys.
 
-### Deterministic rules
+### Deterministic validation
 
-- Care rules and detergent rules belong in versioned repository assets and Python domain code.
-- Rule changes require regression tests.
-- Activated rule versions are immutable.
+- Care-validation and detergent-validation policies belong in versioned repository assets and Python domain code.
+- Policy changes require regression tests.
+- Activated validator versions are immutable.
+- Validation runs against the complete merged evidence and proposal, even when only new images were extracted incrementally.
 - The order of authority is:
 
 ```text
 explicit care-label instruction
     > normalized label symbol
+    > exact verified manufacturer data for the matching variant
+    > verified product-catalog data
     > material-specific recommendation
     > generic advice
 ```
+
+- A catalog conflict never weakens a photographed prohibition.
+- A rejected proposal is not customer-visible as an approved action.
 
 ### Language handling
 
@@ -325,6 +353,12 @@ Requirements:
 - Valkey may accelerate reads but must not be the only persistent cache record for validated results.
 - Semantic similarity must never override contradictory safety facts.
 - Prohibition fields, temperatures, care processes, and rules versions must match before reusing a candidate.
+- Garment memory is a durable domain feature, not a Valkey cache: store physical garments, product profiles, identifiers, evidence revisions, conversations, and service events in PostgreSQL.
+- Distinguish `analysed_before` from `cleaned_before`; only a confirmed performed-service event may claim that cleaning occurred.
+- A retail barcode or brand/model match identifies a product candidate, not a unique physical garment. Prefer a FabricAssist QR/serial or explicit user confirmation for exact instance linking.
+- Exact identifiers may link automatically; probable, product-level, or visual matches require confirmation and must remain tenant/user scoped.
+- Incremental analysis may extract only new images, but it must merge immutable/superseding observations and revalidate the full active plan.
+- Conversation context is server-owned in PostgreSQL. Use a versioned structured dossier, rolling summary, and recent messages; do not rely solely on provider-side conversation state.
 - Engram is not part of the MVP architecture.
 
 ## Object-storage rules
@@ -362,6 +396,10 @@ SecureSession.web.ts
 - Make mobile touch targets accessible and web layouts keyboard accessible.
 - Show clear image-retake guidance for blur, crop, glare, and insufficient resolution.
 - Do not present provisional garment-only guidance as definitive.
+- Support multiple photos and repeated roles for garment overview, care label, composition label, barcode/brand label, stain, damage, construction detail, and other evidence.
+- Show product-catalog facts with source, match level, and retrieval time, and distinguish them from photographed or inferred facts.
+- Require confirmation before linking a probable repeated garment, and show separate analysed-before and cleaned-before history.
+- Keep contextual chat tied to the active garment/evidence revision and clearly distinguish validated actions, hypotheses, and unanswered questions.
 
 ## API contract and generated code
 
@@ -479,6 +517,11 @@ Maintain versioned fixtures for:
 - Dry-clean-only and do-not-dry-clean cases.
 - Wool, silk, technical fabrics, leather, and suede.
 - Unknown symbols and unknown fields.
+- Multiple images of the same role and conflicting images.
+- Barcode exact matches, missing records, multiple product candidates, invalid checksums, and catalog/label conflicts.
+- Exact garment tags, probable identity matches, same-product/different-instance cases, and visual false positives.
+- New stains or damage on a remembered garment and incremental evidence merging.
+- Contextual chat attempts to contradict a photographed prohibition or introduce an unvalidated action.
 
 Expected fixtures should assert normalized facts and review outcomes, not brittle free-form prose.
 
@@ -493,6 +536,8 @@ Expected fixtures should assert normalized facts and review outcomes, not brittl
 - Use secure, HTTP-only cookies for web refresh credentials.
 - Use the platform secure store for native refresh credentials.
 - Validate CORS explicitly; do not use unrestricted production origins.
+- Validate and restrict all outbound product-lookup and QR-derived URLs; defend against SSRF, redirects to private networks, oversized responses, and malicious catalog content.
+- Treat visible label/catalog text as untrusted data that cannot change system instructions or bypass schemas/validators.
 - Treat model providers as subprocessors and keep retention configuration documented.
 - Use synthetic or licensed images in repository fixtures. Do not commit real customer images.
 - Do not reproduce protected care-symbol artwork unless licensing is confirmed.

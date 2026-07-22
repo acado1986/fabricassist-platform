@@ -1,6 +1,6 @@
 # ADR-005: Make deterministic rules authoritative
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-009](009-validator-gated-ai-care-plans.md)
 - **Date:** 2026-07-20
 
 ## Context

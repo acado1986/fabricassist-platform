@@ -2,7 +2,7 @@
 
 **Document status:** Initial implementation architecture  
 **Related documents:** `docs/requirements.md`, `AGENTS.md`
-**Last updated:** 2026-07-20
+**Last updated:** 2026-07-22
 
 ## 0. Product identity and canonical names
 
@@ -23,8 +23,8 @@ Write **FabricAssist** in user-facing text. Use lowercase `fabricassist` for pac
 
 ## 1. Architecture principles
 
-1. **Deterministic safety:** The LLM extracts facts; Python rules decide and validate care instructions.
-2. **Structured before conversational:** All model output must pass a typed schema before it affects the product.
+1. **Deterministic safety gate:** AI extracts evidence and may propose care, but versioned Python validators decide whether every safety-relevant plan or chat claim may be released.
+2. **Structured before conversational:** Evidence, proposals, actionable chat claims, and product lookups must pass typed schemas before they affect the product.
 3. **Cache by evidence, not vague similarity:** Exact images and canonical care facts are safer than generic semantic memory.
 4. **PostgreSQL is authoritative:** Valkey is transient infrastructure, not the source of completed results.
 5. **Portable infrastructure:** Use standard protocols and adapters so local Docker, AWS, and other container hosts remain viable.
@@ -32,6 +32,11 @@ Write **FabricAssist** in user-facing text. Use lowercase `fabricassist` for pac
 7. **Universal customer client:** Use one Expo/React Native codebase for Android, iOS, and the authenticated web application.
 8. **Version everything that changes meaning:** Prompts, schemas, models, rules, templates, hashes, and cache keys.
 9. **Fail safely:** Missing or contradictory evidence produces uncertainty or human review, never confident invented advice.
+10. **Remember the garment, not only the image:** PostgreSQL stores physical garment identity, product identity, evidence revisions, conversations, and performed-service history separately from caches.
+11. **Source every enrichment:** Photographed label facts, product-catalog facts, user statements, visual hypotheses, and human corrections retain distinct provenance and authority.
+12. **One clean cutover:** The redesign replaces the old two-photo, narrow
+    extraction/result, and deterministic-plan-generator path. No compatibility
+    shim, deprecated role alias, dual write, or legacy result fallback remains.
 
 ## 2. Selected stack
 
@@ -107,6 +112,7 @@ flowchart LR
     Cache[(Valkey)]
     Objects[(S3-compatible object storage)]
     Vision[Vision model provider]
+    Product[Product-information provider]
     Telemetry[OpenTelemetry backend]
 
     Customer --> Expo
@@ -121,6 +127,7 @@ flowchart LR
     Worker --> DB
     Worker --> Objects
     Worker --> Vision
+    Worker --> Product
     API --> Telemetry
     Worker --> Telemetry
 ```
@@ -141,8 +148,11 @@ The backend is a modular monolith deployed as two process types from the same co
    - Image validation and normalization.
    - Fingerprint generation.
    - Cache resolution.
-   - Vision-provider calls.
-   - Rules evaluation.
+   - Multi-photo evidence extraction and provenance.
+   - Barcode decoding and trusted product lookup.
+   - Garment identity resolution and incremental evidence merging.
+   - AI care planning and deterministic plan validation.
+   - Contextual conversation jobs and validation.
    - Translation rendering.
    - Review-case creation.
    - Retention and deletion tasks.
@@ -174,8 +184,14 @@ backend/
 │       │   ├── auth/
 │       │   ├── scans/
 │       │   ├── extraction/
-│       │   ├── care_rules/
+│       │   ├── care/
+│       │   │   ├── evidence/
+│       │   │   ├── proposal/
+│       │   │   └── validation/
 │       │   ├── detergents/
+│       │   ├── garments/
+│       │   ├── products/
+│       │   ├── conversations/
 │       │   ├── review/
 │       │   └── shared/
 │       ├── repositories/
@@ -185,10 +201,12 @@ backend/
 │       │   ├── valkey/
 │       │   ├── jobs/
 │       │   ├── vision_providers/
+│       │   ├── product_information/
 │       │   ├── telemetry/
 │       │   └── security/
 │       ├── worker/
 │       │   ├── analyse_scan.py
+│       │   ├── answer_message.py
 │       │   ├── delete_scan_assets.py
 │       │   └── retention.py
 │       ├── settings.py
@@ -276,6 +294,7 @@ fabricassist-platform/
 │   ├── IMPLEMENTATION_PLAN.md
 │   ├── adr/
 │   ├── api/
+│   ├── prompts/
 │   └── runbooks/
 ├── .github/workflows/
 ├── Makefile
@@ -350,6 +369,8 @@ Store only a cryptographic hash of the refresh token.
 - `progress_stage`
 - `progress_percent`
 - `active_result_id UUID nullable`
+- `garment_id UUID nullable`
+- `active_analysis_revision_id UUID nullable`
 - `error_code nullable`
 - timestamps
 - optimistic-lock version
@@ -358,13 +379,89 @@ Store only a cryptographic hash of the refresh token.
 
 - `id UUID PK`
 - `scan_id UUID FK`
-- `kind`: `garment`, `label`, or `other`
+- user-declared `kind`: `garment_overview`, `care_label`, `composition_label`,
+  `barcode_brand_label`, `stain_closeup`, `damage_closeup`,
+  `construction_detail`, or `other`
+- model-detected kind and confidence nullable
+- display order and optional user caption
 - `object_key_original`
 - `object_key_normalized`
 - `mime_type`
 - width, height, bytes
 - quality signals JSONB
 - retention/deletion timestamps
+
+Multiple images may share a role. The configured MVP default limit is eight
+completed images per scan; the database does not encode a two-image assumption.
+
+#### `garments`
+
+- `id UUID PK`
+- `tenant_id UUID FK`
+- owner/user ID nullable according to tenant workflow
+- product profile ID nullable
+- display name/category/color/size summaries
+- active analysis revision and active result IDs
+- created/updated/deleted timestamps
+
+This row represents one physical garment, not a retail product line.
+
+#### `garment_identifiers`
+
+- garment and tenant IDs
+- identifier type: FabricAssist QR/serial, confirmed external serial, barcode
+  candidate, brand/model composite, or other
+- normalized value or scoped cryptographic fingerprint where appropriate
+- verification status, source, confidence, and confirmation actor/time
+
+Only a verified instance identifier can produce an automatic
+`exact_instance` link. Product and visual identifiers remain candidates.
+
+#### `product_profiles` and `product_identifiers`
+
+- normalized GTIN/barcode, brand, product name, model/style, category, variant,
+  color, size, sourced material/care data, and source provenance
+- catalog/provider, match status, retrieved/refreshed/invalidated timestamps
+- no physical-garment condition, conversation, or service history
+
+#### `product_lookup_runs`
+
+- identifier, provider, operation, request fingerprint, match status
+- source/reference and licensing metadata
+- schema version, safe raw/validated JSONB snapshots
+- latency, status/error category, retrieved/refreshed timestamps
+
+QR-derived URLs are untrusted and pass explicit outbound URL/SSRF policy before
+any network request.
+
+#### `analysis_revisions`
+
+- garment/scan/tenant IDs
+- revision number and parent/superseded revision nullable
+- triggering image IDs and evidence-delta metadata
+- status, active flag/pointer, created/finalized timestamps
+
+Prior revisions are never overwritten. Incremental extraction may process only
+new images, while activation requires validation of the fully merged dossier and
+plan.
+
+#### `garment_observations`
+
+- analysis revision and evidence source IDs
+- type, normalized value, confidence, provenance, observation time
+- stable identity/care or time-varying condition classification
+- supersedes observation ID nullable
+
+Stains, damage, wear, and cleanliness are time-varying observations rather than
+permanent product attributes.
+
+#### `garment_service_events`
+
+- garment/tenant IDs, actor, event state (`planned`, `performed`, `completed`)
+- treatment/cleaning method, outcome, notes, event timestamps, audit references
+
+`analysed_before` comes from analysis history. `cleaned_before` is true only when
+a performed/completed service event exists.
 
 #### `image_fingerprints`
 
@@ -397,6 +494,7 @@ Do not store secret headers or raw presigned URLs.
 
 - `id UUID PK`
 - `scan_id UUID FK`
+- `analysis_revision_id UUID FK`
 - `model_run_id UUID FK`
 - `raw_payload JSONB`
 - `validated_payload JSONB`
@@ -404,6 +502,10 @@ Do not store secret headers or raw presigned URLs.
 - `is_human_corrected`
 - `supersedes_extraction_id nullable`
 - timestamps
+
+The broader implementation stores a versioned `garment_evidence_dossier` per
+analysis revision. Label extraction remains an evidence component rather than
+the complete plan.
 
 #### `extracted_materials`
 
@@ -429,17 +531,36 @@ One row per care category:
 
 - `id UUID PK`
 - `tenant_id UUID FK`
-- `source_extraction_id UUID FK`
+- `analysis_revision_id UUID FK`
+- evidence dossier ID, proposed plan ID, and validation report ID
 - `canonical_signature`
 - `canonical_signature_hash`
-- `rules_version`
-- `detergent_rules_version`
+- `validator_version`
+- `detergent_validator_version`
 - normalized result JSONB
 - selected searchable typed fields
 - `validation_status`: model-only, system-validated, human-approved
 - timestamps
 
 Unique validated-cache index should include tenant policy boundary where appropriate, signature hash, and rules versions.
+
+#### `proposed_care_plans`
+
+- analysis revision and model run IDs
+- proposal schema/prompt/model versions
+- strict plan JSONB plus selected typed safety fields
+- evidence references, retry number, status, timestamps
+
+#### `care_validation_reports`
+
+- proposed plan ID
+- validator and detergent-validator versions/checksums
+- outcome: passed, passed-with-warnings, blocked, better-image, or review
+- structured violations/warnings and validated claim set
+- created timestamp
+
+The validator does not silently replace a proposal. A constrained retry creates
+a new proposal/report pair.
 
 #### `rendered_answers`
 
@@ -470,6 +591,16 @@ Unique key: `(care_result_id, language, template_version)`.
 - type
 - comment nullable
 - timestamps
+
+#### `conversation_threads`, `conversation_messages`, and `conversation_summaries`
+
+- tenant/user, physical garment, and active analysis revision IDs
+- cursor-paginated messages with role, text, structured claims, evidence
+  references, model run, validation report, status, and timestamps
+- versioned rolling summaries with source-message range and prompt/schema version
+
+Provider-side conversation identifiers are optional adapter metadata and never
+the sole durable context.
 
 #### `ruleset_versions`
 
@@ -502,65 +633,88 @@ Vector similarity returns candidates. The application must then compare normaliz
 
 ## 9. Care-domain model
 
-Use explicit enums and value objects. A canonical result resembles:
+Use explicit enums and value objects for three separate artifacts.
+
+### 9.1 Evidence dossier
+
+`GarmentEvidenceDossier` contains per-image observations, garment category and
+construction, photographed care/composition facts, materials, barcodes/brand
+labels, product lookup facts, visible stain/damage observations, original text,
+confidence, uncertainty, and source image/lookup/user/human references.
+
+### 9.2 Proposed care plan
+
+`ProposedCarePlan` is AI-generated strict data, not arbitrary prose. A plan
+resembles:
 
 ```json
 {
-  "washing": {
-    "permission": "allowed",
+  "classification": "definitive",
+  "preparation": ["CLOSE_FASTENERS"],
+  "stain_treatment": [
+    {
+      "action": "BLOT_AND_TEST_HIDDEN_AREA",
+      "evidence_ids": ["observation-uuid"],
+      "confidence": 72
+    }
+  ],
+  "cleaning": {
+    "method": "water_wash",
     "maximum_temperature_c": 30,
     "process": "mild"
-  },
-  "bleaching": {
-    "permission": "prohibited",
-    "allowed_type": null
-  },
-  "tumble_drying": {
-    "permission": "prohibited",
-    "heat": null
-  },
-  "natural_drying": {
-    "method": "line_dry",
-    "shade": false
-  },
-  "ironing": {
-    "permission": "allowed",
-    "maximum_temperature_c": 110,
-    "steam": "prohibited"
-  },
-  "professional_dry_cleaning": {
-    "permission": "allowed",
-    "process": "P",
-    "severity": "mild",
-    "professional_only": true
-  },
-  "professional_wet_cleaning": {
-    "permission": "unknown",
-    "severity": null,
-    "professional_only": true
   },
   "detergent": {
     "category": "delicates_liquid",
     "avoid": ["chlorine_bleach"]
   },
-  "warnings": ["DO_NOT_IRON_DECORATION"],
-  "uncertain_fields": []
+  "drying": ["LINE_DRY"],
+  "ironing": {"maximum_temperature_c": 110, "steam": "prohibited"},
+  "professional_care": [],
+  "prohibited_actions": ["DO_NOT_TUMBLE_DRY", "DO_NOT_BLEACH"],
+  "evidence_ids": ["care-fact-uuid", "material-fact-uuid"],
+  "uncertainties": ["stain_identity_unconfirmed"],
+  "follow_up_questions": ["Do you know what caused the stain?"]
 }
 ```
 
-The canonical object is data, not final prose.
+### 9.3 Validation report and validated result
 
-## 10. LLM and vision-provider architecture
+`CareValidationReport` records `passed`, `passed_with_warnings`, `blocked`,
+`needs_better_image`, or `needs_review`, validator versions/checksums, violations,
+warnings, and the validated claim IDs. The validator never mutates the proposal
+into a different plan. A passed proposal plus its report becomes the active
+`ValidatedCareResult`; optional prose and localized sections remain derived
+representations.
 
-### 10.1 Provider port
+## 10. AI and external-information architecture
+
+### 10.1 Provider ports
 
 ```python
-class VisionExtractionProvider(Protocol):
-    async def extract_label(
+class VisionEvidenceProvider(Protocol):
+    async def extract_evidence(
         self,
         *,
         images: tuple[TypedNormalizedImageReference, ...],
-    ) -> LabelExtraction:
+        prior_dossier: GarmentEvidenceDossier | None,
+    ) -> GarmentEvidenceDelta:
+        ...
+
+class CarePlanningProvider(Protocol):
+    async def propose_plan(
+        self,
+        *,
+        dossier: GarmentEvidenceDossier,
+        validation_feedback: tuple[ValidationViolation, ...] = (),
+    ) -> ProposedCarePlan:
+        ...
+
+class ProductInformationProvider(Protocol):
+    async def lookup(self, identifier: ProductIdentifier) -> ProductLookupResult:
+        ...
+
+class ConversationProvider(Protocol):
+    async def answer(self, context: ConversationContext) -> AssistantMessageProposal:
         ...
 ```
 
@@ -570,21 +724,31 @@ Adapters may include:
 - An OpenAI-compatible endpoint.
 - A future local model served through vLLM, Ollama, or another compatible gateway.
 
-Each normalized image reference carries its explicit `garment` or `care_label`
-role. The provider adapter owns provider-specific multi-image request formatting
-and must return the same domain schema or a categorized failure. Care-label
-evidence remains authoritative; garment appearance can provide context but cannot
-authorize a care process.
+Each normalized image reference carries an image ID and declared/detected role.
+Multiple images may share a role. Provider adapters own provider-specific
+multi-image/tool formatting and return the same strict application boundary
+schemas or categorized failures. Domain modules do not import provider DTOs or
+infrastructure clients.
+
+Barcode decoding is deterministic where possible. Vision/OCR may locate a code
+or recover printed digits; a product lookup is authoritative only as sourced
+external evidence. A product match never proves one physical garment instance.
 
 ### 10.2 Prompt strategy
 
-- Maintain the system/developer extraction prompt in English for engineering consistency.
+- Maintain separate versioned evidence, planning, repair, conversation, and
+  summary prompts in English for engineering consistency.
 - Send images and original user/label text without translating them first.
 - Instruct the model to preserve visible text verbatim and normalize meaning separately.
 - Require `unknown` when evidence is absent.
 - Require strict structured output.
 - Include prompt and schema versions in every model run.
 - Never ask the model to decide whether cached data should be trusted.
+- Delimit label, catalog, user, and conversation content as untrusted evidence,
+  never as system or tool instructions.
+- Require source image/fact IDs for evidence and proposed actions.
+- A single constrained planning retry may receive validator violation codes; it
+  receives no ability to change validator policy.
 
 ### 10.3 Model result validation
 
@@ -594,9 +758,11 @@ Validation layers:
 2. Enum and numeric-range validation.
 3. Cross-field validation.
 4. Contradiction detection between symbols and written text.
-5. Confidence policy.
-6. Deterministic care rules.
-7. Optional human review.
+5. Source/provenance and confidence policy.
+6. Product/variant and garment-identity conflict detection.
+7. Deterministic care-plan and detergent-plan validation.
+8. Optional constrained proposal retry.
+9. Better-image or human review.
 
 Examples of invalid combinations:
 
@@ -604,19 +770,28 @@ Examples of invalid combinations:
 - Dry cleaning prohibited and professional dry cleaning recommended.
 - Tumble drying prohibited and a tumble heat level selected.
 - Percentages clearly exceeding an accepted tolerance without an uncertainty marker.
+- Catalog care that conflicts with the photographed label.
+- A proposed stain identity stated as certain from appearance alone.
+- A chat claim that introduces an action absent from or contradictory to the
+  active validated plan.
 
 ## 11. Language architecture
 
 ```mermaid
 flowchart LR
     Original[Original Spanish/other input and label text]
-    Extract[Vision extraction]
-    Codes[Language-independent care codes]
-    Rules[Deterministic rules]
+    Extract[Structured multi-photo evidence]
+    Product[Sourced product information]
+    Plan[AI-proposed typed care plan]
+    Validate[Deterministic validation]
     Templates[Localized templates]
+    Explain[Optional constrained explanation]
     Answer[Spanish or English answer]
 
-    Original --> Extract --> Codes --> Rules --> Templates --> Answer
+    Original --> Extract --> Plan
+    Product --> Plan
+    Plan --> Validate --> Templates --> Answer
+    Validate --> Explain --> Answer
 ```
 
 Common output must use templates, for example:
@@ -628,7 +803,9 @@ DO_NOT_TUMBLE_DRY
 DRY_CLEAN_P_MILD
 ```
 
-The translation catalog renders these into Spanish or English. An optional explanation model may combine already-approved facts into friendlier prose, but its response must be checked against the canonical object and must never be the sole rendered output.
+The translation catalog renders validated stable codes into Spanish or English.
+An optional explanation model may combine only approved facts and claims into
+friendlier prose; structured validated sections remain present and authoritative.
 
 ## 12. Cache architecture
 
@@ -662,8 +839,8 @@ The signature must be generated from a stable serialization containing:
 - Sorted normalized composition.
 - Safety-relevant written warning codes.
 - Extraction schema version.
-- Care-rules version.
-- Detergent-rules version.
+- Evidence/proposal schema versions.
+- Validator and detergent-validator versions.
 
 Example source string:
 
@@ -676,7 +853,7 @@ dry_clean=allowed:P:mild|
 wet_clean=unknown|
 materials=cotton:80,polyester:20|
 warnings=do_not_iron_decoration|
-schema=3|care_rules=5|detergent_rules=2
+evidence_schema=2|proposal_schema=2|validator=1|detergent_validator=1
 ```
 
 Hash the canonical UTF-8 representation with SHA-256.
@@ -685,7 +862,28 @@ Hash the canonical UTF-8 representation with SHA-256.
 
 pgvector search is optional and must be introduced only after enough human-approved data exists. It cannot bypass an exact field comparison of prohibitions and numeric values.
 
-### 12.5 Render cache
+### 12.5 Garment identity retrieval
+
+Garment identity is durable business data rather than a cache hit. Candidate
+resolution uses this order:
+
+1. verified FabricAssist instance QR/serial;
+2. previously confirmed instance relationship;
+3. tenant/user-scoped exact image and label fingerprints;
+4. normalized barcode plus brand/model/size/color/composition composite;
+5. pHash or optional vector visual candidates.
+
+Only the first two produce automatic `exact_instance` linking. Later stages
+return confirmation candidates and never expose another user's physical history.
+
+### 12.6 Product-information cache
+
+Durable PostgreSQL lookup records include normalized identifier, provider,
+source, match status, schema version, retrieved/refreshed/invalidated times, and
+validated fields. Valkey may mirror hot exact identifiers. Expiration refreshes
+external data without rewriting historical analysis revisions.
+
+### 12.7 Render cache
 
 Valkey key pattern:
 
@@ -705,16 +903,19 @@ sequenceDiagram
     participant Queue as Valkey/Celery
     participant Worker as Analysis worker
     participant DB as PostgreSQL
-    participant Model as Vision provider
+    participant Model as Evidence/planning provider
+    participant Product as Product provider
 
     Client->>API: POST /scans
     API->>DB: Create draft scan
-    API-->>Client: scan_id + one presigned upload (+ optional second upload)
-    Client->>Obj: PUT selected image
-    opt Second image supplied
-        Client->>Obj: PUT second image
+    API-->>Client: scan_id
+    loop Each selected image (roles may repeat)
+        Client->>API: POST /scans/{id}/images with role and content type
+        API->>DB: Create server-owned image record
+        API-->>Client: image_id + scoped presigned upload
+        Client->>Obj: PUT image
+        Client->>API: Complete image upload
     end
-    Client->>API: Complete supplied uploads
     API->>DB: Mark supplied uploads complete
     Client->>API: POST /scans/{id}/analyse
     API->>DB: Transition to queued
@@ -723,16 +924,30 @@ sequenceDiagram
     Queue->>Worker: Deliver job
     Worker->>Obj: Fetch selected image(s)
     Worker->>Worker: Validate, normalize, hash supplied images
-    Worker->>DB: Search exact cache
-    alt Safe exact cache hit
-        Worker->>DB: Reuse extraction/result
-    else Cache miss
-        Worker->>Model: Structured request with label and optional garment roles
-        Model-->>Worker: Structured extraction
-        Worker->>Worker: Validate and apply rules
-        Worker->>DB: Store model run, extraction, result
+    Worker->>DB: Resolve exact/probable garment identity
+    alt Exact instance or confirmed candidate
+        Worker->>DB: Load active dossier and prior history
+    else New or unconfirmed garment
+        Worker->>DB: Create/await garment identity decision
     end
-    Worker->>DB: Set completed or review status
+    Worker->>DB: Search exact evidence cache for new images
+    Worker->>Model: Extract structured evidence delta from uncached new images
+    Model-->>Worker: Source-referenced evidence delta
+    opt Valid supported barcode/brand identifier
+        Worker->>Product: Lookup normalized identifier
+        Product-->>Worker: Sourced exact/probable/ambiguous/not-found result
+    end
+    Worker->>DB: Merge immutable/superseding evidence revision
+    Worker->>Model: Propose structured care plan from full dossier
+    Model-->>Worker: Proposed care plan
+    Worker->>Worker: Deterministically validate full proposal
+    opt One retry for fixable proposal violations
+        Worker->>Model: Retry with machine-readable violations
+        Model-->>Worker: Revised proposed plan
+        Worker->>Worker: Revalidate
+    end
+    Worker->>DB: Store proposal, validation report, result and active revision
+    Worker->>DB: Set completed, better-image, or review status
     Client->>API: GET /scans/{id}
     API->>DB: Read status/result
     API-->>Client: Result
@@ -747,13 +962,17 @@ Suggested stages:
 1. `validate_uploaded_images`
 2. `normalize_images`
 3. `calculate_fingerprints`
-4. `resolve_exact_cache`
-5. `extract_label`
-6. `validate_extraction`
-7. `build_canonical_result`
-8. `resolve_canonical_cache`
-9. `render_answers`
-10. `finalize_scan`
+4. `resolve_garment_identity`
+5. `resolve_exact_evidence_cache`
+6. `extract_new_evidence`
+7. `decode_and_lookup_products`
+8. `merge_evidence_revision`
+9. `propose_care_plan`
+10. `validate_care_plan`
+11. `retry_fixable_proposal_once`
+12. `resolve_validated_result_cache`
+13. `render_answers`
+14. `finalize_revision_and_scan`
 
 The first implementation may use one orchestration task with persisted checkpoints. Split stages into separate tasks only when retries, resource classes, or observability justify the added complexity.
 
@@ -761,6 +980,10 @@ Retry policy:
 
 - Network/model transient errors: exponential backoff with jitter and bounded attempts.
 - Schema failure: one constrained repair/retry at most, then review/failure.
+- Product not-found/ambiguous: persist the safe outcome and continue without
+  blind retries; retry only categorized transient provider failures.
+- Deterministic proposal violation: one constrained planning retry when marked
+  repairable, otherwise block/review immediately.
 - Authorization, invalid image, and deterministic validation failures: no blind retry.
 - Job exhaustion: persist `failed`, diagnostic category, and operator-visible retry action.
 
@@ -791,6 +1014,10 @@ Support an `Idempotency-Key` header for:
 - Analysis start.
 - Feedback submission.
 - Review approval.
+- Image addition/removal where duplicate submission is plausible.
+- Garment candidate confirmation/linking.
+- Conversation message submission.
+- Service-event creation.
 
 Persist idempotency records for a bounded period in PostgreSQL or use a Valkey fast path backed by database state.
 
@@ -803,7 +1030,40 @@ CI and local commands must:
 3. Generate TypeScript request/response types and API functions.
 4. Fail when uncommitted drift exists.
 
-## 16. Authentication architecture
+### 15.4 Resource shape
+
+The REST surface adds:
+
+- scan image collection operations so roles may repeat;
+- identity-candidate read and explicit garment-link confirmation;
+- garment list/detail/history and service events;
+- cursor-paginated scan-bound conversation messages; and
+- rich typed result sections including evidence provenance, product sources,
+  proposal, validation, change summary, and analysed/cleaned history.
+
+Every route enforces tenant and ownership boundaries. Product metadata may be
+generic, but another customer's garment relationship, images, condition,
+conversation, or service events are never revealed.
+
+## 16. Context construction architecture
+
+PostgreSQL owns conversation truth. `ConversationContextBuilder` creates a
+bounded, versioned context from:
+
+1. physical garment and sourced product summaries;
+2. active evidence dossier, proposal, and validation report;
+3. confirmed service-event history;
+4. a versioned rolling conversation summary;
+5. the most recent messages within the token budget; and
+6. only the raw/normalized images required for the current visual question.
+
+Assistant output contains explanatory text plus structured proposed claims,
+evidence references, uncertainty, and follow-up questions. Claims pass the care
+validator before the message becomes visible. Message/job state supports queued,
+processing, completed, blocked/review, and failed outcomes. Provider-side
+conversation IDs are optional adapter metadata.
+
+## 17. Authentication architecture
 
 MVP:
 
@@ -824,7 +1084,7 @@ Future:
 - OIDC adapter for Keycloak or a managed identity provider.
 - The domain must identify users by internal UUID, not external provider subject alone.
 
-## 17. Object-storage architecture
+## 18. Object-storage architecture
 
 Define a port with operations for:
 
@@ -843,7 +1103,7 @@ Object key format:
 
 Never accept a client-provided key. Bucket access remains private. CORS must allow only approved origins and methods.
 
-## 18. Local Docker architecture
+## 19. Local Docker architecture
 
 Initial `docker-compose.yml` services use canonical service identifiers:
 
@@ -872,9 +1132,9 @@ Use named volumes for PostgreSQL, Valkey when persistence is enabled, and MinIO.
 
 Local object-storage configuration must use path-style S3 addressing when required by the emulator.
 
-## 19. Production deployment options
+## 20. Production deployment options
 
-### 19.1 Recommended AWS topology
+### 20.1 Recommended AWS topology
 
 ```mermaid
 flowchart TB
@@ -918,7 +1178,7 @@ Deployment characteristics:
 - Store originals in a private bucket with lifecycle expiration.
 - Enable database backups and perform restore drills.
 
-### 19.2 Lower-operations platform option
+### 20.2 Lower-operations platform option
 
 The same containers may be deployed on a platform such as Render, Fly.io, Railway, or another container host, provided it supports:
 
@@ -932,7 +1192,7 @@ The same containers may be deployed on a platform such as Render, Fly.io, Railwa
 
 Do not select a host whose filesystem is the only durable image store.
 
-### 19.3 Self-hosted option
+### 20.3 Self-hosted option
 
 A small production deployment can run through Docker Compose on a virtual machine, but it requires explicit responsibility for:
 
@@ -945,7 +1205,7 @@ A small production deployment can run through Docker Compose on a virtual machin
 
 Use this only when operational ownership is accepted.
 
-## 20. Configuration
+## 21. Configuration
 
 Configuration must use typed environment settings. Provide `.env.example` without secrets.
 
@@ -976,12 +1236,26 @@ FABRICASSIST_VISION_API_KEY
 FABRICASSIST_VISION_TIMEOUT_SECONDS
 FABRICASSIST_VISION_MAX_CONCURRENCY
 
+FABRICASSIST_CARE_PLANNER_PROVIDER
+FABRICASSIST_CARE_PLANNER_MODEL
+FABRICASSIST_CHAT_PROVIDER
+FABRICASSIST_CHAT_MODEL
+FABRICASSIST_CHAT_MAX_CONTEXT_TOKENS
+FABRICASSIST_CHAT_RECENT_MESSAGE_LIMIT
+
+FABRICASSIST_PRODUCT_INFORMATION_PROVIDER
+FABRICASSIST_PRODUCT_INFORMATION_BASE_URL
+FABRICASSIST_PRODUCT_INFORMATION_API_KEY
+FABRICASSIST_PRODUCT_INFORMATION_TIMEOUT_SECONDS
+FABRICASSIST_PRODUCT_INFORMATION_ALLOWED_HOSTS
+
 FABRICASSIST_JWT_SIGNING_KEY
 FABRICASSIST_ACCESS_TOKEN_TTL_SECONDS
 FABRICASSIST_REFRESH_TOKEN_TTL_DAYS
 
 FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS
 FABRICASSIST_MAX_UPLOAD_BYTES
+FABRICASSIST_MAX_IMAGES_PER_SCAN
 
 FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT
 FABRICASSIST_LOG_LEVEL
@@ -989,13 +1263,13 @@ FABRICASSIST_LOG_LEVEL
 
 Production must validate that insecure development defaults are absent at startup.
 
-## 21. Rules and templates as versioned assets
+## 22. Validation policies and templates as versioned assets
 
-Initial rules should be stored as reviewed code/data files in the repository, for example:
+Initial validation policies should be stored as reviewed code/data files in the repository, for example:
 
 ```text
-backend/src/fabricassist/domain/care_rules/data/v1.json
-backend/src/fabricassist/domain/detergents/data/v1.json
+backend/src/fabricassist/domain/care/validation/data/v1.json
+backend/src/fabricassist/domain/detergents/validation/data/v1.json
 frontend/packages/translations/src/es.json
 frontend/packages/translations/src/en.json
 ```
@@ -1004,14 +1278,17 @@ At application startup:
 
 1. Validate the file schema.
 2. Calculate a checksum.
-3. Verify or register the corresponding `ruleset_versions` record.
+3. Verify or register the corresponding validator/template version record.
 4. Refuse activation when the content differs from an already-active immutable version.
 
-An admin editor is not required for the MVP. Rule changes must pass code review and regression tests.
+An admin editor is not required for the MVP. Validator changes must pass code
+review, textile-care review, and safety regression tests. Prompts, schemas,
+context summaries, barcode normalization, product adapters, and identity
+matching policies carry independent versions.
 
-## 22. Observability
+## 23. Observability
 
-### 22.1 Logs
+### 23.1 Logs
 
 Structured fields:
 
@@ -1030,7 +1307,7 @@ Structured fields:
 
 Never log image bytes, passwords, refresh tokens, API keys, or complete presigned URLs.
 
-### 22.2 Metrics
+### 23.2 Metrics
 
 Minimum metrics:
 
@@ -1038,36 +1315,44 @@ Minimum metrics:
 - Queue depth and oldest-job age.
 - Job duration and retries by stage.
 - Model calls, errors, latency, and tokens.
+- Product lookup calls, match outcomes, latency, refresh, and errors.
+- Garment identity classifications, confirmations, conflicts, and false-match feedback.
+- Conversation duration, context size, retries, blocked claims, and review rate.
 - Exact/canonical/semantic cache hit rate.
 - `needs_better_image` and human-review rate.
 - Results approved/corrected by operators.
 - Object-storage errors.
 - Database pool usage.
 
-### 22.3 Traces
+### 23.3 Traces
 
 Trace a scan from upload completion through API enqueue, worker stages, model call, database writes, and finalization.
 
-## 23. Testing architecture
+## 24. Testing architecture
 
-### 23.1 Backend
+### 24.1 Backend
 
-- Unit tests for domain value objects and rules.
-- Property/table-driven tests for prohibited combinations.
+- Unit tests for domain value objects, evidence merging, identity classification,
+  proposed plans, validation policies, product normalization, and conversation context.
+- Property/table-driven tests for prohibited combinations and validator outcomes.
 - Repository integration tests against real PostgreSQL in containers.
 - Valkey and job integration tests.
 - Object-storage contract tests against MinIO.
 - Provider contract tests with recorded/synthetic responses; do not require paid calls in default CI.
+- Product-information adapter and SSRF/outbound-policy contract tests with local
+  synthetic servers only.
 - A small opt-in live-provider test suite.
 
-### 23.2 Frontend
+### 24.2 Frontend
 
 - Unit tests for hooks and formatting.
 - Component tests for capture guidance and result rendering.
+- Component tests for the multi-photo gallery, identity confirmation, sourced
+  product facts, analysed/cleaned history, change summaries, and chat states.
 - Web E2E flow with Playwright.
 - Native smoke tests on Android emulator; add iOS CI when a macOS runner is available.
 
-### 23.3 AI evaluation set
+### 24.3 AI evaluation set
 
 Maintain versioned fixtures containing:
 
@@ -1081,10 +1366,19 @@ Maintain versioned fixtures containing:
 - Do-not-dry-clean cases.
 - Wool, silk, technical fabric, leather/suede flags.
 - Unknown or cropped symbols.
+- Multiple images and repeated roles with per-fact source references.
+- Visible stain hypotheses and user-confirmed stain identity.
+- Exact/invalid/ambiguous/not-found barcode lookups and catalog-label conflicts.
+- Exact garment tags, probable/product/visual candidates, identity conflicts,
+  and same-product/different-physical-instance cases.
+- Incremental evidence deltas, supersession, and full-plan revalidation.
+- Contextual follow-ups that attempt to contradict label prohibitions or inject instructions.
 
-Store expected normalized facts and acceptable confidence/review outcomes, not only final prose.
+Store expected normalized evidence, proposal constraints, validator outcomes,
+identity/lookup classifications, and acceptable confidence/review outcomes, not
+only final prose.
 
-## 24. CI/CD
+## 25. CI/CD
 
 GitHub Actions baseline:
 
@@ -1101,7 +1395,7 @@ GitHub Actions baseline:
 
 Production deploys must support rollback to the previous container image. Database changes must follow expand/migrate/contract patterns when rollback compatibility matters.
 
-## 25. Architecture decisions
+## 26. Architecture decisions
 
 Create Architecture Decision Records under `docs/adr/` for at least:
 
@@ -1109,12 +1403,16 @@ Create Architecture Decision Records under `docs/adr/` for at least:
 - ADR-002: PostgreSQL/JSONB/pgvector instead of MongoDB and a separate vector database.
 - ADR-003: Valkey for transient cache and initial job coordination.
 - ADR-004: Expo universal client and conditions for introducing Next.js.
-- ADR-005: Deterministic care-rules engine after structured vision extraction.
+- ADR-005: Original deterministic care-rule authority (superseded by ADR-009).
 - ADR-006: Provider-neutral vision adapter.
 - ADR-007: Direct-to-object-storage uploads.
 - ADR-008: Engram deferred; durable memory implemented with PostgreSQL and cache layers.
+- ADR-009: AI-proposed structured care plans with deterministic validation gates.
+- ADR-010: Physical garment identity/history separated from product identity.
+- ADR-011: Trusted, sourced product-information lookup behind adapters.
+- ADR-012: Server-owned contextual conversation state in PostgreSQL.
 
-## 26. Initial implementation order for Codex
+## 27. Initial implementation order for Codex
 
 ### Commit 1 — Repository foundation
 
@@ -1150,35 +1448,84 @@ Create Architecture Decision Records under `docs/adr/` for at least:
 - Add idempotent analysis job and scan status polling.
 - Add mocked vision provider and deterministic fixture response.
 
-### Commit 7 — Care domain
+### Commit 7 — Multi-photo and analysis revisions
 
-- Add extraction schema, care enums, contradiction validator, care rules, detergent rules, and localized templates.
-- Add comprehensive unit tests.
+- Generalize uploads to one-to-eight images with repeated typed roles.
+- Add physical garment, product profile, analysis revision, observation, and
+  active revision/result foundations through Alembic.
+- Remove the legacy `garment`/fixed-two-photo contract and update the generated
+  client and Expo gallery in the same breaking release.
 
-### Commit 8 — Real provider adapter
+### Commit 8 — Rich evidence dossier
 
-- Add one configured vision provider.
-- Store model runs and strict extraction results.
-- Add timeout, retry, concurrency, and token/cost accounting.
+- Move domain evidence types out of application/provider modules.
+- Add source-referenced garment, label, composition, barcode, stain, damage, and
+  construction evidence plus immutable/superseding delta merge semantics.
+- Extend mock and configured vision adapters with strict contract fixtures.
 
-### Commit 9 — Caching
+### Commit 9 — AI planning and deterministic validation
 
-- Add image normalization version, SHA-256, pHash, exact cache, canonical signature, and rendered cache.
-- Prove through tests that repeated exact input avoids a provider call.
+- Add `CarePlanningProvider`, strict proposed-plan schema, versioned validation
+  policies, detergent validator, one constrained retry, and persisted reports.
+- Remove `decide_care()` and its legacy result/render path when the new planner,
+  validator, and rich result become active. Do not retain a fallback execution path.
+- Add exhaustive prohibition, conflict, garment-only, sensitive-material, stain,
+  and chat-claim safety tests.
 
-### Commit 10 — Review and deletion
+### Commit 10 — Rich multilingual results
+
+- Render sourced materials/product facts, visible condition, preparation,
+  cleaning, detergent, drying, ironing, professional care, prohibitions,
+  uncertainty, validation state, and change summary in Spanish and English.
+- Preserve structured validated sections even when optional prose is generated.
+
+### Commit 11 — Garment identity and service history
+
+- Implement exact/probable/same-product/visual/new/conflict resolution and
+  confirmation UI.
+- Add FabricAssist instance QR/serial identifiers and separate analysed-before
+  from confirmed performed-service events.
+- Reuse stable evidence while extracting new images and revalidating the full plan.
+
+### Commit 12 — Barcode product enrichment
+
+- Decode/normalize supported identifiers and add a no-network mock plus
+  provider-neutral trusted product-information adapter.
+- Persist source, match, retrieval, refresh, validation, and conflict provenance.
+- Add SSRF/outbound policy and catalog-label authority tests.
+
+### Commit 13 — Contextual conversation
+
+- Persist scan/garment-bound threads, messages, rolling summaries, and revision
+  references in PostgreSQL.
+- Build bounded context and validate every safety-relevant assistant claim.
+- Add localized chat UI, rate limits, retries, retention, and deletion coverage.
+
+### Commit 14 — Caching and incremental efficiency
+
+- Add exact evidence, product lookup, canonical validated result, and rendered
+  caches with PostgreSQL authority and Valkey hot mirrors.
+- Add pHash/optional vector identity candidates only after exact identifiers and
+  confirmation behavior are proven safe.
+
+### Commit 15 — Review and deletion
 
 - Add operator review screens and API.
 - Add correction/audit flow.
 - Add history, deletion, and retention task.
 
-### Commit 11 — Production readiness
+### Commit 16 — Production readiness
 
 - Add telemetry, dashboards/runbooks, AWS Terraform baseline or selected hosting configuration, backup documentation, and load/security checks.
 
 Each commit must leave tests passing and local startup documented.
 
-## 27. Deferred decisions
+Commits 7–10 are one coordinated breaking core release. They may be reviewed
+separately, but mixed old/new clients are unsupported and the release is not
+complete until the old roles, narrow extraction/result/renderer, and
+`decide_care()` execution have been removed.
+
+## 28. Deferred decisions
 
 The following should remain configurable or deferred until measurements exist:
 
@@ -1186,6 +1533,12 @@ The following should remain configurable or deferred until measurements exist:
 - Celery/Valkey versus RabbitMQ broker migration.
 - Whether a separate Next.js operator portal is needed.
 - Semantic similarity threshold and embedding model.
+- Product-information providers, source licensing, refresh periods, and exact
+  supported barcode standards beyond the mock/local contract.
+- Whether FabricAssist instance identifiers are printed QR, NFC, or another
+  tenant workflow; the domain identifier contract is not deferred.
+- Automatic probable-match thresholds; initial non-exact matches require confirmation.
+- Conversation streaming transport; persisted async REST status is sufficient initially.
 - Self-hosted multimodal inference.
 - Multi-region deployment.
 - Paid consumer subscriptions and payments.

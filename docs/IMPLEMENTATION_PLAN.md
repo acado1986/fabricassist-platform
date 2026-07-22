@@ -1,7 +1,7 @@
 # FabricAssist Implementation Plan
 
-**Status:** Proposed implementation sequence; no application code is created by this document.  
-**Planning baseline:** 2026-07-20  
+**Status:** Living implementation sequence for the existing local analysis slice.
+**Planning baseline:** 2026-07-20; garment-intelligence redesign approved 2026-07-22.
 **Sources read in full:** `AGENTS.md`, `docs/requirements.md`, and `docs/architecture.md`.
 
 This plan decomposes the MVP into changes that can be implemented, reviewed, and
@@ -14,17 +14,21 @@ repository runnable for the behavior implemented up to that point.
 ## Product purpose
 
 FabricAssist is a safety-oriented clothing-care assistant for garment owners and
-professional cleaning companies. A user supplies garment and care-label images;
-the system extracts visible facts, detects uncertainty, and returns clear,
-explainable cleaning instructions in Spanish or English. It is an aid rather
-than a guarantee of stain removal, fabric restoration, or a replacement for a
-trained textile-care professional.
+professional cleaning companies. A user supplies multiple garment, label,
+barcode/brand, stain, damage, and construction images. The system builds a
+source-referenced evidence dossier, retrieves trusted product information when
+available, lets AI propose a rich care plan, validates every actionable claim,
+and returns explainable guidance in Spanish or English. It remembers physical
+garments, evidence revisions, conversations, and confirmed service history while
+remaining an aid rather than a guarantee of stain removal or a replacement for
+a trained textile-care professional.
 
 ## Main user journeys
 
-1. **Label-led analysis:** capture or select a label image, pass image-quality
-   checks, upload directly to private object storage, start asynchronous
-   analysis, and view label facts, prohibitions, recommendations, and confidence.
+1. **Multi-photo analysis:** capture one to eight images with repeatable roles,
+   pass per-image quality checks, upload directly to private object storage,
+   extract source-referenced evidence, validate an AI-proposed plan, and view a
+   rich result with sources, prohibitions, recommendations, and confidence.
 2. **Garment-only analysis:** capture a garment without a readable label and
    receive explicitly provisional observations plus a request for a label. The
    product must not infer permission to wash, dry clean, or recommend detergent
@@ -32,16 +36,26 @@ trained textile-care professional.
 3. **Low-quality or uncertain input:** receive actionable retake guidance for
    blur, glare, crop, folds, darkness, or insufficient resolution; if a better
    image cannot be supplied, request human review.
-4. **Safe result reuse:** reuse a validated exact extraction or compatible
+4. **Remembered garment:** recognize an exact physical garment or ask the user to
+   confirm a probable/product/visual candidate, reuse stable verified evidence,
+   inspect only new images where safe, and revalidate the complete merged plan.
+5. **Product enrichment:** decode and validate supported barcodes, query trusted
+   adapters, show source/match/retrieval state, and keep the physical label above
+   catalog care information.
+6. **Contextual conversation:** answer follow-ups from the active garment dossier,
+   plan, service history, rolling summary, prior messages, and relevant images;
+   validate actionable claims before delivery.
+7. **Safe result reuse:** reuse a validated exact extraction or compatible
    canonical result while retaining origin, validation status, rules versions,
    and reuse count.
-5. **Human review:** an operator inspects the original evidence and immutable
+8. **Human review:** an operator inspects the original evidence and immutable
    extraction, corrects normalized facts, approves a newly evaluated result, and
    leaves an auditable note.
-6. **Account and history:** register or sign in, list and inspect owned scans,
+9. **Account and history:** register or sign in, list and inspect owned garments,
+   analyses, conversations, and service events,
    submit feedback, and request deletion of database associations and stored
    objects.
-7. **Tenant administration:** manage operators, retention/language settings,
+10. **Tenant administration:** manage operators, retention/language settings,
    active immutable rules versions, audit events, and usage/cost summaries.
 
 ## System boundaries
@@ -57,8 +71,9 @@ Inside the FabricAssist boundary are:
 - Valkey as transient cache, rate-limit, lock, and Celery coordination
   infrastructure; it is never the sole store of a completed result.
 - Private S3-compatible object storage for original and normalized images.
-- Repository-owned, versioned care rules, detergent rules, signatures, prompts,
-  schemas, and Spanish/English templates.
+- Repository-owned, versioned evidence/proposal/chat schemas, validation policies,
+  signatures, prompts, context summaries, barcode normalization, and
+  Spanish/English templates.
 
 Outside the core boundary are replaceable vision-model providers, email
 delivery, telemetry backends, mobile app stores, CDN/TLS termination, and cloud
@@ -72,9 +87,10 @@ an autonomous multi-agent decision system in the MVP.
 The backend owns authentication and authorization, tenant-scoped use cases,
 presigned upload issuance and verification, scan lifecycle state, asynchronous
 job dispatch, image validation and normalization, provider orchestration,
-strict schema validation, contradiction detection, deterministic rule
-evaluation, result rendering, safe cache selection, reviews, audit, retention,
-and deletion. API routes and Celery tasks remain thin; application services
+strict schema validation, contradiction detection, garment identity resolution,
+incremental evidence merging, barcode/product lookup, AI planning, deterministic
+validation, result rendering, contextual conversation, safe cache selection,
+reviews, audit, retention, and deletion. API routes and Celery tasks remain thin; application services
 coordinate ports and explicit transactions; infrastructure adapters implement
 PostgreSQL, Valkey, S3, Celery, provider, and telemetry details.
 
@@ -88,19 +104,19 @@ does not reproduce backend business rules, trust provisional results as final,
 or hand-maintain API interfaces; request and response types are generated from
 FastAPI OpenAPI.
 
-## LLM extraction versus deterministic care rules
+## AI proposals versus deterministic validation
 
-The model is an evidence extractor. It returns strict structured data covering
-image type, original visible label text, normalized symbols/codes, composition,
-confidence, unknowns, and provider-run metadata. Pydantic validates syntax,
-enums, ranges, cross-field consistency, and explicit unknown states.
+The evidence model returns strict source-referenced facts. A planning model may
+then return a strict `ProposedCarePlan`, and a conversation model may return
+typed actionable claims. Pydantic validates syntax, enums, ranges, cross-field
+consistency, evidence references, and explicit unknown states.
 
-Only versioned Python domain rules may turn validated facts into the
-authoritative care result. Authority is ordered as explicit written label
-instruction, normalized label symbol, material-specific recommendation, then
-generic advice. Prohibitions win; contradictions, sensitive materials, and
-low-confidence prohibitions cause uncertainty or review. The LLM never decides
-whether a cache hit is safe and never supplies authoritative final prose.
+Versioned Python validators accept, warn, block, request another image, or
+require review. They never silently invent a replacement plan. One constrained
+retry may consume machine-readable violations. Photographed written/symbol care
+instructions remain above exact manufacturer data, verified catalog data,
+material recommendations, and generic advice. Prohibitions win; free-form prose
+is never the sole authoritative output.
 
 ## Caching and result-reuse strategy
 
@@ -123,6 +139,12 @@ PostgreSQL stores durable mappings and provenance. Valkey mirrors hot entries
 with namespaced/versioned keys and TTLs. Every reuse records source, validation
 state, versions, hit count, and invalidation state.
 
+Garment memory is not a cache. PostgreSQL separately stores physical garments,
+product profiles, instance/product identifiers, immutable/superseding evidence
+revisions, conversations, and append-only service events. A retail barcode or
+visual match remains a confirmation candidate; only a verified instance
+identifier or previously confirmed relationship auto-links.
+
 # 2. Assumptions and open decisions
 
 ## Assumptions
@@ -131,16 +153,20 @@ The following are planning assumptions rather than invented product
 requirements. Any assumption that affects behavior must be confirmed or exposed
 as configuration before its implementation phase is accepted.
 
-1. The repository is intentionally greenfield; only instruction and design
-   documents exist today.
+1. The repository already contains a runnable local authentication, upload,
+   asynchronous analysis, provider, narrow extraction, deterministic care, and
+   Expo result slice. New phases migrate it without rewriting applied migrations
+   or historical results.
 2. `docs/requirements.md`, `docs/architecture.md`, and
    `docs/IMPLEMENTATION_PLAN.md` are the approved source-document locations.
    Root documentation links to these paths without duplicating them.
 3. The first release serves one cleaning company operationally, while all
    business records and authorization paths are tenant-scoped from the first
    migration.
-4. A scan may contain one or more images classified as `garment`, `label`, or
-   `other`; at least one completed upload is required before analysis.
+4. A scan may contain one to eight completed images by default, using repeatable
+   `garment_overview`, `care_label`, `composition_label`,
+   `barcode_brand_label`, `stain_closeup`, `damage_closeup`,
+   `construction_detail`, or `other` roles.
 5. The default maximum is 12 MB per image and original-image retention is 30
    days, both overridden by typed environment/tenant settings.
 6. Spanish and English are the only activated MVP answer languages. Original
@@ -174,7 +200,11 @@ as configuration before its implementation phase is accepted.
 17. Idempotency records are durable in PostgreSQL, with an optional Valkey fast
     path. Valkey alone is insufficient.
 18. Phase numbers are delivery gates, not parallel workstreams. A coding agent
-    implements only the approved next phase.
+   implements only the approved next phase.
+19. Product-information coverage is optional and incomplete by design; the mock
+   returns deterministic exact/ambiguous/not-found fixtures without network access.
+20. Conversation state is authoritative in PostgreSQL; provider conversation
+   identifiers are optional adapter metadata.
 
 ## Open decisions
 
@@ -192,8 +222,12 @@ as configuration before its implementation phase is accepted.
 | JWT signing | HS256 shared secret; EdDSA/RSA key pair; immediate OIDC | **HS256 with a high-entropy rotated secret for the single backend**, short access lifetime, and opaque rotating refresh tokens; keep auth behind ports for later OIDC. An asymmetric key can be adopted before multi-service verification is needed. | No. |
 | Refresh-token hash | Plain SHA-256 of high-entropy token; keyed HMAC-SHA-256; password hash | **Keyed HMAC-SHA-256 with a separate server secret**, because refresh tokens are random and need efficient lookup while the key limits damage from a database-only leak. | No; document key rotation before Phase 6. |
 | Cross-tenant cache reuse | Global reuse; tenant-only reuse; opt-in shared validated corpus | **Tenant-only by default**, with any cross-tenant human-approved corpus requiring an explicit later policy and privacy review. | No. |
-| Care-rule asset format | Python modules; YAML; JSON | **Versioned JSON validated by Pydantic plus focused Python evaluators.** JSON uses the standard parser and yields deterministic serialization; activated content is checksum-locked. | No; decide before Phase 11. |
-| Care content authority and symbol artwork | Implement from engineering interpretation; obtain textile-care expert review; license a standard/symbol library | **Require a named textile-care reviewer before activating rules v1; use text/original generic graphics until artwork rights are confirmed.** Engineering tests prove determinism, not domain correctness. | **Blocks activation of Phase 11 rules for production**, but not code structure or tests. |
+| Validation-policy asset format | Python modules; YAML; JSON | **Versioned JSON validated by Pydantic plus focused Python validators.** JSON uses the standard parser and deterministic serialization; activated content is checksum-locked. | No; decide before the care-validation phase. |
+| Care content authority and symbol artwork | Unvalidated AI prose; validator-gated structured AI plan; deterministic plan generator | **Resolved by ADR-009: typed AI proposal plus deterministic accept/warn/block/review validation. Require a named textile-care reviewer before activating validator v1; use text/original generic graphics until artwork rights are confirmed.** | **Blocks production validator activation**, not code structure or tests. |
+| Maximum images per scan | Two; eight; provider maximum | **Eight completed images by default, configurable, with repeated roles.** Provider adapters may batch or reject above their safe capability, but the domain/API do not assume two. | No; implement in Phase 10. |
+| Physical garment identity | Barcode; visual match; user confirmation; FabricAssist tag | **Only a verified FabricAssist/instance identifier or prior confirmed relationship auto-links.** Barcode/product/visual composites remain candidates requiring confirmation. | No; resolved by ADR-010. |
+| Product-information provider | Commercial catalog; manufacturer adapters; generic web search; mock only | **Provider-neutral port with deterministic mock first.** Select real sources after licensing, coverage, privacy, and contract evaluation; arbitrary web/QR fetching is not a fallback. | Real source blocks production enrichment, not local behavior. |
+| Conversation transport | Synchronous request; queued REST; SSE/WebSocket | **Persisted asynchronous message status first**, compatible with later SSE streaming. PostgreSQL context remains authoritative regardless of transport. | No; streaming is deferred. |
 | Real vision provider/model | Hosted vendor SDK; OpenAI-compatible HTTP endpoint; local compatible server | **OpenAI-compatible HTTP adapter via `httpx`, configured by base URL/model, with the mock as default.** Select a hosted model only after fixture evaluation, privacy, retention, latency, and cost review. | Does not block local MVP implementation; blocks production AI launch. |
 | Image normalization details | Preserve broad formats; normalize to JPEG; normalize losslessly | **Decode accepted JPEG/PNG/HEIC where platform support is verified, apply EXIF orientation, strip metadata, bound dimensions/pixels, and create a deterministic sRGB JPEG derivative.** Exact dimensions/quality become `normalization_version=1`. | Threshold/codec details block Phase 7 acceptance, not earlier phases. |
 | Perceptual hash implementation | Small maintained library; OpenCV DCT implementation; PostgreSQL extension | **Use a small reviewed image-hash library only if license/maintenance checks pass; otherwise a tested OpenCV DCT implementation.** Candidate status is mandatory either way. | No; Phase 12 decision. |
@@ -217,7 +251,7 @@ as configuration before its implementation phase is accepted.
    `FABRICASSIST_VISION_PROVIDER`. Narrowly documented standard variables are
    permitted only when a third-party process requires them.
 4. **Valkey render-cache example (resolved):** all cache keys use the versioned
-   `fabricassist:` namespace; the precise Phase 12 key material remains subject
+   `fabricassist:` namespace; the precise Phase 17 key material remains subject
    to its safety tests and documentation.
 5. **Compose process names (resolved):** Compose definitions use canonical
    `fabricassist-<component>` service identifiers, including `fabricassist-api`,
@@ -234,6 +268,13 @@ as configuration before its implementation phase is accepted.
    foundation. The prompt asks for independently verifiable infrastructure and
    database phases. This plan splits those commits without changing the selected
    architecture or dependency direction.
+8. **Original care authority (resolved):** ADR-005 and the original deterministic
+   plan generator are superseded by ADR-009. The redesign is a breaking cutover:
+   remove the old image/result/care execution path instead of preserving aliases,
+   compatibility mappers, dual writes, or fallback behavior.
+9. **Barcode identity ambiguity (resolved):** a barcode may identify a product
+   variant but not one physical garment. ADR-010 separates `product_profile`
+   from `garment`; only exact instance identifiers auto-link.
 
 # 3. Target repository structure
 
@@ -267,6 +308,8 @@ fabricassist-platform/
 │   │       │   │   ├── auth.py
 │   │       │   │   ├── health.py
 │   │       │   │   ├── scans.py
+│   │       │   │   ├── garments.py
+│   │       │   │   ├── conversations.py
 │   │       │   │   ├── results.py
 │   │       │   │   ├── reviews.py
 │   │       │   │   ├── admin.py
@@ -284,15 +327,23 @@ fabricassist-platform/
 │   │       │       ├── object_storage.py
 │   │       │       ├── repositories.py
 │   │       │       ├── telemetry.py
-│   │       │       └── vision.py
+│   │       │       ├── vision.py
+│   │       │       ├── care_planning.py
+│   │       │       ├── conversations.py
+│   │       │       └── product_information.py
 │   │       ├── domain/
 │   │       │   ├── auth/
 │   │       │   ├── scans/
 │   │       │   ├── extraction/
-│   │       │   ├── care_rules/
-│   │       │   │   └── data/
+│   │       │   ├── care/
+│   │       │   │   ├── evidence/
+│   │       │   │   ├── proposal/
+│   │       │   │   └── validation/
 │   │       │   ├── detergents/
-│   │       │   │   └── data/
+│   │       │   │   └── validation/
+│   │       │   ├── garments/
+│   │       │   ├── products/
+│   │       │   ├── conversations/
 │   │       │   ├── rendering/
 │   │       │   ├── review/
 │   │       │   └── shared/
@@ -305,12 +356,14 @@ fabricassist-platform/
 │   │       │   ├── security/
 │   │       │   ├── telemetry/
 │   │       │   ├── valkey/
+│   │       │   ├── product_information/
 │   │       │   └── vision_providers/
 │   │       │       ├── mock.py
 │   │       │       └── openai_compatible.py
 │   │       └── worker/
 │   │           ├── celery_app.py
 │   │           ├── analyse_scan.py
+│   │           ├── answer_message.py
 │   │           ├── delete_scan_assets.py
 │   │           └── retention.py
 │   ├── migrations/
@@ -340,7 +393,11 @@ fabricassist-platform/
 │   │       │   ├── quality_failures/
 │   │       │   └── README.md
 │   │       ├── extractions/
-│   │       └── care_rules/
+│   │       ├── proposals/
+│   │       ├── validation/
+│   │       ├── products/
+│   │       ├── identity/
+│   │       └── conversations/
 │   ├── pyproject.toml
 │   ├── uv.lock
 │   ├── Dockerfile
@@ -356,6 +413,8 @@ fabricassist-platform/
 │   │       │   │   │   └── register.tsx
 │   │       │   │   ├── (customer)/
 │   │       │   │   │   ├── scans/
+│   │       │   │   │   ├── garments/
+│   │       │   │   │   ├── conversations/
 │   │       │   │   │   ├── history/
 │   │       │   │   │   └── profile/
 │   │       │   │   └── (operator)/
@@ -365,6 +424,9 @@ fabricassist-platform/
 │   │       │   │   ├── capture/
 │   │       │   │   ├── scans/
 │   │       │   │   ├── results/
+│   │       │   │   ├── garments/
+│   │       │   │   ├── product-information/
+│   │       │   │   ├── conversations/
 │   │       │   │   ├── history/
 │   │       │   │   └── reviews/
 │   │       │   ├── components/
@@ -435,7 +497,11 @@ fabricassist-platform/
 │   │   ├── 005-deterministic-care-rules.md
 │   │   ├── 006-provider-neutral-vision.md
 │   │   ├── 007-direct-object-storage-uploads.md
-│   │   └── 008-engram-deferred.md
+│   │   ├── 008-engram-deferred.md
+│   │   ├── 009-validator-gated-ai-care-plans.md
+│   │   ├── 010-durable-garment-identity-and-history.md
+│   │   ├── 011-trusted-product-information-lookup.md
+│   │   └── 012-server-owned-contextual-conversations.md
 │   ├── api/
 │   │   └── openapi.json
 │   ├── privacy/
@@ -449,6 +515,8 @@ fabricassist-platform/
 │   │   └── deletion-failures.md
 │   ├── testing/
 │   │   └── fixture-licensing.md
+│   ├── prompts/
+│   │   └── IMPLEMENT_GARMENT_INTELLIGENCE.md
 │   └── threat-model.md
 └── .github/
     ├── dependabot.yml
@@ -487,7 +555,9 @@ floating production tags.
 | Task queue | **Celery 5.x** behind a `JobDispatcher` port | Valkey broker initially; database scan state/checkpoints are authoritative. Ignore unnecessary Celery results; RabbitMQ remains a broker-only migration option. |
 | Object storage | **S3-compatible port** with a **boto3** adapter | MinIO locally, S3 on AWS, provider-neutral key/metadata/presign semantics in the application port. |
 | Image processing | **Pillow** plus **opencv-python-headless** | Decode/bomb limits, EXIF orientation, sRGB normalization, dimensions, blur/brightness/glare, SHA-256, and pHash candidate generation. |
+| Barcode decoding | **OpenCV where sufficient, otherwise one small reviewed decoder** | Decode locally before AI/OCR fallback; validate supported formats/checksums. Select an extra package only after maintenance/license/native-image checks. |
 | Provider HTTP | **httpx** | Timeouts, bounded concurrency, request fingerprinting, OpenAI-compatible endpoint, no provider SDK in domain code. |
+| Product information | **Provider-neutral `ProductInformationProvider` over `httpx`** | Deterministic no-network mock by default; sourced real adapters later; explicit SSRF/outbound URL policy. |
 | Authentication | **argon2-cffi**, **PyJWT**, standard `secrets`/`hmac` | Argon2id passwords, short-lived JWT access tokens, opaque rotating refresh families whose hashes only are stored. |
 | Testing | **pytest**, **pytest-asyncio**, **pytest-cov**, **Hypothesis** where invariants help | Unit, API, container integration, migration, provider contract, and table/property-based safety tests. No paid provider in defaults. |
 | Formatting/linting | **Ruff formatter and Ruff linter** | One Python style tool, enforced in root Make targets and CI. |
@@ -831,324 +901,278 @@ so retention work is not hidden inside human review or production hardening.
 - **Dependencies:** Phase 8.
 - **Suggested commit:** `feat(vision): add provider port and deterministic mock`
 
-## Phase 10 — Structured label extraction
+Phases 10–13 form one coordinated breaking core release. They may be developed
+as reviewable commits, but the cutover is not accepted or released after only
+the upload/revision change. The release completes only when the rich evidence,
+planner/validator, and rich result replace the old analysis path and all legacy
+roles/contracts/code are removed.
 
-- **Objective:** Validate complete, language-independent label facts before they
-  can reach care rules.
-- **Scope:** Strict Pydantic extraction boundary and internal domain types for all
-  required care categories, original visible text, confidence and explicit
-  unknowns; numeric/enum/cross-field/composition validation; contradiction and
-  confidence policy; versioned prompt/schema assets; OpenAI-compatible `httpx`
-  adapter with mocked HTTP contract tests; persist immutable original and
-  validated payloads.
-- **Explicitly excluded:** Final care decision/prose, automatic repair loops beyond
-  one configured constrained retry, live-provider requirement, semantic cache.
-- **Files/directories:** Extraction domain schemas/validators, prompt/schema
-  assets, provider HTTP adapter, extraction repositories, versioned AI fixtures,
-  evaluation command/docs.
-- **Database changes:** `label_extractions`, `extracted_materials`, and
-  `extracted_care_facts`; typed/indexed safety fields plus JSONB immutable provider
-  and validated snapshots; supersession/human-correction markers; explicit
-  `tenant_id` on every tenant-owned table even when a parent FK also implies it.
-- **API endpoints:** No new endpoint; safe scan detail may expose normalized facts
-  only after authorization, never raw provider payload.
-- **Frontend screens/components:** Retake/uncertainty state using stable codes;
-  optional detected-facts development/operator component, not final result UI.
-- **Tests:** Spanish/English/mixed text preservation, missing/unknown symbols,
-  invalid enums/ranges, percentages, contradictions, garment-only restrictions,
-  sensitive materials, schema retry limit, synthetic HTTP responses, fixture
-  evaluation with no paid API.
-- **Validation commands:** Extraction unit/property/contract/fixture suites;
-  worker integration with mock; opt-in live test command verified as skipped by
-  default; migration checks; `make check`.
-- **Acceptance criteria:** Invalid output never reaches rules; absent evidence is
-  `unknown`, never inferred; original text is preserved; garment-only extraction
-  cannot authorize care; low confidence produces retake/review candidates;
-  provider metadata is complete where available.
-- **Dependencies:** Phase 9; production provider selection remains deferred.
-- **Suggested commit:** `feat(extraction): validate structured care-label facts`
+## Phase 10 — Multi-photo upload and analysis revisions
 
-## Phase 11 — Deterministic care-rules engine
-
-- **Objective:** Produce the authoritative canonical care and detergent decision
-  from validated facts only.
-- **Scope:** Explicit enums/value objects, immutable care-rules v1 and separate
-  detergent-rules v1 assets, checksum registration/activation guard, precedence,
-  prohibitions, material fallbacks, professional-only wording codes,
-  contradiction/sensitive-case review outcomes, canonical structured result,
-  no-wash/no-detergent safety invariant.
-- **Explicitly excluded:** Localized prose/templates, caching, model-generated
-  explanation, admin rule editor, unreviewed production activation.
-- **Files/directories:** `domain/care_rules`, `domain/detergents`, versioned data,
-  services and exhaustive unit/regression fixtures; ADR-005 detail/rule-change
-  documentation.
-- **Database changes:** `care_results` with source extraction, normalized JSONB
-  snapshot plus selected typed safety fields, care/detergent rule versions,
-  validation status; immutable `ruleset_versions` checksums/activation state.
-- **API endpoints:** `GET /api/v1/scans/{scan_id}/result` returns a structured
-  canonical result/status; no customer prose yet.
-- **Frontend screens/components:** Typed internal result-state fixtures only;
-  customer rendering arrives in Phase 13.
-- **Tests:** Table-driven every rule branch; explicit all prohibited/contradictory
-  combinations; label-over-material precedence; garment-only denial; sensitive
-  leather/suede/fur review; detergent categories/softener/bleach; immutable
-  activated checksum; deterministic output snapshot.
-- **Validation commands:** Domain unit/property/regression tests without Docker;
-  repository integration and migrations with PostgreSQL; worker end-to-end mock
-  extraction to canonical result; `make check`.
-- **Acceptance criteria:** Same input+versions always produces the same object;
-  every completed result references active immutable versions; prohibitions win;
-  no domestic detergent when water washing is prohibited; contradictions and
-  configured sensitive cases never become confidently completed results.
-- **Dependencies:** Phase 10; care expert approval blocks production activation.
-- **Suggested commit:** `feat(care): add versioned deterministic care rules`
-
-## Phase 12 — Exact and canonical result caching
-
-- **Objective:** Safely avoid repeat provider/rule work without weakening care
-  constraints.
-- **Scope:** Versioned normalization derivative; SHA-256 exact mappings; pHash
-  candidate discovery with mandatory verification; stable canonical
-  serialization/signature hash; tenant-scoped validated-result lookup;
-  PostgreSQL durable records and Valkey hot mirrors; reuse count/provenance and
-  invalidation; provider-call spy proving exact reuse.
-- **Explicitly excluded:** Semantic/pgvector reuse, cross-tenant reuse, fuzzy
-  automatic truth, rendering cache (Phase 13).
-- **Files/directories:** Image fingerprint/cache application/domain adapters,
-  canonical serializer, Valkey namespaced key definitions, cache docs and tests.
-- **Database changes:** `image_fingerprints` and durable cache provenance fields/
-  indexes on extraction/results; canonical hash uniqueness scoped by tenant
-  policy and versions; invalidation reason/hit count/origin; explicit `tenant_id`
-  on every tenant-owned cache/fingerprint record.
-- **API endpoints:** No new endpoint; authorized result metadata may include safe
-  `reuse_source` and validation state.
-- **Frontend screens/components:** Small result provenance label if UX-approved;
-  no cache decisions in frontend.
-- **Tests:** Normalization/hash stability, one-pixel/crossed-symbol pHash candidate
-  non-reuse, schema/rules mismatch miss, prohibition/temperature/process mismatch
-  miss, invalidated/human states, tenant isolation, Valkey loss fallback,
-  concurrent hit count, repeated exact input makes zero additional provider calls.
-- **Validation commands:** Unit/property tests; PostgreSQL+Valkey integration;
-  full Compose same-image twice and assert model-run count; cache-key snapshot;
+- **Objective:** Replace the two-photo/one-result contract with the revision-aware
+  multi-photo contract as an intentional breaking cutover.
+- **Scope:** Support one to eight completed images by default with repeated
+  `garment_overview`, `care_label`, `composition_label`,
+  `barcode_brand_label`, `stain_closeup`, `damage_closeup`,
+  `construction_detail`, and `other` roles; add image collection operations,
+  ordering/removal, an accessible Expo gallery, and revision-aware analysis.
+- **Explicitly excluded:** Rich AI evidence, care planning, product-network
+  lookup, identity matching, and chat behavior.
+- **Database changes:** Add a new Alembic revision after current head; expand the
+  image-role constraint and metadata; add minimal physical `garments`,
+  `analysis_revisions`, active revision/result pointers, revision-trigger image
+  membership, and supersession fields. Transform retained local rows where useful,
+  then remove obsolete one-extraction/result-per-scan constraints and legacy
+  image-role/result columns; do not implement dual schemas.
+- **API endpoints:** Replace the current create-with-images contract so
+  `POST /api/v1/scans` creates only a draft scan; add
+  `POST /api/v1/scans/{id}/images` and
+  `DELETE /api/v1/scans/{id}/images/{image_id}`; return typed image/revision
+  metadata. Regenerate OpenAPI/client atomically.
+- **Frontend:** Replace the fixed two-slot state with an accessible gallery,
+  repeated roles, camera-first add, upload fallback, preview/reorder/remove, per-
+  role guidance, count/size limits, and retry states.
+- **Tests:** One/eight/over-limit images, repeated roles, order/removal,
+  incomplete upload, tenant ownership, object deletion, explicit rejection of
+  removed legacy roles/contracts,
+  migration empty/previous-head, generated contract, web and Android capture.
+- **Acceptance:** Legacy fixed-role requests are unsupported; eight repeated-role
+  images can be uploaded and analyzed as one revision; adding/removing evidence
+  creates/supersedes a revision rather than using the old one-result model.
+- **Validation:** Targeted backend/frontend tests, migration tests,
+  `make openapi`, `make lint`, `make test`, Android development-build smoke, and
   `make check`.
-- **Acceptance criteria:** Exact validated compatible input avoids provider call;
-  canonical equivalent reuses only exact safety facts/versions; Valkey flush does
-  not lose durable cache; all keys use documented `fabricassist:` namespace;
-  unsafe pHash candidates never auto-reuse.
-- **Dependencies:** Phase 11; cross-tenant and pHash decisions.
-- **Suggested commit:** `feat(cache): add safe exact and canonical result reuse`
+- **Suggested commit:** `feat(scans): support multi-photo analysis revisions`
 
-## Phase 13 — Multilingual result rendering
+## Phase 11 — Rich source-referenced evidence dossier
 
-- **Objective:** Render authoritative canonical results accessibly in Spanish and
-  English without another LLM call.
-- **Scope:** Typed rendering codes and parameterized templates, prohibitions-first
-  sections, distinction among detected/interpreted/recommended/prohibited/
-  professional-only/uncertain facts, template version/checksum, durable rendered
-  answers and Valkey mirror, language selection/fallback, accessible shared result
-  screen.
-- **Explicitly excluded:** Additional languages, unvalidated generative prose,
-  visual reproduction of protected care symbols, separate web portal.
-- **Files/directories:** Backend rendering domain/assets/service, frontend typed
-  catalogs/result feature, translation tests, cache-key/version docs.
-- **Database changes:** `rendered_answers` unique by care result/language/template
-  version within its tenant, explicit `tenant_id`, rendering ruleset registration,
-  and render provenance/hit count as needed.
-- **API endpoints:** Localized `GET /api/v1/scans/{scan_id}/result?language=es|en`
-  while retaining canonical structured codes in the response contract.
-- **Frontend screens/components:** Result screen, prohibition/warning summary,
-  detected-vs-recommended sections, professional-only/uncertainty banners,
-  accessible language switch and loading/error states.
-- **Tests:** Catalog parity, typed key/parameter coverage, temperatures and
-  prohibitions unchanged by rendering, ES/EN snapshots, language fallback,
-  screen reader labels, no color-only meaning, dynamic text, render cache version
-  misses, Valkey fallback.
-- **Validation commands:** Backend render tests and integration; frontend unit/
-  component/accessibility checks; Playwright result flow in both languages; web
-  build; Android screen smoke; `make openapi`; `make check`.
-- **Acceptance criteria:** Same canonical result renders correct ES/EN templates;
-  no LLM call is made; numeric/safety facts exactly match canonical data; cached
-  output includes language/template/rule versions; provisional state is explicit.
-- **Dependencies:** Phases 11–12.
-- **Suggested commit:** `feat(results): render typed Spanish and English guidance`
+- **Objective:** Replace the narrow `LabelExtractionPayload` boundary with a
+  multi-photo garment evidence contract that is independent of application and
+  infrastructure modules.
+- **Scope:** Create domain evidence types for image observations, garment
+  category/construction, photographed care and composition facts, materials,
+  barcode/brand observations, visible stain/damage hypotheses, original text,
+  uncertainty, confidence, and evidence source IDs. Add deterministic merge of
+  an evidence delta into immutable/superseding observations.
+- **Explicitly excluded:** AI care proposal, external product lookup, customer
+  rich prose, automatic identity linking, and chat.
+- **Architecture migration:** Remove the reverse dependency where domain
+  `care.py` imports `application.vision`; provider Pydantic DTOs map into domain
+  evidence at the application boundary. Remove the legacy narrow provider/domain
+  mapper rather than retaining a compatibility adapter.
+- **Database changes:** Add revision-owned evidence dossiers, observations,
+  source references, stable-versus-time-varying classification, and safe raw/
+  validated snapshots. Do not overwrite historical `label_extractions`.
+- **Provider changes:** Evolve the provider port to `extract_evidence(images,
+  prior_dossier)`; pass image IDs and roles; update mock, OpenAI-compatible,
+  Responses, and Azure adapters plus operation/prompt/schema metadata.
+- **Tests:** Multiple/repeated roles, per-fact provenance, label text fidelity,
+  composition tolerances, unknowns, garment-only provisional state, stain
+  hypotheses, prompt-injection text, delta merge/supersession, adapter contracts,
+  and deterministic fixtures with no network by default.
+- **Acceptance:** Every fact is source-referenced; absent evidence stays unknown;
+  visible stain identity is not asserted as certain; a complete active dossier
+  can be reconstructed from persisted revisions without provider state.
+- **Suggested commit:** `feat(evidence): add multi-photo garment dossier`
 
-## Phase 14 — Human-review workflow
+## Phase 12 — AI care planning and deterministic validation
 
-- **Objective:** Allow authorized operators to correct uncertain evidence and
-  approve a newly evaluated auditable result.
-- **Scope:** Review triggers for low confidence, contradictions, sensitive
-  materials and user request; cursor-paginated queue/detail; assignment/status;
-  edits create a superseding human-corrected extraction while preserving the
-  original; rules rerun; approval activates result and may validate tenant cache;
-  customer-facing note; feedback types and audit events.
-- **Explicitly excluded:** Feedback directly mutating results, in-place provider
-  payload edits, automatic rule authoring, cross-tenant operators, unlicensed
-  image sharing.
-- **Files/directories:** Review domain/application/API/repositories, audit adapter,
-  frontend operator review routes/components and customer feedback controls,
-  review docs/tests.
-- **Database changes:** `review_cases`, `feedback`, `audit_events`, assignment/
-  resolution indexes, superseding extraction relationships, human-approved result
-  status. Every tenant-owned row contains `tenant_id`.
-- **API endpoints:** `GET /api/v1/reviews`,
-  `GET/PATCH /api/v1/reviews/{review_id}`,
-  `POST /api/v1/reviews/{review_id}/approve`, and
-  `POST /api/v1/scans/{scan_id}/feedback` with idempotency where required.
-- **Frontend screens/components:** Operator queue/detail, confidence/evidence
-  editor, correction confirmation, approval/note, customer review status and
-  feedback/request-review controls.
-- **Tests:** Role/tenant isolation, cursor pagination, optimistic concurrent edit,
-  immutable original, correction validation, rules rerun, approval idempotency,
-  audit redaction/before-after summary, cache provenance, feedback cannot mutate,
-  accessible operator web components.
-- **Validation commands:** Backend unit/integration/security tests; frontend
-  component tests; Playwright customer-request → operator-correct → customer-view
-  flow; migration/OpenAPI drift; `make check`.
-- **Acceptance criteria:** Required cases enter review; only same-tenant operators
-  can inspect/correct; original evidence remains auditable; approval uses Python
-  rules and records actor/time/versions; customer sees the approved result.
-- **Dependencies:** Phases 6 and 13.
-- **Suggested commit:** `feat(review): add auditable operator correction flow`
+- **Objective:** Let AI propose the rich answer while retaining an immutable
+  deterministic release gate for every safety-relevant claim.
+- **Scope:** Add `CarePlanningProvider`, strict `ProposedCarePlan`, separate
+  detergent proposal, `CareValidationReport`, versioned validator policies,
+  checksums/activation, accept/warn/block/better-image/review outcomes, and one
+  constrained retry using machine-readable repairable violations.
+- **Plan sections:** Preparation, stain treatment, cleaning, detergent, drying,
+  ironing, professional care, prohibited actions, evidence references,
+  uncertainty, rationale codes, and follow-up questions.
+- **Hard validation:** Photographed label over catalog/material/generic advice;
+  prohibition over allowance; no detergent when water washing is prohibited; no
+  excessive temperature; no prohibited bleach/tumble/iron/dry-clean; no consumer
+  professional solvents; garment-only remains provisional; sensitive materials,
+  contradictions, unsupported certainty, and invalid evidence references block
+  or route to review.
+- **Migration:** Delete `decide_care()` and the narrow v1 result/render execution
+  path when this phase lands. Persist proposal and validation report separately and tie
+  the active result to their schema/prompt/model/validator versions.
+- **Tests:** Table/property-driven every violation/warning/outcome, retry once
+  only, second failure review, deterministic validator snapshots, proposal schema
+  failures, label/catalog conflicts, stain uncertainty, sensitive materials,
+  professional-only wording, and explicit absence of legacy fallback behavior.
+- **Acceptance:** A proposal is never customer-visible as approved until the
+  complete merged dossier and plan pass the active validator; the validator does
+  not silently create another recommendation.
+- **Suggested commit:** `feat(care): validate AI-proposed care plans`
 
-## Phase 15 — Scan history, deletion, and retention
+## Phase 13 — Rich multilingual result experience
 
-- **Objective:** Complete customer lifecycle and privacy-preserving removal of
-  scans and stored images.
-- **Scope:** Cursor-paginated owned history/detail; preview URLs only when retained;
-  idempotent delete request; database tombstone/personal-association policy;
-  auditable retryable object deletion worker; retention scheduler; failed deletion
-  visibility/retry; documented derived-metric policy.
-- **Explicitly excluded:** Immediate unsafe hard deletion across transactions,
-  retaining images beyond policy, billing/logistics, undelete unless approved.
-- **Files/directories:** History/deletion/retention services/routes/tasks,
-  frontend history/detail/delete confirmation/profile settings, retention and
-  deletion runbooks/tests.
-- **Database changes:** Deletion requests/state/attempts or outbox records,
-  tombstone/deleted timestamps, retention indexes and safe audit references;
-  ensure object references are cleared only after successful deletion policy.
-- **API endpoints:** `GET /api/v1/scans`, detailed
-  `GET /api/v1/scans/{scan_id}`, and `DELETE /api/v1/scans/{scan_id}`.
-- **Frontend screens/components:** History list/detail, retained-image preview,
-  deletion confirmation/progress/failure, empty state, feedback/review state.
-- **Tests:** Cursor ordering, ownership/tenant denial, short-lived preview scope,
-  duplicate delete, MinIO transient retry, worker crash, retention boundary/time,
-  no orphaned objects after success, audit without sensitive paths, legal-policy
-  fixtures.
-- **Validation commands:** PostgreSQL/MinIO/Celery integration; advance test clock;
-  full Compose upload→complete→delete and inspect bucket/DB; Playwright history/
-  delete; Android smoke; `make check`.
-- **Acceptance criteria:** Users see only owned scans; deletion is traceable and
-  eventually removes objects/personal associations; failures are retryable and
-  visible; retention runs do not delete active/in-policy images.
-- **Dependencies:** Phase 14 and worker/storage foundations.
-- **Suggested commit:** `feat(history): add auditable scan deletion and retention`
+- **Objective:** Present the complete validated dossier and plan clearly in
+  Spanish and English.
+- **Scope:** Typed result contract and versioned rendering for warnings first,
+  preparation, cleaning, stain guidance, materials/construction, photographed
+  label facts, sourced product facts, detergent, drying, ironing, professional
+  care, prohibited actions, evidence/confidence, uncertainty, validation status,
+  and change summary. Optional generated explanation may only restate validated
+  claims; structured sections remain present.
+- **Database changes:** Revision-aware rendered answers with evidence/proposal/
+  validation/template versions and durable source display metadata.
+- **Frontend:** Accessible rich result cards, source badges (`photographed`,
+  `catalog`, `user`, `visual hypothesis`, `human`), provisional/review states,
+  analyzed-before/cleaned-before placeholders, and add-photo/follow-up entry
+  points that remain disabled until owning phases.
+- **Tests:** ES/EN catalog parity, source labels, numeric/prohibition invariants,
+  optional prose claim coverage, screen-reader order, dynamic type, keyboard web,
+  snapshots, generated API drift, web E2E, Android result smoke.
+- **Acceptance:** Users can understand what was seen, retrieved, inferred,
+  proposed, validated, prohibited, and still unknown; no prose changes a
+  validated temperature or permission.
+- **Suggested commit:** `feat(results): render rich validated garment guidance`
 
-## Phase 16 — Observability, security, and privacy
+## Phase 14 — Durable garment identity and service history
 
-- **Objective:** Apply cross-cutting production controls and demonstrate safe
-  operation without changing domain authority.
-- **Scope:** End-to-end correlation IDs/traces; structured redacted logs; required
-  API/queue/job/model/cache/review/storage/DB metrics; internal metrics exposure;
-  rate limits for auth/scan/upload/analysis; explicit CORS; secure headers/TLS
-  assumptions; global/per-tenant model concurrency; secret validation; upload and
-  decompression limits; privacy data-flow/threat model; audit coverage; optional
-  local OTEL profile.
-- **Explicitly excluded:** AWS resources, vendor-specific telemetry in domain,
-  public metrics, secrets in repository, unsupported compliance certification.
-- **Files/directories:** Telemetry/security/Valkey adapters and middleware,
-  Compose OTEL profile, `docs/threat-model.md`, privacy docs/runbooks, security and
-  observability tests.
-- **Database changes:** Only migration-backed indexes/audit/security metadata
-  proven necessary; no log/image payload storage.
-- **API endpoints:** Harden liveness/readiness; `GET /api/v1/metrics` internal-only
-  or disabled in production by policy; admin usage diagnostics may expose
-  tenant-aggregated safe metrics through an authorized endpoint if specified.
-- **Frontend screens/components:** Privacy/retention disclosure, safe global error
-  states, optional authorized admin usage summary; no raw telemetry UI.
-- **Tests:** Rate limits, CORS allowlist, cookies/headers, log snapshot redaction,
-  presigned URL masking, correlation across API/job/provider, concurrency caps,
-  dependency outage readiness, tenant metric isolation, security regression
-  suite and fixture privacy/license manifest.
-- **Validation commands:** Full Compose OTEL smoke; `make check`; dependency and
-  secret scanners; load bursts for rate/concurrency limits; inspect logs/traces;
-  web accessibility/security headers check.
-- **Acceptance criteria:** Required metrics/traces/logs exist with no forbidden
-  data; production rejects insecure defaults; rate/concurrency controls work;
-  health endpoints disclose no sensitive details; privacy/retention/provider
-  subprocessors are documented.
-- **Dependencies:** Phases 6–15 so the complete flow can be instrumented.
-- **Suggested commit:** `feat(platform): add security and observability controls`
+- **Objective:** Recognize previously handled physical garments without merging
+  another unit of the same product or another customer's history.
+- **Scope:** Add `exact_instance`, `probable_instance`, `same_product`,
+  `visual_candidate`, `new_garment`, and `identity_conflict`; verified
+  FabricAssist QR/serial and confirmed relationships; candidate reasons and
+  explicit confirmation; stable identity/care versus time-varying condition;
+  append-only planned/performed/completed service events.
+- **Database changes:** Expand `garments`; add `garment_identifiers`, confirmation
+  audit, candidate/match runs, observation relationships, and
+  `garment_service_events`. Every tenant-owned row has `tenant_id` and indexes.
+- **API/frontend:** Garment list/detail/history, candidate read/confirm/link,
+  optional FabricAssist identifier display/scan, analyzed-before versus
+  cleaned-before, last analysis/service, and visible change summary.
+- **Incremental behavior:** Exact/confirmed garment loads the prior dossier;
+  extraction processes only uncached new images; stable evidence is reused;
+  condition is appended; the entire merged plan is revalidated.
+- **Tests:** Exact tag, prior confirmation, barcode-only same product, identical
+  garment false positive, cross-user/tenant denial, conflict handling,
+  confirmation idempotency, new stain revision, analysis-versus-service truth,
+  deletion/retention relationships, and no vector auto-link.
+- **Acceptance:** Only exact instance evidence auto-links; all non-exact matches
+  require confirmation; the UI never claims cleaning occurred from an analysis
+  or recommendation alone.
+- **Suggested commit:** `feat(garments): add identity and service history`
 
-## Phase 17 — AWS deployment
+## Phase 15 — Barcode and trusted product enrichment
 
-- **Objective:** Describe and provision a reviewable AWS staging topology while
-  keeping application protocols portable.
-- **Scope:** OpenTofu modules for network/private subnets/security groups, ECR,
-  ECS API/worker, ALB, RDS PostgreSQL+pgvector, ElastiCache Valkey, private S3 with
-  lifecycle, CloudFront web, secrets references, logs/metrics, backups, autoscale,
-  one-off migration task, budgets/tags; build/deploy/rollback runbooks and staging
-  CI plan/apply gates.
-- **Explicitly excluded:** Hard-coded account IDs/secrets/domains, automatic
-  production apply, Kubernetes, multi-region, a mandatory paid AI provider, EAS
-  dependency, database migration inside API startup.
-- **Files/directories:** `infrastructure/terraform/modules/**` and environment
-  compositions, deployment/rollback/backup runbooks, deploy workflow definitions,
-  environment-variable mapping documentation.
-- **Database changes:** No application schema beyond tested current migrations;
-  enable extensions and run Alembic as controlled one-off deployment action.
-- **API endpoints:** No new business endpoint; ALB uses liveness/readiness with
-  appropriate public/private exposure.
-- **Frontend screens/components:** No new product UI; publish Expo web artifact
-  behind CloudFront; document native environment configuration.
-- **Tests:** `tofu fmt/validate`, lint/security policy checks, plan in disposable
-  or approved staging account, container architecture/start smoke, migration job,
-  private network/bucket assertions, backup configuration, rollback rehearsal.
-- **Validation commands:** Local `tofu fmt -check -recursive` and `tofu validate`;
-  container builds/SBOM/scans; mocked/static IaC tests; approved staging `plan`;
-  post-deploy smoke. No `apply` is required to validate the implementation PR.
-- **Acceptance criteria:** Plan contains no secret/production identifier;
-  API/worker scale separately; data services are private/encrypted/backed up;
-  images are private/lifecycle-managed; migration and rollback steps are explicit;
-  same containers still run through local Compose/provider-neutral hosts.
-- **Dependencies:** Phase 16; AWS account/region/domain inputs only for apply.
-- **Suggested commit:** `feat(deploy): add portable AWS staging baseline`
+- **Objective:** Decode garment identifiers and enrich the dossier with sourced
+  product data without making the AI a barcode database.
+- **Scope:** Deterministic local decode/normalization/checksum validation; OCR/AI
+  fallback only for locating/recovering printed digits; provider-neutral
+  `ProductInformationProvider`; deterministic exact/probable/ambiguous/not-found
+  mock; durable lookup cache; real adapters only after source licensing/privacy/
+  coverage review.
+- **Database changes:** `product_profiles`, `product_identifiers`, and
+  `product_lookup_runs` with provider/source/reference/license metadata, match
+  status, request fingerprint, retrieved/refreshed/invalidated times, schema
+  version, safe raw/validated snapshots, and variant fields.
+- **Security:** No automatic arbitrary QR URL fetching; enforce HTTP(S), allowed
+  hosts, DNS/IP checks, private/loopback/link-local denial, redirect and response-
+  size limits, timeouts, content-type validation, log redaction, rate/concurrency
+  controls, and untrusted-content prompt isolation.
+- **Merge policy:** Photographed written/symbol label > exact manufacturer variant
+  > verified catalog > material/visual/generic advice. Ambiguity/not-found is
+  nonfatal; conflicts create warnings/review and never weaken a prohibition.
+- **Tests:** Supported/invalid checksum, blurred fallback, exact/probable/multiple/
+  missing, variant conflict, label override, provider timeout/retry, durable
+  refresh/invalidation, SSRF/redirect/oversize/malicious content, contract mock,
+  and no paid/default network.
+- **Acceptance:** A sourced product section appears only with match/source/
+  retrieval status; lookup failure leaves image-led analysis functional; barcode
+  match does not auto-attach physical garment history.
+- **Suggested commit:** `feat(products): enrich garments from trusted barcodes`
 
-## Phase 18 — Production hardening
+## Phase 16 — Server-owned contextual conversation
 
-- **Objective:** Prove the complete MVP meets safety, reliability, performance,
-  release, and recovery criteria before production launch.
-- **Scope:** Full regression/evaluation gate for selected model; p95/cache/load
-  tests; retry/dead-letter operational drills; database backup/restore drill;
-  object deletion/provider outage/Valkey loss exercises; dependency/container
-  scanning and update policy; OpenAPI/migration drift gates; Android release and
-  smoke; iOS CI/release when macOS runner is available; accessibility review;
-  runbooks/alerts/SLOs; rules/domain and privacy approval records.
-- **Explicitly excluded:** Optional pgvector semantic reuse, new languages,
-  payments, logistics, multi-region, custom-model training, autonomous agents.
-- **Files/directories:** CI hardening, load/security/evaluation tests, release
-  profiles, dashboards/alerts/runbooks, fixture/version manifests, production
-  readiness checklist.
-- **Database changes:** Only measured index/tuning migrations using
-  expand/migrate/contract; no history rewrites. Verify backup/restore and previous
-  image compatibility.
-- **API endpoints:** No required new endpoints; freeze and validate the MVP
-  OpenAPI contract and documented error codes.
-- **Frontend screens/components:** Fix only release/accessibility/platform gaps;
-  no new feature scope. Complete Android smoke and iOS when runner exists.
-- **Tests:** Entire section 6 strategy, load/security/accessibility, failure
-  injection, rules/provider fixture evaluation, upgrade/rollback, backup restore,
-  Android native critical flow, web E2E.
-- **Validation commands:** `make check`; full clean `make up`/migrate/seed/smoke;
-  CI matrix; container build/SBOM/vulnerability scan; approved load test;
-  Alembic previous→head and restore drill; Playwright/Maestro; opt-in selected
-  provider evaluation with synthetic/licensed fixtures only.
-- **Acceptance criteria:** All 13 MVP acceptance criteria in requirements are
-  demonstrated; documented p95 targets meet expected MVP load or an approved risk
-  states evidence/mitigation; no high/critical unresolved vulnerability; restore,
-  rollback, provider outage, Valkey loss and worker crash procedures are proven;
-  domain/privacy/licensing approvals are recorded.
-- **Dependencies:** Phases 1–17 and production provider/domain approvals.
-- **Suggested commit:** `chore(release): complete FabricAssist production readiness`
+- **Objective:** Let users ask follow-up questions using garment images, active
+  dossier/plan, prior answers, and confirmed service history without provider
+  lock-in.
+- **Scope:** PostgreSQL threads/messages/versioned rolling summaries; bounded
+  `ConversationContextBuilder`; structured assistant text, actionable claims,
+  evidence references, uncertainty, and follow-up questions; queued/processing/
+  completed/blocked/review/failed states; relevant-image selection; one
+  constrained retry only where policy permits.
+- **Database changes:** `conversation_threads`, `conversation_messages`,
+  `conversation_summaries`, message validation/report references, model-run
+  operation metadata, cursor indexes, retention/deletion/audit fields.
+- **API/frontend:** Cursor-paginated `GET/POST /scans/{id}/messages`, idempotent
+  message submission, polling with future SSE compatibility, localized chat UI,
+  revision/source indicators, add-new-photo workflow, clear provisional/blocked
+  states, rate limits.
+- **Safety:** Every actionable claim uses the active complete dossier and passes
+  the same validator. Provider conversation IDs are optimization metadata only;
+  label/catalog/user text cannot grant tools or override system/validator policy.
+- **Tests:** Prior-answer context, rolling-summary bounds/versioning, relevant
+  image resend only, label contradiction, prompt injection, evidence reference,
+  stale revision, new-photo activation, duplicate message, worker/provider
+  timeout, tenant/ownership, deletion/retention, cost/token metrics.
+- **Acceptance:** A follow-up can reference prior images/answers and new evidence;
+  each assistant answer records its evidence/result revision and validation state;
+  PostgreSQL alone can reconstruct the conversation.
+- **Suggested commit:** `feat(chat): add validated garment conversations`
+
+## Phase 17 — Evidence, product, and result reuse
+
+- **Objective:** Avoid repeat provider work without confusing cache, product
+  identity, and physical garment memory.
+- **Scope:** Versioned normalized SHA-256 exact evidence cache; pHash candidate
+  discovery; canonical validated-plan signature; durable product lookup refresh;
+  rendered answer cache; Valkey hot mirrors; reuse/invalidation/provenance/count;
+  incremental evidence delta selection.
+- **Explicitly excluded:** Cross-tenant physical history, automatic pHash/vector
+  identity, semantic override of exact safety facts.
+- **Tests:** Exact new/old image combinations, schema/prompt/validator/product/
+  template mismatches, crossed-symbol false candidates, tenant isolation, Valkey
+  loss, concurrent reuse, product refresh, full merged-plan revalidation, and
+  provider spies proving only new uncached evidence is extracted.
+- **Acceptance:** A remembered garment with one new stain image reuses stable
+  dossier facts, calls vision only for the new image where safe, replans affected
+  guidance, and validates the entire resulting plan; Valkey loss loses no record.
+- **Suggested commit:** `feat(cache): reuse versioned garment evidence safely`
+
+## Phase 18 — Review, history, deletion, and retention
+
+- **Objective:** Complete operator correction and privacy lifecycle for garments,
+  analyses, products, conversations, and service history.
+- **Scope:** Review queue/detail/assignment; immutable human-corrected evidence;
+  planner rerun and deterministic revalidation; approval/audit; customer feedback;
+  garment/scan history; retained-image previews; idempotent deletion/outbox;
+  conversation/product association policy; object deletion/retention jobs.
+- **API/frontend:** Existing review endpoints plus garment history, service-event
+  confirmation, feedback, deletion states, and operator source/proposal/validator
+  inspection. Product source cache may remain generic only under documented policy;
+  personal links/history are removed.
+- **Tests:** Role/tenant isolation, correction supersession, validation rerun,
+  approval idempotency, analyzed/cleaned truth, cursor history, duplicate delete,
+  object/provider transient failures, conversation purge, garment association
+  cleanup, audit redaction, retention boundary, Playwright operator/customer flow.
+- **Acceptance:** Original evidence/proposals remain auditable; approved correction
+  creates a new validated revision; deletion eventually removes private objects
+  and personal conversation/history associations according to policy.
+- **Suggested commit:** `feat(review): complete garment review and lifecycle`
+
+## Phase 19 — Observability, deployment, and production hardening
+
+- **Objective:** Prove the expanded product is secure, observable, portable, and
+  operationally recoverable before production use.
+- **Scope:** Correlation/traces across image, identity, product lookup, planning,
+  validation, chat, review, and deletion; structured redacted logs; rate and
+  global/tenant concurrency limits; metrics for identity outcomes, lookup
+  coverage/conflicts, validator blocks/retries, conversation context/cost, and
+  reviews; explicit CORS/security headers; provider/subprocessor/privacy docs;
+  OpenTofu AWS staging; backup/restore, outage, Valkey loss, worker crash, SSRF,
+  load, accessibility, Android/iOS release gates.
+- **Tests/validation:** Full `make check`, clean Compose migrate/seed/smoke,
+  previous-head migrations, provider/product/chat fixture evaluation, E2E and
+  Android smoke, security/secret/dependency/container/IaC scans, controlled load,
+  backup/restore and failure drills.
+- **Acceptance:** Expanded acceptance criteria in requirements are demonstrated;
+  no unreviewed high/critical vulnerability; textile-care validator, product
+  source/licensing, privacy/retention, and rollback approvals are recorded; local
+  operation still requires no paid provider or proprietary catalog.
+- **Suggested commit:** `chore(release): harden garment intelligence platform`
 
 # 6. Testing strategy
 
@@ -1157,12 +1181,15 @@ fixtures. Network access to paid providers is denied or unconfigured by default.
 
 ## Unit tests
 
-- Domain enums/value objects, scan state transitions, permissions, idempotency
-  decisions, signature serialization, translation parameters, and review logic.
+- Domain enums/value objects, scan/revision transitions, evidence delta merging,
+  identity classification, product normalization, proposed plans, validation
+  outcomes, conversation context, permissions, idempotency, signatures,
+  translation parameters, and review logic.
 - Application services use in-memory/fake ports and explicit clocks/UUID sources;
   infrastructure behavior belongs in integration/contract suites.
 - Use table-driven tests for finite safety branches and Hypothesis selectively
-  for invariants such as “prohibition cannot produce allowed advice.”
+  for invariants such as “prohibition cannot pass allowed advice” and “incremental
+  evidence still validates the complete merged plan.”
 
 ## Integration tests
 
@@ -1179,7 +1206,10 @@ fixtures. Network access to paid providers is denied or unconfigured by default.
   cursor pagination, error envelope/correlation ID, idempotency, and auth cookies.
 - Generate `docs/api/openapi.json` and the frontend client, then fail on Git
   drift. Never hand-edit generated sources.
-- Exercise backward-compatible examples and provider/internal data redaction.
+- Exercise only the new contract plus explicit rejection of removed legacy
+  request/result shapes and provider/internal data redaction.
+- Cover multi-photo collections, identity confirmation, product source metadata,
+  rich results, messages, and service events with generated client parity.
 
 ## Database and migration tests
 
@@ -1199,21 +1229,26 @@ fixtures. Network access to paid providers is denied or unconfigured by default.
   schema failure, storage failure, and final database state.
 - Assert deterministic failures do not blind-retry and exhausted jobs become
   operator-visible `failed` states.
+- Cover new-image-only extraction, evidence merge, product lookup, one proposal
+  retry, chat claims, stale revisions, and activation of the validated revision.
 
 ## Frontend component tests
 
-- React Native Testing Library covers auth forms, capture guidance, upload and
-  polling states, prohibition-first result sections, provisional/uncertain
-  banners, history, review editing, deletion, and platform adapter contracts.
+- React Native Testing Library covers auth forms, multi-photo capture/gallery,
+  upload and polling states, source-aware rich results, identity confirmation,
+  analyzed/cleaned history, product lookup states, contextual chat,
+  provisional/uncertain banners, review, deletion, and platform adapters.
 - Test accessible labels, focus/keyboard behavior for web, dynamic text, screen
   reader order, and meaning independent of color.
 - Mock generated API transport, not hand-written response types.
 
 ## End-to-end tests
 
-- Playwright web critical path: register/login → create scan → direct MinIO upload
-  → analyze with mock → poll → result ES/EN → exact reuse → request review →
-  operator correction/approval → history → deletion.
+- Playwright web critical path: register/login → multi-photo direct MinIO upload
+  → analyze with mock → rich result ES/EN → recognize/confirm repeated garment →
+  add new stain evidence → sourced mock barcode enrichment → validated follow-up
+  chat → exact/incremental reuse → request review → correction/approval →
+  analyzed/cleaned history → deletion.
 - Cross-tenant negative flows run with separate browser contexts.
 - Maestro provides at least an Android development-build smoke for auth, camera/
   selection, upload, processing, result, and logout. iOS CI is added on an
@@ -1221,24 +1256,30 @@ fixtures. Network access to paid providers is denied or unconfigured by default.
 
 ## LLM fixture-based tests
 
-- Version fixtures for clear/incomplete labels; blur/glare/folds/crop/low
+- Version fixtures for clear/incomplete labels; multi-photo repeated roles;
+  blur/glare/folds/crop/low
   resolution; Spanish/English/mixed/original other-language text; written
   supplements; contradictions; dry-clean-only/do-not-dry-clean; wool/silk/
-  technical/leather/suede/fur; unknown symbols/fields; garment-only/unrelated.
-- Expected data asserts normalized facts, unknowns, confidence ranges, and review
-  outcome, not brittle provider prose.
+  technical/leather/suede/fur; unknown symbols/fields; garment-only/unrelated;
+  visible stain hypotheses; barcode/brand/model; product exact/ambiguous/missing/
+  conflict; identity candidates; incremental deltas; chat injection/conflicts.
+- Expected data asserts normalized source-referenced evidence, plan constraints,
+  validator outcome, identity/product status, unknowns, and confidence ranges,
+  not brittle provider prose.
 - The mock returns these fixtures exactly. The OpenAI-compatible adapter uses an
   in-process synthetic HTTP server/transport. Live evaluation is opt-in and
   cannot gate ordinary pull requests unless separately funded/approved.
 
-## Care-rule regression tests
+## Care-plan validator regression tests
 
-- One case for every rule and detergent branch, every label/material precedence,
-  all prohibited combinations, professional-only handling, sensitive category,
-  unknown, and contradiction.
+- One case for every care/detergent validator branch, photographed-label/catalog/
+  material precedence, all prohibited combinations, professional-only handling,
+  sensitive category, stain uncertainty, unknown, contradiction, invalid source
+  reference, chat claim, and retry outcome.
 - Activated fixture outputs and checksums are immutable. A new version adds new
   fixtures rather than overwriting old expected history.
-- Verify rendering cannot alter permissions or numeric temperatures.
+- Verify rendering/conversation cannot alter permissions or numeric temperatures
+  or introduce an actionable claim not present in the validated plan.
 
 ## Image test fixtures
 
@@ -1246,17 +1287,21 @@ fixtures. Network access to paid providers is denied or unconfigured by default.
   must have a source/license manifest and contain no real customer data.
 - Include dimensions/size/format/EXIF/metadata, malformed and decompression-bomb
   simulations that are safe for CI, quality signals, normalization SHA, pHash
-  candidate behavior, and garment-vs-label classification fixtures.
+  candidate behavior, repeated roles, garment/label/composition/barcode/stain/
+  damage classification, and identity false-positive fixtures.
 - Never copy protected official symbol artwork without confirmed rights.
 
 ## Cache-reuse tests
 
-- Prove exact compatible repeat causes no additional provider invocation.
+- Prove exact compatible repeat causes no additional provider invocation and a
+  remembered garment with one new image extracts only the new image where safe.
 - Prove schema, normalization, rules, detergent, template, language, invalidation,
   tenant, prohibition, temperature, process-letter, and warning mismatches miss.
 - Prove pHash/semantic candidates cannot become hits without exact safety field
   comparison; Valkey flush falls back to PostgreSQL; concurrent hits update
   provenance safely.
+- Prove product lookup refresh/invalidation and full merged-plan revalidation are
+  independent of Valkey.
 
 ## Security and tenant-isolation tests
 
@@ -1266,6 +1311,9 @@ fixtures. Network access to paid providers is denied or unconfigured by default.
   rotation/replay, CSRF/cookie/CORS, idempotency ownership, object key/URL scope,
   upload MIME/size/decode/bomb defense, log/audit redaction, preview expiry,
   operator/admin restrictions, and eventually consistent deletion.
+- Cover identity-candidate privacy, product adapter SSRF/redirect/size/content
+  controls, prompt injection from image/catalog/chat text, chat/service ownership,
+  and analyzed-versus-cleaned audit truth.
 - Run dependency, secret, IaC, SBOM, and container vulnerability scanning in CI.
 
 # 7. Local development workflow
@@ -1296,8 +1344,10 @@ fetch a model or require a paid account.
 - `.env.example` contains safe local placeholders only; `.env` is ignored.
 - Application-owned variables use `FABRICASSIST_`, including:
   `FABRICASSIST_ENVIRONMENT`, URLs/CORS, PostgreSQL, Valkey/Celery, object storage,
-  provider/model/timeout/concurrency, JWT/refresh hash keys, retention/upload
-  limits, OTEL, and log level under that prefix.
+  evidence/planner/chat provider/model/timeout/concurrency, product-information
+  provider/outbound policy, maximum image count, conversation context bounds,
+  JWT/refresh hash keys, retention/upload limits, OTEL, and log level under that
+  prefix.
 - `FABRICASSIST_VISION_PROVIDER=mock` is the local/default test value.
 - Production settings reject local credentials, wildcard CORS, absent signing
   keys, and insecure storage/provider settings at startup.
@@ -1444,8 +1494,8 @@ secrets. Default jobs use the mock provider.
 2. **Backend type checking:** same lockfile environment, `pyright backend`; upload
    only safe diagnostics.
 3. **Backend tests:** fast unit job plus Docker-service integration matrix for
-   PostgreSQL+pgvector, Valkey, MinIO, and worker; coverage and fixture evaluation;
-   live provider excluded.
+   PostgreSQL+pgvector, Valkey, MinIO, and worker; evidence/planning/product/chat
+   contract fixtures and coverage; live providers excluded.
 4. **Frontend formatting and linting:** pin Node/Corepack/pnpm, frozen install,
    Prettier check and ESLint.
 5. **Frontend TypeScript:** strict typecheck, typed translation/catalog checks,
@@ -1480,17 +1530,23 @@ split it for speed but must not use different rules.
 4. **Production:** separate human approval, selected exact digests, backup check,
    migration expand/migrate/contract gate, rolling deploy/canary if available,
    post-deploy smoke and metrics review. Never auto-promote solely on main merge.
-5. **Rollback:** restore previous API/worker/web digests; only roll database back
-   when the reviewed migration explicitly supports it. Prefer forward fixes and
-   backward-compatible expansion. Document object/rule/template compatibility.
+5. **Rollback:** the garment-intelligence release is coordinated and does not
+   support mixed old/new clients. Restore a pre-cutover database snapshot plus
+   matching API/worker/web digests only when the reviewed runbook explicitly
+   supports it; otherwise prefer a forward fix. Document object/validator/template
+   version boundaries.
 
 # 9. Risks and mitigations
 
 | Risk | Mitigation and verification |
 |---|---|
 | Incorrect care-symbol interpretation | Preserve original evidence; strict codes/confidence/unknowns; contradiction checks; textile expert review of rules/fixtures; sensitive/prohibition cases route to review; never claim engineering tests prove textile correctness. |
-| LLM hallucinations | Model extracts only; strict schema/range/cross-field validation; missing evidence is `unknown`; at most one constrained schema retry; deterministic rules own decisions; fixture evaluation and provider promotion gate. |
-| Incompatible cached result reuse | Version normalization/schema/rules/detergent/templates/keys; tenant scope; exact safety-field comparison; pHash/vector are candidates only; invalidation/provenance; regression cases for a single crossed-out symbol and temperature/process mismatches. |
+| LLM hallucinations | Strict evidence/proposal/chat schemas and source references; missing evidence is `unknown`; deterministic validator gates every actionable claim; one constrained retry only; blocked/review fallback; fixture/provider promotion gate. |
+| Incompatible cached result reuse | Version normalization/evidence/proposal/validator/product/template/context keys; tenant scope; exact safety-field comparison; pHash/vector are candidates only; invalidation/provenance; full merged-plan revalidation. |
+| Wrong physical garment match | Separate product and physical garment; auto-link only verified instance IDs/prior confirmations; require confirmation for barcode/product/visual candidates; tenant/user scope; false-positive fixtures and unlink audit. |
+| Incorrect or missing barcode data | Deterministic normalization/checksum, typed exact/probable/ambiguous/not-found outcomes, source/retrieval display, physical label authority, mock default, catalog conflict tests. |
+| Malicious QR/catalog target | Do not fetch arbitrary URLs; HTTP(S)/host/IP/redirect/size/timeout/content policy, SSRF tests, outbound network restriction, untrusted content isolation and log redaction. |
+| Stale or unsafe conversation context | PostgreSQL revision ownership, versioned bounded summaries, recent-message/token limits, relevant images only, stale-revision detection, claim validation, deletion and prompt-injection tests. |
 | Blurred or incomplete labels | Pre-provider quality signals and thresholds; actionable retake guidance; stop unusable input before paid call; uncertainty/review fallback; quality fixture set with configurable tested thresholds. |
 | Personal data in uploaded images | Private buckets/URLs, EXIF stripping on normalized derivatives, no image/request logging, short retention/default 30 days, deletion workflow, provider retention/privacy review, tenant isolation, least privilege, encryption and documented data flow. |
 | High image-storage cost | Configurable retention/lifecycle expiry, normalized derivatives sized for inference, no DB blobs, deletion retry, bucket metrics/budgets, avoid duplicate originals where privacy policy allows only through references—not unsafe shared access. |
@@ -1499,7 +1555,7 @@ split it for speed but must not use different rules.
 | Mobile/web camera differences | Small `.native`/`.web` adapters, shared business/UI states, file-library fallback, platform permissions, device/emulator/browser matrix, clear guidance, no scattered `Platform.OS`. |
 | Trademark/licensing restrictions for care-symbol artwork | Use text/original generic shapes until rights are confirmed; record fixture/artwork provenance and license; do not copy protected official symbol sets; legal/domain approval gate before branded artwork. |
 | Tenant data leakage | `tenant_id` in every business table, tenant criteria inside repositories, role/ownership tests for every route, private object prefixes and scoped presigns, tenant-scoped cache default, audit and metric isolation. |
-| Unsafe rule change | Immutable activated versions/checksums, new version rather than mutation, exhaustive regression fixtures, domain expert approval, result/signature/version provenance, rollback-compatible activation. |
+| Unsafe validator change | Immutable activated versions/checksums, new version rather than mutation, exhaustive regression fixtures, textile expert approval, result/signature/version provenance, rollback-compatible activation. |
 | Valkey loss or duplicate Celery delivery | PostgreSQL state/checkpoints authoritative; idempotency keys and constraints; short expiring lock only as optimization; redispatch/recovery tests; durable results/cache mappings in PostgreSQL. |
 | Deletion partial failure | Transactional request/outbox state, idempotent object deletion task, retry/visibility/audit, tombstone and association policy, retention reconciliation job and runbook. |
 | Dependency/version drift | Lockfiles and pinned images/actions, generated-client drift, Renovate/Dependabot review, SBOM/vulnerability/license scans, Expo compatibility checks and upgrade smoke. |
@@ -1512,10 +1568,10 @@ split it for speed but must not use different rules.
 
 FabricAssist MVP is done only when:
 
-1. The complete customer and operator flows satisfy the 13 MVP acceptance
+1. The complete customer and operator flows satisfy all MVP acceptance
    criteria in the requirements locally with Docker Compose and in staging.
-2. Model output is strict structured evidence only; deterministic versioned
-   Python rules are the sole authority for care and detergent decisions.
+2. Evidence, proposed plans, and actionable chat claims are strict typed data;
+   deterministic versioned Python validators gate every released care/detergent action.
 3. Prohibitions, contradictions, garment-only cases, low confidence, and
    sensitive materials fail safely and have exhaustive regression coverage.
 4. PostgreSQL is authoritative; Valkey loss cannot erase completed data; images
@@ -1524,10 +1580,11 @@ FabricAssist MVP is done only when:
 5. Authentication, rotating refresh sessions, role/tenant/ownership enforcement,
    rate limits, CORS, secrets, log redaction, and audit/privacy controls pass
    negative tests.
-6. Spanish and English accessible web/mobile results are rendered from typed
-   templates without changing canonical facts.
-7. Exact and canonical safe reuse avoids repeat provider work and records all
-   provenance/versions; unsafe candidate mismatches demonstrably miss.
+6. Spanish and English accessible web/mobile results preserve validated facts,
+   show provenance/uncertainty, and never rely on free-form prose alone.
+7. Exact/incremental evidence, product, canonical result, and render reuse avoid
+   repeat provider work while recording provenance/versions and revalidating the
+   complete merged plan.
 8. FastAPI OpenAPI and the generated TypeScript client have no drift.
 9. Every schema change has an Alembic migration tested from empty and previous
    supported schema; production rollout/rollback compatibility is documented.
@@ -1545,6 +1602,12 @@ FabricAssist MVP is done only when:
     generated client are synchronized with behavior.
 15. Remaining limitations are explicitly deferred rather than represented as
     complete.
+16. Product profiles and physical garments are separate; non-exact identity
+    candidates require confirmation; analyzed-before and cleaned-before are truthful.
+17. Product lookups are sourced, safe under ambiguous/not-found/conflict cases,
+    and photographed care-label facts remain authoritative.
+18. PostgreSQL can reconstruct garment evidence revisions, validated plans,
+    conversations, and confirmed service events without provider-side memory.
 
 ## Phase-level checklist
 
@@ -1565,7 +1628,7 @@ Each phase is done only when all boxes applicable to that phase are checked:
       required device/emulator check.
 - [ ] Formatting, linting, type checking, tests, and relevant build commands were
       actually run successfully.
-- [ ] README/configuration/environment/security/retention/rule/cache/provider
+- [ ] README/configuration/environment/security/retention/validator/cache/provider
       documentation changed with behavior.
 - [ ] No secrets, private customer data, unsafe logs, unlicensed fixtures, or
       floating dependencies were introduced.
@@ -1575,20 +1638,27 @@ Each phase is done only when all boxes applicable to that phase are checked:
 
 # 11. Recommended first implementation task
 
-After this plan and the source-document-location decision are approved, Codex
-should implement **Phase 1 — Repository foundation only**.
+The repository foundation and narrow local analysis slice already exist. The next
+Codex session should implement the coordinated **Phases 10–13 breaking core
+cutover**. It must not release or present Phase 10 alone as the new architecture.
 
 The exact task is:
 
-> Establish the canonical FabricAssist monorepo directories and root developer
-> interface; resolve the requirements/architecture file location without
-> duplicating sources; add README, safe `.env.example`, Makefile targets,
-> editor/ignore/version metadata, ADR records/templates, Compose configuration
-> validation, and CI skeletons. Add configuration/naming checks and run every
-> Phase 1 validation command. Do not initialize Python dependencies, generate a
-> FastAPI project, initialize pnpm/Expo, create migrations, or begin later phases.
+> Starting from the existing working tree, replace create-with-fixed-images scans
+> with draft scan creation plus an image collection supporting a configurable
+> default maximum of eight
+> images with repeated typed roles. Add analysis revision persistence and active
+> revision pointers through a new Alembic migration; add image collection API
+> operations; replace the fixed Expo two-slot state with an accessible
+> camera-first gallery; regenerate OpenAPI/client; remove legacy role/request/
+> result compatibility instead of adding shims; add backend/frontend/migration/
+> contract tests; then implement the source-referenced evidence dossier, strict
+> AI-proposed plan, deterministic validator, and rich multilingual result from
+> Phases 11–13. Delete the narrow extraction/result/renderer and `decide_care()`
+> execution rather than retaining fallbacks. Run all relevant quality gates. Do
+> not begin garment identity matching, product lookup, or chat.
 
-That is the smallest coherent first delivery because it resolves the current
-source-path contradiction, fixes canonical conventions before generated files
-exist, creates the stable command surface all later phases depend on, and can be
-reviewed without conflating framework or product behavior.
+That is the smallest coherent breaking vertical slice because every later feature
+depends on a revision-aware multi-photo aggregate and the user explicitly does
+not want the old analysis mode kept for compatibility. The reusable detailed
+handoff prompt is in `docs/prompts/IMPLEMENT_GARMENT_INTELLIGENCE.md`.

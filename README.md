@@ -1,17 +1,26 @@
 # FabricAssist
 
 FabricAssist is a safety-oriented clothing-care assistant for garment owners and
-professional cleaning companies. The planned product will analyse garment and
-care-label images, validate structured evidence, and use deterministic Python
-rules to produce authoritative cleaning guidance.
+professional cleaning companies. The approved target analyses multiple garment,
+label, barcode/brand, stain, damage, and construction images; builds sourced
+structured evidence; lets AI propose rich care guidance; and releases actionable
+claims only after deterministic Python validation. It also remembers physical
+garments, service history, sourced product data, and contextual conversations.
 
-> **Implementation status — local analysis slice:** authenticated users can capture
+> **Implementation status — legacy local analysis slice:** authenticated users can capture
 > or upload either a care-label or garment image, optionally add the other for
 > context, queue the scan for asynchronous processing, and view a localized result.
 > The default deterministic mock intentionally returns a review-safe outcome. A
 > real, OpenAI-compatible vision LLM is opt-in through uncommitted environment
-> variables. The LLM extracts facts only; deterministic Python rules produce the
-> safety-critical care answer.
+> variables. The implemented v1 LLM extracts facts only and deterministic Python
+> rules produce a small answer. ADR-009 through ADR-012 approve the next migration
+> to multi-photo evidence, AI-proposed validator-gated plans, durable garment
+> memory/product enrichment, and server-owned contextual chat; those capabilities
+> are documented but are not yet implemented.
+
+The approved migration is intentionally breaking. When implemented, it removes
+the fixed two-photo/narrow v1 API, result, renderer, and `decide_care()` execution
+path; old clients and compatibility aliases will not be retained.
 
 ## Sources of truth
 
@@ -21,6 +30,7 @@ Read these documents before making changes, in the precedence described by
 - [Product and technical requirements](docs/requirements.md)
 - [Architecture](docs/architecture.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
+- [Next-session garment-intelligence prompt](docs/prompts/IMPLEMENT_GARMENT_INTELLIGENCE.md)
 
 The three source documents intentionally remain under `docs/`; they must not be
 duplicated at the repository root.
@@ -41,6 +51,7 @@ duplicated at the repository root.
 │   ├── architecture.md
 │   ├── IMPLEMENTATION_PLAN.md
 │   ├── adr/
+│   ├── prompts/
 │   └── runbooks/
 └── .github/workflows/
 ```
@@ -135,8 +146,10 @@ FABRICASSIST_VISION_MODEL=your-vision-model
 ```
 
 Use an endpoint compatible with `POST /chat/completions` and image data URLs.
-Never commit the API key. The LLM response is schema-validated; the final answer
-is rendered from the validated facts and deterministic safety rules.
+Never commit the API key. In the current legacy slice, the response is
+schema-validated and deterministic rules generate the result. The approved
+redesign keeps this behavior until Phase 12 replaces it with a typed AI proposal
+and deterministic validation gate.
 
 ### Azure OpenAI
 
@@ -158,12 +171,13 @@ header. This follows the [Azure OpenAI REST reference](https://learn.microsoft.c
 
 ## Provider-neutral model interface
 
-The worker depends only on the `VisionExtractionProvider` interface. Azure OpenAI,
+The current worker depends only on the `VisionExtractionProvider` interface. Azure OpenAI,
 an OpenAI-compatible endpoint, and the no-network mock are infrastructure
 adapters selected by `FABRICASSIST_VISION_PROVIDER`; neither the worker nor the
 care rules contain vendor-specific logic. Adding another model provider means
-implementing and registering one adapter, while retaining the same strict
-structured extraction schema and deterministic final-care rules.
+implementing and registering one adapter. Planned provider-neutral ports for
+evidence extraction, care planning, product information, and conversation are
+defined in the architecture and will retain strict schemas and validation gates.
 
 For an OpenAI Responses-compatible gateway, use the generic configuration below;
 gateway-specific headers remain local configuration rather than source code:
@@ -229,5 +243,7 @@ development placeholders. They are not production defaults.
 ## Current limitations
 
 The v1 extraction schema and care rules are intentionally narrow and must not be
-used as professional textile-care advice. Caching, human review workflows,
-complete symbol coverage, rate limits, and production hardening remain deferred.
+used as professional textile-care advice. Multi-photo revisions, rich evidence
+and plans, garment identity/history, barcode product lookup, contextual chat,
+caching, human review, complete symbol coverage, rate limits, and production
+hardening remain deferred to the implementation plan.
