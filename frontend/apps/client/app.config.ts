@@ -8,6 +8,8 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   platforms: ['ios', 'android', 'web'],
+  android: { package: 'com.fabricassist.app' },
+  ios: { bundleIdentifier: 'com.fabricassist.app' },
   web: { bundler: 'metro', output: 'single' },
   extra: {
     fabricassistApiPublicUrl:
@@ -16,6 +18,7 @@ const config: ExpoConfig = {
   plugins: [
     'expo-localization',
     'expo-router',
+    'expo-secure-store',
     [
       'expo-image-picker',
       {

@@ -21,6 +21,8 @@ node_modules/
 .turbo/
 coverage/
 web-build/
+frontend/apps/client/android/
+frontend/apps/client/ios/
 
 # Editors and operating systems
 .idea/

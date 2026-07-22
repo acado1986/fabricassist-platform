@@ -15,6 +15,7 @@ import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { getApiBaseUrl } from '../../config/environment';
+import { uploadBinaryFile } from '../../platform/BinaryUpload';
 import { useTranslation } from '../../i18n/TranslationProvider';
 import { CameraCapture } from '../../platform/CameraCapture';
 
@@ -137,12 +138,10 @@ export default function Scan(): ReactNode {
           setStatus('createFailed');
           return;
         }
-        const image = await fetch(selection.asset.uri);
-        const blob = await image.blob();
-        const put = await fetch(instruction.url, {
-          method: 'PUT',
+        const put = await uploadBinaryFile({
+          fileUri: selection.asset.uri,
           headers: instruction.headers,
-          body: blob,
+          url: instruction.url,
         });
         if (!put.ok) {
           setStatus('uploadFailed');
