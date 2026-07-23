@@ -7,16 +7,19 @@ structured evidence; lets AI propose rich care guidance; and releases actionable
 claims only after deterministic Python validation. It also remembers physical
 garments, service history, sourced product data, and contextual conversations.
 
-> **Implementation status — legacy local analysis slice:** authenticated users can capture
-> or upload either a care-label or garment image, optionally add the other for
-> context, queue the scan for asynchronous processing, and view a localized result.
-> The default deterministic mock intentionally returns a review-safe outcome. A
-> real, OpenAI-compatible vision LLM is opt-in through uncommitted environment
-> variables. The implemented v1 LLM extracts facts only and deterministic Python
-> rules produce a small answer. ADR-009 through ADR-012 approve the next migration
-> to multi-photo evidence, AI-proposed validator-gated plans, durable garment
-> memory/product enrichment, and server-owned contextual chat; those capabilities
-> are documented but are not yet implemented.
+> **Implementation status — Phase 15:** authenticated users can collect up to
+> eight typed photos, queue revision-aware analysis, and view validator-gated,
+> localized care guidance. Physical-garment history is separate from product data.
+> The local mock never calls a paid provider or external catalog: it returns
+> review-safe evidence and a deterministic fixture catalog for checksum-valid
+> entered or OCR-located barcode digits. Product matches are displayed with their
+> source, match status, and retrieval time; they do not link garment history or
+> override photographed care-label facts. Catalog lookups are cached durably for
+> `FABRICASSIST_PRODUCT_CACHE_MINUTES` (one day by default); a user can invalidate
+> their scan's cached lookup with an auditable reason. The optional HTTP JSON
+> adapter requires an HTTPS allow-list and rejects private addresses, redirects,
+> non-JSON, and oversized responses. Live catalog use remains opt-in pending
+> source licensing, privacy, and outbound-network review.
 
 The approved migration is intentionally breaking. When implemented, it removes
 the fixed two-photo/narrow v1 API, result, renderer, and `decide_care()` execution
@@ -243,8 +246,7 @@ development placeholders. They are not production defaults.
 
 ## Current limitations
 
-The v1 extraction schema and care rules are intentionally narrow and must not be
-used as professional textile-care advice. Multi-photo revisions, rich evidence
-and plans, garment identity/history, barcode product lookup, contextual chat,
-caching, human review, complete symbol coverage, rate limits, and production
-hardening remain deferred to the implementation plan.
+The local mock is intentionally conservative and must not be used as professional
+textile-care advice. Contextual chat, cache reuse, human review, complete symbol
+coverage, rate limits, external product adapters, and production hardening remain
+deferred to the implementation plan.

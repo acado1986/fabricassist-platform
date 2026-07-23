@@ -197,6 +197,66 @@ export type ImageRequest = {
 export type ImageRole = 'garment_overview' | 'care_label' | 'composition_label' | 'barcode_brand_label' | 'stain_closeup' | 'damage_closeup' | 'construction_detail' | 'other';
 
 /**
+ * InvalidateLookupRequest
+ */
+export type InvalidateLookupRequest = {
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
+ * LookupRequest
+ */
+export type LookupRequest = {
+    /**
+     * Barcode
+     */
+    barcode: string;
+};
+
+/**
+ * LookupResponse
+ */
+export type LookupResponse = {
+    /**
+     * Barcode
+     */
+    barcode: string;
+    /**
+     * License Name
+     */
+    license_name: string | null;
+    /**
+     * Product
+     */
+    product: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Retrieved At
+     */
+    retrieved_at?: string | null;
+    /**
+     * Source Name
+     */
+    source_name: string | null;
+    /**
+     * Source Reference
+     */
+    source_reference: string | null;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * ResultResponse
  */
 export type ResultResponse = {
@@ -819,6 +879,96 @@ export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses = {
 };
 
 export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponse = RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses[keyof RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses];
+
+export type LatestProductLookupApiV1ScansScanIdProductLookupGetData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/product-lookup';
+};
+
+export type LatestProductLookupApiV1ScansScanIdProductLookupGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LatestProductLookupApiV1ScansScanIdProductLookupGetError = LatestProductLookupApiV1ScansScanIdProductLookupGetErrors[keyof LatestProductLookupApiV1ScansScanIdProductLookupGetErrors];
+
+export type LatestProductLookupApiV1ScansScanIdProductLookupGetResponses = {
+    /**
+     * Response Latest Product Lookup Api V1 Scans  Scan Id  Product Lookup Get
+     *
+     * Successful Response
+     */
+    200: LookupResponse | null;
+};
+
+export type LatestProductLookupApiV1ScansScanIdProductLookupGetResponse = LatestProductLookupApiV1ScansScanIdProductLookupGetResponses[keyof LatestProductLookupApiV1ScansScanIdProductLookupGetResponses];
+
+export type ProductLookupApiV1ScansScanIdProductLookupPostData = {
+    body: LookupRequest;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/product-lookup';
+};
+
+export type ProductLookupApiV1ScansScanIdProductLookupPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProductLookupApiV1ScansScanIdProductLookupPostError = ProductLookupApiV1ScansScanIdProductLookupPostErrors[keyof ProductLookupApiV1ScansScanIdProductLookupPostErrors];
+
+export type ProductLookupApiV1ScansScanIdProductLookupPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LookupResponse;
+};
+
+export type ProductLookupApiV1ScansScanIdProductLookupPostResponse = ProductLookupApiV1ScansScanIdProductLookupPostResponses[keyof ProductLookupApiV1ScansScanIdProductLookupPostResponses];
+
+export type InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostData = {
+    body: InvalidateLookupRequest;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/product-lookup/invalidate';
+};
+
+export type InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostError = InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostErrors[keyof InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostErrors];
+
+export type InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type ScanResultApiV1ScansScanIdResultGetData = {
     body?: never;

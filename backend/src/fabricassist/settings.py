@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     vision_max_input_tokens: int = Field(default=128_000, ge=1_024, le=128_000)
     vision_max_output_tokens: int = Field(default=16_000, ge=256, le=16_000)
     vision_debug_logging: bool = False
+    product_provider: Literal["mock", "http_json"] = "mock"
+    product_base_url: str = ""
+    product_api_key: str = ""
+    product_allowed_hosts: str = ""
+    product_timeout_seconds: int = Field(default=10, ge=1, le=30)
+    product_max_response_bytes: int = Field(default=262_144, ge=1024, le=1_048_576)
+    product_cache_minutes: int = Field(default=1_440, ge=1, le=43_200)
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
     azure_openai_deployment: str = ""
@@ -109,5 +116,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "FABRICASSIST_AZURE_OPENAI_ENDPOINT, FABRICASSIST_AZURE_OPENAI_API_KEY, and "
                 "FABRICASSIST_AZURE_OPENAI_DEPLOYMENT are required for the Azure OpenAI provider"
+            )
+        if self.product_provider == "http_json" and (
+            not self.product_base_url or not self.product_allowed_hosts
+        ):
+            raise ValueError(
+                "FABRICASSIST_PRODUCT_BASE_URL and FABRICASSIST_PRODUCT_ALLOWED_HOSTS are required"
             )
         return self

@@ -9,9 +9,20 @@ from uuid import UUID, uuid4
 
 from PIL import Image, ImageOps
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.planning import MockCarePlanningProvider
-from fabricassist.application.vision import NormalizedImage
+from fabricassist.application.products import (
+    PersistedProductLookup,
+    get_product_provider,
+    lookup_and_record,
+    product_lookup_from_run,
+)
+from fabricassist.application.vision import (
+    NormalizedImage,
+    VisionEvidenceProvider,
+    decode_barcodes,
+)
 from fabricassist.domain.care import (
     CareValidationReport,
     ProposedCarePlan,
@@ -20,6 +31,7 @@ from fabricassist.domain.care import (
 )
 from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole, merge_evidence
 from fabricassist.domain.identity import IdentityClassification
+from fabricassist.domain.products import ProductLookupError, normalize_barcode
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
@@ -29,6 +41,7 @@ from fabricassist.infrastructure.persistence.models import (
     GarmentIdentifier,
     GarmentIdentityMatchRun,
     GarmentObservation,
+    ProductLookupRun,
     ProposedPlan,
     RenderedAnswer,
     RevisionImage,
@@ -70,6 +83,7 @@ def render_rich_result(
     proposal: ProposedCarePlan,
     report: CareValidationReport,
     language: str,
+    product_lookup: PersistedProductLookup | None = None,
 ) -> dict[str, object]:
     es = language == "es"
     blocked = report.outcome in {
@@ -105,7 +119,76 @@ def render_rich_result(
         "follow_up_questions": proposal.follow_up_questions,
         "actionable": not blocked,
         "change_summary": "Initial revision" if es else "Initial revision",
+        "product_information": (
+            {
+                "barcode": product_lookup.barcode,
+                "status": product_lookup.status,
+                "provider": product_lookup.provider,
+                "source_name": product_lookup.source_name,
+                "source_reference": product_lookup.source_reference,
+                "license_name": product_lookup.license_name,
+                "retrieved_at": (
+                    product_lookup.retrieved_at.isoformat()
+                    if product_lookup.retrieved_at is not None
+                    else None
+                ),
+                "product": product_lookup.product,
+            }
+            if product_lookup is not None
+            else None
+        ),
     }
+
+
+async def _lookup_barcodes_from_images(
+    *,
+    session: AsyncSession,
+    scan: Scan,
+    provider: VisionEvidenceProvider,
+    normalized: tuple[NormalizedImage, ...],
+    settings: Settings,
+) -> PersistedProductLookup | None:
+    """Use OCR/vision only to locate barcode digits, then validate locally."""
+    barcode_images = tuple(
+        image for image in normalized if image.role is ImageRole.BARCODE_BRAND_LABEL
+    )
+    if barcode_images:
+        candidates = (
+            *decode_barcodes(barcode_images),
+            *await provider.extract_barcode_candidates(barcode_images),
+        )
+        for candidate in candidates:
+            try:
+                barcode = normalize_barcode(candidate.value)
+            except ValueError:
+                continue
+            existing = await session.scalar(
+                select(ProductLookupRun).where(
+                    ProductLookupRun.scan_id == scan.id,
+                    ProductLookupRun.tenant_id == scan.tenant_id,
+                    ProductLookupRun.barcode == barcode,
+                )
+            )
+            if existing is not None:
+                return product_lookup_from_run(existing)
+            try:
+                return await lookup_and_record(
+                    session=session,
+                    scan=scan,
+                    barcode=barcode,
+                    provider=get_product_provider(settings),
+                    cache_minutes=settings.product_cache_minutes,
+                )
+            except ProductLookupError:
+                # Product enrichment is optional: catalog outages cannot make a
+                # photographed-label analysis fail or weaken its safety gate.
+                return None
+    run = await session.scalar(
+        select(ProductLookupRun)
+        .where(ProductLookupRun.scan_id == scan.id, ProductLookupRun.tenant_id == scan.tenant_id)
+        .order_by(ProductLookupRun.created_at.desc())
+    )
+    return product_lookup_from_run(run) if isinstance(run, ProductLookupRun) else None
 
 
 async def analyse_scan(
@@ -201,6 +284,9 @@ async def analyse_scan(
             )
         provider = get_vision_provider(settings)
         extracted = await provider.extract_evidence(normalized)
+        product_lookup = await _lookup_barcodes_from_images(
+            session=session, scan=scan, provider=provider, normalized=normalized, settings=settings
+        )
         prior = None
         if garment.active_analysis_revision_id is not None:
             previous = await session.scalar(
@@ -283,7 +369,7 @@ async def analyse_scan(
                     care_result_id=result.id,
                     language=lang,
                     template_version=TEMPLATE_VERSION,
-                    answer=render_rich_result(dossier, proposal, report, lang),
+                    answer=render_rich_result(dossier, proposal, report, lang, product_lookup),
                 )
             )
         revision.status = "completed"

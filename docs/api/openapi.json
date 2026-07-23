@@ -307,6 +307,117 @@
         "title": "ImageRole",
         "type": "string"
       },
+      "InvalidateLookupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "InvalidateLookupRequest",
+        "type": "object"
+      },
+      "LookupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "barcode": {
+            "title": "Barcode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "barcode"
+        ],
+        "title": "LookupRequest",
+        "type": "object"
+      },
+      "LookupResponse": {
+        "properties": {
+          "barcode": {
+            "title": "Barcode",
+            "type": "string"
+          },
+          "license_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "License Name"
+          },
+          "product": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "source_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Reference"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "barcode",
+          "status",
+          "provider",
+          "source_name",
+          "source_reference",
+          "license_name",
+          "product"
+        ],
+        "title": "LookupResponse",
+        "type": "object"
+      },
       "ResultResponse": {
         "properties": {
           "result": {
@@ -1341,6 +1452,154 @@
         "summary": "Remove Image",
         "tags": [
           "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/product-lookup": {
+      "get": {
+        "operationId": "latest_product_lookup_api_v1_scans__scan_id__product_lookup_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LookupResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Latest Product Lookup Api V1 Scans  Scan Id  Product Lookup Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest Product Lookup",
+        "tags": [
+          "products"
+        ]
+      },
+      "post": {
+        "operationId": "product_lookup_api_v1_scans__scan_id__product_lookup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Product Lookup",
+        "tags": [
+          "products"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/product-lookup/invalidate": {
+      "post": {
+        "operationId": "invalidate_latest_product_lookup_api_v1_scans__scan_id__product_lookup_invalidate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvalidateLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Invalidate Latest Product Lookup",
+        "tags": [
+          "products"
         ]
       }
     },

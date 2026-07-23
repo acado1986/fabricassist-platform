@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddImageApiV1ScansScanIdImagesPostData, AddImageApiV1ScansScanIdImagesPostErrors, AddImageApiV1ScansScanIdImagesPostResponses, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostData, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostData, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetData, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses, GetGarmentApiV1GarmentsGarmentIdGetData, GetGarmentApiV1GarmentsGarmentIdGetErrors, GetGarmentApiV1GarmentsGarmentIdGetResponses, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetData, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses, ListGarmentsApiV1GarmentsGetData, ListGarmentsApiV1GarmentsGetResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
+import type { AddImageApiV1ScansScanIdImagesPostData, AddImageApiV1ScansScanIdImagesPostErrors, AddImageApiV1ScansScanIdImagesPostResponses, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostData, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostData, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetData, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses, GetGarmentApiV1GarmentsGarmentIdGetData, GetGarmentApiV1GarmentsGarmentIdGetErrors, GetGarmentApiV1GarmentsGarmentIdGetResponses, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetData, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostData, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostErrors, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostResponses, LatestProductLookupApiV1ScansScanIdProductLookupGetData, LatestProductLookupApiV1ScansScanIdProductLookupGetErrors, LatestProductLookupApiV1ScansScanIdProductLookupGetResponses, ListGarmentsApiV1GarmentsGetData, ListGarmentsApiV1GarmentsGetResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ProductLookupApiV1ScansScanIdProductLookupPostData, ProductLookupApiV1ScansScanIdProductLookupPostErrors, ProductLookupApiV1ScansScanIdProductLookupPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -148,6 +148,35 @@ export const addImageApiV1ScansScanIdImagesPost = <ThrowOnError extends boolean 
  * Remove Image
  */
 export const removeImageApiV1ScansScanIdImagesImageIdDelete = <ThrowOnError extends boolean = false>(options: Options<RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/images/{image_id}', ...options });
+
+/**
+ * Latest Product Lookup
+ */
+export const latestProductLookupApiV1ScansScanIdProductLookupGet = <ThrowOnError extends boolean = false>(options: Options<LatestProductLookupApiV1ScansScanIdProductLookupGetData, ThrowOnError>) => (options.client ?? client).get<LatestProductLookupApiV1ScansScanIdProductLookupGetResponses, LatestProductLookupApiV1ScansScanIdProductLookupGetErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/product-lookup', ...options });
+
+/**
+ * Product Lookup
+ */
+export const productLookupApiV1ScansScanIdProductLookupPost = <ThrowOnError extends boolean = false>(options: Options<ProductLookupApiV1ScansScanIdProductLookupPostData, ThrowOnError>) => (options.client ?? client).post<ProductLookupApiV1ScansScanIdProductLookupPostResponses, ProductLookupApiV1ScansScanIdProductLookupPostErrors, ThrowOnError>({
+    url: '/api/v1/scans/{scan_id}/product-lookup',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Invalidate Latest Product Lookup
+ */
+export const invalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePost = <ThrowOnError extends boolean = false>(options: Options<InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostData, ThrowOnError>) => (options.client ?? client).post<InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostResponses, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostErrors, ThrowOnError>({
+    url: '/api/v1/scans/{scan_id}/product-lookup/invalidate',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Scan Result

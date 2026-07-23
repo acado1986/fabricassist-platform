@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
@@ -53,6 +54,7 @@ export default function Scan(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
   const [error, setError] = useState<string>();
+  const [barcode, setBarcode] = useState('');
   const roleCopy = (value: Role): { label: string; guidance: string } => {
     const key = value.replace(/_([a-z])/g, (_, character: string) =>
       character.toUpperCase(),
@@ -186,6 +188,20 @@ export default function Scan(): ReactNode {
         );
         if (!completion.ok) throw new Error('complete');
       }
+      if (barcode.trim()) {
+        const lookup = await fetch(
+          `${getApiBaseUrl()}/api/v1/scans/${scan.scan_id}/product-lookup`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ barcode }),
+          },
+        );
+        if (!lookup.ok) throw new Error('barcode');
+      }
       const analysis = await fetch(
         `${getApiBaseUrl()}/api/v1/scans/${scan.scan_id}/analyse`,
         {
@@ -208,6 +224,14 @@ export default function Scan(): ReactNode {
       description={translate('scanDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        <TextInput
+          accessibilityLabel={translate('barcodeInputLabel')}
+          keyboardType="number-pad"
+          onChangeText={setBarcode}
+          placeholder={translate('barcodeInputPlaceholder')}
+          style={styles.barcodeInput}
+          value={barcode}
+        />
         <Text accessibilityRole="header">
           {translate('imageCount')
             .replace('{count}', String(items.length))
@@ -353,6 +377,12 @@ export default function Scan(): ReactNode {
   );
 }
 const styles = StyleSheet.create({
+  barcodeInput: {
+    borderColor: colors.border,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    padding: spacing.medium,
+  },
   content: { gap: spacing.medium },
   guidance: {
     backgroundColor: colors.primarySoft,

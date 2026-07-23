@@ -92,11 +92,11 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0007"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0010"
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0007"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0010"
     engine.dispose()
 
 
@@ -139,6 +139,7 @@ def test_real_minio_object_and_worker_create_an_active_revision() -> None:
 
     settings = Settings(
         environment="test",
+        vision_provider="mock",
         database_url=TEST_DATABASE_URL,
         s3_endpoint_url="http://localhost:9002",
         s3_public_endpoint_url="http://localhost:9002",

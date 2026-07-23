@@ -40,6 +40,16 @@ type RichResult = {
   follow_up_questions: string[];
   actionable: boolean;
   change_summary?: string;
+  product_information?: {
+    barcode: string;
+    status: string;
+    provider: string;
+    source_name: string | null;
+    source_reference: string | null;
+    license_name: string | null;
+    retrieved_at: string | null;
+    product: Record<string, unknown> | null;
+  } | null;
 };
 export default function Result(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
@@ -168,6 +178,27 @@ export default function Result(): ReactNode {
                   `${s.kind}: ${s.fact} · ${s.permission}${s.temperature_c ? ` · ${s.temperature_c} °C` : ''}`,
               )}
             />
+            {result.product_information ? (
+              <Section
+                title={translate('productInformation')}
+                values={[
+                  `${translate('productBarcode')}: ${result.product_information.barcode}`,
+                  `${translate('productMatchStatus')}: ${result.product_information.status}`,
+                  `${translate('productSource')}: ${result.product_information.source_name ?? result.product_information.provider}`,
+                  ...(result.product_information.retrieved_at
+                    ? [
+                        `${translate('productRetrievedAt')}: ${result.product_information.retrieved_at}`,
+                      ]
+                    : []),
+                  ...(result.product_information.product
+                    ? Object.entries(result.product_information.product).map(
+                        ([key, value]) =>
+                          `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+                      )
+                    : []),
+                ]}
+              />
+            ) : null}
             <Section
               title={translate('richUncertainty')}
               values={[...result.uncertainties, ...result.follow_up_questions]}

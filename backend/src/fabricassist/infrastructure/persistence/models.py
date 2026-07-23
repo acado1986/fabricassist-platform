@@ -590,3 +590,73 @@ class GarmentObservation(Base):
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
+
+
+class ProductProfile(Base):
+    __tablename__ = "product_profiles"
+    __table_args__ = (Index("ix_product_profiles_tenant_id", "tenant_id"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_reference: Mapped[str | None] = mapped_column(Text)
+    license_name: Mapped[str | None] = mapped_column(String(255))
+    variant_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    retrieved_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    invalidated_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+
+
+class ProductIdentifier(Base):
+    __tablename__ = "product_identifiers"
+    __table_args__ = (
+        UniqueConstraint(
+            "product_profile_id", "normalized_value", name="uq_product_identifiers_profile_value"
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_profile_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("product_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    identifier_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    normalized_value: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class ProductLookupRun(Base):
+    __tablename__ = "product_lookup_runs"
+    __table_args__ = (Index("ix_product_lookup_runs_tenant_barcode", "tenant_id", "barcode"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    barcode: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    schema_version: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default="product-lookup-v1"
+    )
+    product_profile_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("product_profiles.id", ondelete="SET NULL")
+    )
+    safe_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    validated_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    refreshed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    invalidated_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    invalidation_reason: Mapped[str | None] = mapped_column(String(100))
