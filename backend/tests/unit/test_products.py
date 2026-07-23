@@ -1,3 +1,5 @@
+# pyright: reportUnknownLambdaType=false, reportUnknownArgumentType=false
+
 import pytest
 
 from fabricassist.application.products import (

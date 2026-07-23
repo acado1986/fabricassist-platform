@@ -9,6 +9,7 @@ from uuid import UUID
 from celery import shared_task
 
 from fabricassist.application.analysis import analyse_scan
+from fabricassist.application.conversations import answer_message_by_id
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.storage.s3 import S3Storage
 from fabricassist.settings import Settings
@@ -29,5 +30,16 @@ def analyse_scan_task(self: object, scan_id: str) -> None:
                 scan_id=UUID(scan_id),
             )
         )
+    finally:
+        asyncio.run(database.close())
+
+
+@shared_task(name="fabricassist.answer_message", bind=True, autoretry_for=(), max_retries=3)
+def answer_message_task(self: object, message_id: str) -> None:
+    _ = self
+    settings = Settings()
+    database = Database(settings.database_url)
+    try:
+        asyncio.run(answer_message_by_id(database, UUID(message_id)))
     finally:
         asyncio.run(database.close())

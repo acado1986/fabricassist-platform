@@ -117,6 +117,10 @@ export const en = {
     productSource: 'Source',
     productRetrievedAt: 'Retrieved',
     garmentChangeSummary: 'Change summary',
+    chatTitle: 'Follow-up questions',
+    chatPlaceholder: 'Ask about this garment',
+    chatSend: 'Send',
+    chatQueued: 'Preparing a safe answer…',
     viewGarmentHistory: 'View garment history',
     garmentHistoryTitle: 'Garment history',
     garmentHistoryDescription:

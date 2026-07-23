@@ -257,6 +257,68 @@ export type LookupResponse = {
 };
 
 /**
+ * MessagePage
+ */
+export type MessagePage = {
+    /**
+     * Items
+     */
+    items?: Array<MessageResponse>;
+    /**
+     * Next Cursor
+     */
+    next_cursor?: string | null;
+};
+
+/**
+ * MessageRequest
+ */
+export type MessageRequest = {
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * MessageResponse
+ */
+export type MessageResponse = {
+    /**
+     * Analysis Revision Id
+     */
+    analysis_revision_id: string;
+    /**
+     * Care Result Id
+     */
+    care_result_id: string;
+    /**
+     * Follow Up Questions
+     */
+    follow_up_questions?: Array<string>;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Uncertainties
+     */
+    uncertainties?: Array<string>;
+};
+
+/**
  * ResultResponse
  */
 export type ResultResponse = {
@@ -879,6 +941,81 @@ export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses = {
 };
 
 export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponse = RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses[keyof RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses];
+
+export type ListMessagesApiV1ScansScanIdMessagesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: {
+        /**
+         * Cursor
+         */
+        cursor?: string | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/scans/{scan_id}/messages';
+};
+
+export type ListMessagesApiV1ScansScanIdMessagesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListMessagesApiV1ScansScanIdMessagesGetError = ListMessagesApiV1ScansScanIdMessagesGetErrors[keyof ListMessagesApiV1ScansScanIdMessagesGetErrors];
+
+export type ListMessagesApiV1ScansScanIdMessagesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MessagePage;
+};
+
+export type ListMessagesApiV1ScansScanIdMessagesGetResponse = ListMessagesApiV1ScansScanIdMessagesGetResponses[keyof ListMessagesApiV1ScansScanIdMessagesGetResponses];
+
+export type PostMessageApiV1ScansScanIdMessagesPostData = {
+    body: MessageRequest;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/messages';
+};
+
+export type PostMessageApiV1ScansScanIdMessagesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostMessageApiV1ScansScanIdMessagesPostError = PostMessageApiV1ScansScanIdMessagesPostErrors[keyof PostMessageApiV1ScansScanIdMessagesPostErrors];
+
+export type PostMessageApiV1ScansScanIdMessagesPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: MessageResponse;
+};
+
+export type PostMessageApiV1ScansScanIdMessagesPostResponse = PostMessageApiV1ScansScanIdMessagesPostResponses[keyof PostMessageApiV1ScansScanIdMessagesPostResponses];
 
 export type LatestProductLookupApiV1ScansScanIdProductLookupGetData = {
     body?: never;

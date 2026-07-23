@@ -592,6 +592,114 @@ class GarmentObservation(Base):
     )
 
 
+class ConversationThread(Base):
+    __tablename__ = "conversation_threads"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "garment_id", name="uq_conversation_threads_tenant_garment"),
+        Index("ix_conversation_threads_tenant_user", "tenant_id", "user_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    garment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    active_analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_conversation_messages_role"),
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'completed', 'blocked', 'needs_review', 'failed')",
+            name="ck_conversation_messages_status",
+        ),
+        UniqueConstraint(
+            "thread_id", "idempotency_key", name="uq_conversation_messages_idempotency"
+        ),
+        Index("ix_conversation_messages_thread_created", "thread_id", "created_at", "id"),
+        Index("ix_conversation_messages_tenant_id", "tenant_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    thread_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("conversation_threads.id", ondelete="CASCADE"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    garment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(12), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="RESTRICT"), nullable=False
+    )
+    care_result_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("care_results.id", ondelete="RESTRICT"), nullable=False
+    )
+    model_run_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("model_runs.id", ondelete="SET NULL")
+    )
+    actionable_claims: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
+    evidence_ids: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    uncertainties: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
+    follow_up_questions: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
+    validation_report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class ConversationSummary(Base):
+    __tablename__ = "conversation_summaries"
+    __table_args__ = (
+        UniqueConstraint("thread_id", "version", name="uq_conversation_summaries_thread_version"),
+        Index("ix_conversation_summaries_tenant_thread", "tenant_id", "thread_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    thread_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("conversation_threads.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    through_message_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("conversation_messages.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
 class ProductProfile(Base):
     __tablename__ = "product_profiles"
     __table_args__ = (Index("ix_product_profiles_tenant_id", "tenant_id"),)

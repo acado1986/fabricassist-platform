@@ -207,6 +207,15 @@ export default function Result(): ReactNode {
               title={translate('garmentChangeSummary')}
               values={result.change_summary ? [result.change_summary] : []}
             />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: '/chat', params: { scanId } })
+              }
+              style={styles.button}
+            >
+              <Text>{translate('chatTitle')}</Text>
+            </Pressable>
             {garmentId ? (
               <Pressable
                 accessibilityRole="button"

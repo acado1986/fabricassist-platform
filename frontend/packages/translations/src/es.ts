@@ -123,6 +123,10 @@ export const es: TranslationCatalog = {
     productSource: 'Fuente',
     productRetrievedAt: 'Consultado',
     garmentChangeSummary: 'Resumen de cambios',
+    chatTitle: 'Preguntas de seguimiento',
+    chatPlaceholder: 'Pregunta sobre esta prenda',
+    chatSend: 'Enviar',
+    chatQueued: 'Preparando una respuesta segura…',
     viewGarmentHistory: 'Ver historial de la prenda',
     garmentHistoryTitle: 'Historial de la prenda',
     garmentHistoryDescription:

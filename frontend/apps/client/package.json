@@ -29,6 +29,7 @@
     "react-dom": "19.2.3",
     "react-hook-form": "^7.82.0",
     "react-native": "0.85.3",
+    "react-native-safe-area-context": "5.8.0",
     "react-native-web": "~0.21.0",
     "zod": "^4.4.3"
   },
