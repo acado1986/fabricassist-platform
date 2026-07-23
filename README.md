@@ -7,7 +7,7 @@ structured evidence; lets AI propose rich care guidance; and releases actionable
 claims only after deterministic Python validation. It also remembers physical
 garments, service history, sourced product data, and contextual conversations.
 
-> **Implementation status — Phase 15:** authenticated users can collect up to
+> **Implementation status — Phase 17:** authenticated users can collect up to
 > eight typed photos, queue revision-aware analysis, and view validator-gated,
 > localized care guidance. Physical-garment history is separate from product data.
 > The local mock never calls a paid provider or external catalog: it returns
@@ -20,6 +20,8 @@ garments, service history, sourced product data, and contextual conversations.
 > adapter requires an HTTPS allow-list and rejects private addresses, redirects,
 > non-JSON, and oversized responses. Live catalog use remains opt-in pending
 > source licensing, privacy, and outbound-network review.
+
+Phase 17 adds tenant-scoped, versioned normalized-image evidence reuse, canonical validated-plan and localized render caches, plus pHash candidate recording. Exact SHA-256 and every schema/prompt/validator/product/template safety field must match before reuse; pHash never authorizes reuse. PostgreSQL stores all cache provenance and counts. Valkey can mirror exact evidence entries when `FABRICASSIST_CACHE_HOT_MIRROR_ENABLED=true`; an outage is a cache miss and cannot remove completed data.
 
 The approved migration is intentionally breaking. When implemented, it removes
 the fixed two-photo/narrow v1 API, result, renderer, and `decide_care()` execution

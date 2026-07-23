@@ -199,6 +199,8 @@ class ScanImage(Base):
     width: Mapped[int | None] = mapped_column(Integer)
     height: Mapped[int | None] = mapped_column(Integer)
     sha256: Mapped[str | None] = mapped_column(String(64))
+    normalized_sha256: Mapped[str | None] = mapped_column(String(64))
+    perceptual_hash: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -768,3 +770,102 @@ class ProductLookupRun(Base):
     refreshed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     invalidated_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     invalidation_reason: Mapped[str | None] = mapped_column(String(100))
+
+
+class EvidenceCacheEntry(Base):
+    """Durable exact normalized-image extraction cache; pHash is candidate-only."""
+
+    __tablename__ = "evidence_cache_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "normalized_sha256",
+            "role",
+            "normalization_version",
+            "schema_version",
+            "prompt_version",
+            "provider",
+            "model",
+            name="uq_evidence_cache_exact_versioned",
+        ),
+        Index("ix_evidence_cache_tenant_phash", "tenant_id", "perceptual_hash"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    normalized_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    perceptual_hash: Mapped[str] = mapped_column(String(16), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    normalization_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    delta_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    source_image_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scan_images.id", ondelete="RESTRICT"), nullable=False
+    )
+    reuse_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    last_reused_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+
+
+class CanonicalPlanCache(Base):
+    """Durable signature/provenance record; a signature never bypasses validation."""
+
+    __tablename__ = "canonical_plan_cache_entries"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "signature", name="uq_canonical_plan_cache_tenant_signature"),
+        Index("ix_canonical_plan_cache_tenant_result", "tenant_id", "care_result_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    care_result_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("care_results.id", ondelete="CASCADE"), nullable=False
+    )
+    evidence_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    proposal_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    validator_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    reuse_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    last_reused_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+
+
+class RenderedAnswerCache(Base):
+    """Durable language/template render cache keyed by a canonical safety signature."""
+
+    __tablename__ = "rendered_answer_cache_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "canonical_signature",
+            "language",
+            "template_version",
+            name="uq_render_cache_versioned",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    canonical_signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    language: Mapped[str] = mapped_column(String(2), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    answer: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    source_care_result_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("care_results.id", ondelete="RESTRICT"), nullable=False
+    )
+    reuse_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    last_reused_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)

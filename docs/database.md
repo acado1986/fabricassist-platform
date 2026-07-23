@@ -60,7 +60,9 @@ The current cutover adds:
 - garment identifiers, identity confirmations, and append-only service events;
 - product identifiers and sourced lookup runs;
 - conversation threads, messages, versioned summaries, revision references, and
-  validation metadata.
+  validation metadata;
+- Phase 17 tenant-scoped exact evidence, canonical-plan, and rendered-answer cache
+  records. pHash is stored only for candidate discovery, never automatic reuse.
 
 The former one-extraction/one-result-per-scan constraints were removed by the
 cutover migration. Retained data is transformed into revision-owned rows; no

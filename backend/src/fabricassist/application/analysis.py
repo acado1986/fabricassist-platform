@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from io import BytesIO
 from uuid import UUID, uuid4
 
@@ -11,6 +12,15 @@ from PIL import Image, ImageOps
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.cache import (
+    NORMALIZATION_VERSION,
+    canonical_plan_signature,
+    evidence_cache_key,
+    perceptual_hash,
+    product_snapshot_fingerprint,
+    uncached_images,
+    upsert_exact_evidence_cache_entry,
+)
 from fabricassist.application.planning import MockCarePlanningProvider
 from fabricassist.application.products import (
     PersistedProductLookup,
@@ -19,6 +29,8 @@ from fabricassist.application.products import (
     product_lookup_from_run,
 )
 from fabricassist.application.vision import (
+    EVIDENCE_PROMPT_VERSION,
+    EVIDENCE_SCHEMA_VERSION,
     NormalizedImage,
     VisionEvidenceProvider,
     decode_barcodes,
@@ -29,13 +41,21 @@ from fabricassist.domain.care import (
     ValidationOutcome,
     validate_care_plan,
 )
-from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole, merge_evidence
+from fabricassist.domain.evidence import (
+    GarmentEvidenceDelta,
+    GarmentEvidenceDossier,
+    ImageRole,
+    merge_evidence,
+)
 from fabricassist.domain.identity import IdentityClassification
 from fabricassist.domain.products import ProductLookupError, normalize_barcode
+from fabricassist.infrastructure.cache.valkey import ValkeyHotMirror
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
+    CanonicalPlanCache,
     CareResult,
+    EvidenceCacheEntry,
     EvidenceDossier,
     Garment,
     GarmentIdentifier,
@@ -44,6 +64,7 @@ from fabricassist.infrastructure.persistence.models import (
     ProductLookupRun,
     ProposedPlan,
     RenderedAnswer,
+    RenderedAnswerCache,
     RevisionImage,
     Scan,
     ScanImage,
@@ -283,10 +304,6 @@ async def analyse_scan(
                 )
             )
         provider = get_vision_provider(settings)
-        extracted = await provider.extract_evidence(normalized)
-        product_lookup = await _lookup_barcodes_from_images(
-            session=session, scan=scan, provider=provider, normalized=normalized, settings=settings
-        )
         prior = None
         if garment.active_analysis_revision_id is not None:
             previous = await session.scalar(
@@ -294,9 +311,117 @@ async def analyse_scan(
                     EvidenceDossier.analysis_revision_id == garment.active_analysis_revision_id
                 )
             )
-            if previous is not None:
+            if isinstance(previous, EvidenceDossier):
                 prior = GarmentEvidenceDossier.model_validate(previous.payload)
-        dossier = merge_evidence(prior, extracted.delta)
+
+        # Exact normalized-image cache reuse is tenant-scoped and versioned. A
+        # pHash is recorded/discoverable but never contributes a dossier: visually
+        # similar or crossed-symbol images must be extracted again.
+        expected_provider = (
+            "mock" if settings.vision_provider == "mock" else settings.vision_provider
+        )
+        expected_model = (
+            "deterministic-review-safe"
+            if settings.vision_provider == "mock"
+            else settings.vision_model
+        )
+        entries = list(
+            (
+                await session.scalars(
+                    select(EvidenceCacheEntry).where(
+                        EvidenceCacheEntry.tenant_id == scan.tenant_id,
+                        EvidenceCacheEntry.normalization_version == NORMALIZATION_VERSION,
+                        EvidenceCacheEntry.schema_version == EVIDENCE_SCHEMA_VERSION,
+                        EvidenceCacheEntry.prompt_version == EVIDENCE_PROMPT_VERSION,
+                        EvidenceCacheEntry.provider == expected_provider,
+                        EvidenceCacheEntry.model == expected_model,
+                    )
+                )
+            ).all()
+        )
+        exact_entries = {
+            (entry.normalized_sha256, entry.role): entry
+            for entry in entries
+            if isinstance(entry, EvidenceCacheEntry)
+        }
+        hot_cache = ValkeyHotMirror(settings.valkey_url, settings.cache_hot_mirror_enabled)
+        hot_deltas: dict[tuple[str, str], GarmentEvidenceDelta] = {}
+        for image in normalized:
+            if (image.sha256, image.role.value) not in exact_entries:
+                payload = await hot_cache.get_json(evidence_cache_key(image))
+                if payload is not None:
+                    hot_deltas[(image.sha256, image.role.value)] = (
+                        GarmentEvidenceDelta.model_validate(payload)
+                    )
+        new_images = tuple(
+            image
+            for image in uncached_images(normalized, set(exact_entries))
+            if (image.sha256, image.role.value) not in hot_deltas
+        )
+        deltas = list(hot_deltas.values())
+        for image in normalized:
+            entry = exact_entries.get((image.sha256, image.role.value))
+            if entry is not None:
+                entry.reuse_count += 1
+                entry.last_reused_at = datetime.now(UTC)
+                deltas.append(GarmentEvidenceDelta.model_validate(entry.delta_payload))
+        for image, delta in (
+            (image, hot_deltas.get((image.sha256, image.role.value))) for image in normalized
+        ):
+            if delta is not None:
+                await upsert_exact_evidence_cache_entry(
+                    session,
+                    {
+                        "id": uuid4(),
+                        "tenant_id": scan.tenant_id,
+                        "normalized_sha256": image.sha256,
+                        "perceptual_hash": perceptual_hash(image),
+                        "role": image.role.value,
+                        "normalization_version": NORMALIZATION_VERSION,
+                        "schema_version": EVIDENCE_SCHEMA_VERSION,
+                        "prompt_version": EVIDENCE_PROMPT_VERSION,
+                        "provider": expected_provider,
+                        "model": expected_model,
+                        "delta_payload": delta.model_dump(mode="json"),
+                        "source_image_id": image.image_id,
+                    },
+                )
+        for image in new_images:
+            extracted = await provider.extract_evidence((image,), prior)
+            deltas.append(extracted.delta)
+            await hot_cache.set_json(
+                evidence_cache_key(image),
+                extracted.delta.model_dump(mode="json"),
+                settings.cache_hot_ttl_seconds,
+            )
+            await upsert_exact_evidence_cache_entry(
+                session,
+                {
+                    "id": uuid4(),
+                    "tenant_id": scan.tenant_id,
+                    "normalized_sha256": image.sha256,
+                    "perceptual_hash": perceptual_hash(image),
+                    "role": image.role.value,
+                    "normalization_version": NORMALIZATION_VERSION,
+                    "schema_version": EVIDENCE_SCHEMA_VERSION,
+                    "prompt_version": EVIDENCE_PROMPT_VERSION,
+                    "provider": extracted.provider,
+                    "model": extracted.model,
+                    "delta_payload": extracted.delta.model_dump(mode="json"),
+                    "source_image_id": image.image_id,
+                },
+            )
+        for image, scan_image in zip(normalized, images, strict=True):
+            scan_image.normalized_sha256 = image.sha256
+            scan_image.perceptual_hash = perceptual_hash(image)
+        dossier = prior
+        for delta in deltas:
+            dossier = merge_evidence(dossier, delta)
+        if dossier is None:
+            dossier = GarmentEvidenceDossier(uncertainties=["care_label_facts_unknown"])
+        product_lookup = await _lookup_barcodes_from_images(
+            session=session, scan=scan, provider=provider, normalized=normalized, settings=settings
+        )
         evidence = EvidenceDossier(
             id=uuid4(),
             tenant_id=scan.tenant_id,
@@ -304,22 +429,23 @@ async def analyse_scan(
             payload=dossier.model_dump(mode="json"),
         )
         session.add(evidence)
-        for observation in extracted.delta.observations:
-            session.add(
-                GarmentObservation(
-                    id=uuid4(),
-                    tenant_id=scan.tenant_id,
-                    garment_id=garment.id,
-                    analysis_revision_id=revision.id,
-                    observation_type=observation.kind,
-                    stability="condition" if observation.time_varying else "stable",
-                    value={
-                        "value": observation.value,
-                        "source_image_id": str(observation.source.image_id),
-                    },
-                    confidence=float(observation.confidence),
+        for delta in deltas:
+            for observation in delta.observations:
+                session.add(
+                    GarmentObservation(
+                        id=uuid4(),
+                        tenant_id=scan.tenant_id,
+                        garment_id=garment.id,
+                        analysis_revision_id=revision.id,
+                        observation_type=observation.kind,
+                        stability="condition" if observation.time_varying else "stable",
+                        value={
+                            "value": observation.value,
+                            "source_image_id": str(observation.source.image_id),
+                        },
+                        confidence=float(observation.confidence),
+                    )
                 )
-            )
         planner = MockCarePlanningProvider()
         proposal = await planner.propose_plan(dossier)
         report = validate_care_plan(dossier, proposal)
@@ -361,7 +487,65 @@ async def analyse_scan(
         )
         session.add(result)
         await session.flush()
+        product_fingerprint = product_snapshot_fingerprint(
+            {
+                "status": product_lookup.status,
+                "provider": product_lookup.provider,
+                "source_reference": product_lookup.source_reference,
+                "product": product_lookup.product,
+            }
+            if product_lookup is not None
+            else None
+        )
+        signature = canonical_plan_signature(dossier, proposal, report, product_fingerprint)
+        existing_signature = await session.scalar(
+            select(CanonicalPlanCache).where(
+                CanonicalPlanCache.tenant_id == scan.tenant_id,
+                CanonicalPlanCache.signature == signature,
+            )
+        )
+        if isinstance(existing_signature, CanonicalPlanCache):
+            existing_signature.reuse_count += 1
+            existing_signature.last_reused_at = datetime.now(UTC)
+        else:
+            session.add(
+                CanonicalPlanCache(
+                    id=uuid4(),
+                    tenant_id=scan.tenant_id,
+                    signature=signature,
+                    care_result_id=result.id,
+                    evidence_schema_version=EVIDENCE_SCHEMA_VERSION,
+                    proposal_schema_version=proposal.schema_version,
+                    validator_version=report.policy_version,
+                    product_fingerprint=product_fingerprint,
+                )
+            )
         for lang in ("en", "es"):
+            render_cache = await session.scalar(
+                select(RenderedAnswerCache).where(
+                    RenderedAnswerCache.tenant_id == scan.tenant_id,
+                    RenderedAnswerCache.canonical_signature == signature,
+                    RenderedAnswerCache.language == lang,
+                    RenderedAnswerCache.template_version == TEMPLATE_VERSION,
+                )
+            )
+            if isinstance(render_cache, RenderedAnswerCache):
+                render_cache.reuse_count += 1
+                render_cache.last_reused_at = datetime.now(UTC)
+                answer = render_cache.answer
+            else:
+                answer = render_rich_result(dossier, proposal, report, lang, product_lookup)
+                session.add(
+                    RenderedAnswerCache(
+                        id=uuid4(),
+                        tenant_id=scan.tenant_id,
+                        canonical_signature=signature,
+                        language=lang,
+                        template_version=TEMPLATE_VERSION,
+                        answer=answer,
+                        source_care_result_id=result.id,
+                    )
+                )
             session.add(
                 RenderedAnswer(
                     id=uuid4(),
@@ -369,7 +553,7 @@ async def analyse_scan(
                     care_result_id=result.id,
                     language=lang,
                     template_version=TEMPLATE_VERSION,
-                    answer=render_rich_result(dossier, proposal, report, lang, product_lookup),
+                    answer=answer,
                 )
             )
         revision.status = "completed"

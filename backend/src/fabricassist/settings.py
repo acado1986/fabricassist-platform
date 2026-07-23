@@ -69,6 +69,8 @@ class Settings(BaseSettings):
         min_length=1,
     )
     valkey_url: str = Field(default="valkey://fabricassist-valkey:6379/0", min_length=1)
+    cache_hot_mirror_enabled: bool = False
+    cache_hot_ttl_seconds: int = Field(default=86_400, ge=60, le=604_800)
 
     @model_validator(mode="after")
     def reject_insecure_production_defaults(self) -> Settings:
