@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddImageApiV1ScansScanIdImagesPostData, AddImageApiV1ScansScanIdImagesPostErrors, AddImageApiV1ScansScanIdImagesPostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
+import type { AddImageApiV1ScansScanIdImagesPostData, AddImageApiV1ScansScanIdImagesPostErrors, AddImageApiV1ScansScanIdImagesPostResponses, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostData, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostData, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetData, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses, GetGarmentApiV1GarmentsGarmentIdGetData, GetGarmentApiV1GarmentsGarmentIdGetErrors, GetGarmentApiV1GarmentsGarmentIdGetResponses, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetData, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses, ListGarmentsApiV1GarmentsGetData, ListGarmentsApiV1GarmentsGetResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -45,6 +45,50 @@ export const refreshApiV1AuthRefreshPost = <ThrowOnError extends boolean = false
  */
 export const registerApiV1AuthRegisterPost = <ThrowOnError extends boolean = false>(options: Options<RegisterApiV1AuthRegisterPostData, ThrowOnError>) => (options.client ?? client).post<RegisterApiV1AuthRegisterPostResponses, RegisterApiV1AuthRegisterPostErrors, ThrowOnError>({
     url: '/api/v1/auth/register',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List Garments
+ */
+export const listGarmentsApiV1GarmentsGet = <ThrowOnError extends boolean = false>(options?: Options<ListGarmentsApiV1GarmentsGetData, ThrowOnError>) => (options?.client ?? client).get<ListGarmentsApiV1GarmentsGetResponses, unknown, ThrowOnError>({ url: '/api/v1/garments', ...options });
+
+/**
+ * Identity Candidates
+ */
+export const identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet = <ThrowOnError extends boolean = false>(options: Options<IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetData, ThrowOnError>) => (options.client ?? client).get<IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors, ThrowOnError>({ url: '/api/v1/garments/identity-candidates/{scan_id}', ...options });
+
+/**
+ * Confirm Identity Candidate
+ */
+export const confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost = <ThrowOnError extends boolean = false>(options: Options<ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostData, ThrowOnError>) => (options.client ?? client).post<ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors, ThrowOnError>({
+    url: '/api/v1/garments/identity-candidates/{scan_id}/confirm',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Get Garment
+ */
+export const getGarmentApiV1GarmentsGarmentIdGet = <ThrowOnError extends boolean = false>(options: Options<GetGarmentApiV1GarmentsGarmentIdGetData, ThrowOnError>) => (options.client ?? client).get<GetGarmentApiV1GarmentsGarmentIdGetResponses, GetGarmentApiV1GarmentsGarmentIdGetErrors, ThrowOnError>({ url: '/api/v1/garments/{garment_id}', ...options });
+
+/**
+ * Garment History
+ */
+export const garmentHistoryApiV1GarmentsGarmentIdHistoryGet = <ThrowOnError extends boolean = false>(options: Options<GarmentHistoryApiV1GarmentsGarmentIdHistoryGetData, ThrowOnError>) => (options.client ?? client).get<GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors, ThrowOnError>({ url: '/api/v1/garments/{garment_id}/history', ...options });
+
+/**
+ * Add Service Event
+ */
+export const addServiceEventApiV1GarmentsGarmentIdServiceEventsPost = <ThrowOnError extends boolean = false>(options: Options<AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostData, ThrowOnError>) => (options.client ?? client).post<AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors, ThrowOnError>({
+    url: '/api/v1/garments/{garment_id}/service-events',
     ...options,
     headers: {
         'Content-Type': 'application/json',

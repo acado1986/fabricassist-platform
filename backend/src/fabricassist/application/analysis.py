@@ -19,11 +19,16 @@ from fabricassist.domain.care import (
     validate_care_plan,
 )
 from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole, merge_evidence
+from fabricassist.domain.identity import IdentityClassification
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
     CareResult,
     EvidenceDossier,
+    Garment,
+    GarmentIdentifier,
+    GarmentIdentityMatchRun,
+    GarmentObservation,
     ProposedPlan,
     RenderedAnswer,
     RevisionImage,
@@ -144,11 +149,43 @@ async def analyse_scan(
                 )
             )
         ) + 1
+        garment = None
+        identity_classification = IdentityClassification.NEW_GARMENT
+        linked_before_analysis = scan.garment_id is not None
+        if scan.garment_id is not None:
+            garment = await session.get(Garment, scan.garment_id)
+            if garment is not None:
+                identity_classification = IdentityClassification.EXACT_INSTANCE
+        if garment is None:
+            garment = Garment(id=uuid4(), tenant_id=scan.tenant_id, user_id=scan.user_id)
+            session.add(garment)
+            await session.flush()
+            session.add(
+                GarmentIdentifier(
+                    id=uuid4(),
+                    tenant_id=scan.tenant_id,
+                    garment_id=garment.id,
+                    identifier_type="fabricassist_serial",
+                    normalized_value=f"FA-{garment.id.hex.upper()}",
+                )
+            )
+            scan.garment_id = garment.id
+        session.add(
+            GarmentIdentityMatchRun(
+                id=uuid4(),
+                tenant_id=scan.tenant_id,
+                scan_id=scan.id,
+                classification=identity_classification.value,
+                reasons={
+                    "source": "confirmed_scan_link" if linked_before_analysis else "new_analysis"
+                },
+            )
+        )
         revision = AnalysisRevision(
             id=uuid4(),
             tenant_id=scan.tenant_id,
             scan_id=scan.id,
-            garment_id=None,
+            garment_id=garment.id,
             revision_number=number,
             status="processing",
         )
@@ -164,7 +201,16 @@ async def analyse_scan(
             )
         provider = get_vision_provider(settings)
         extracted = await provider.extract_evidence(normalized)
-        dossier = merge_evidence(None, extracted.delta)
+        prior = None
+        if garment.active_analysis_revision_id is not None:
+            previous = await session.scalar(
+                select(EvidenceDossier).where(
+                    EvidenceDossier.analysis_revision_id == garment.active_analysis_revision_id
+                )
+            )
+            if previous is not None:
+                prior = GarmentEvidenceDossier.model_validate(previous.payload)
+        dossier = merge_evidence(prior, extracted.delta)
         evidence = EvidenceDossier(
             id=uuid4(),
             tenant_id=scan.tenant_id,
@@ -172,6 +218,22 @@ async def analyse_scan(
             payload=dossier.model_dump(mode="json"),
         )
         session.add(evidence)
+        for observation in extracted.delta.observations:
+            session.add(
+                GarmentObservation(
+                    id=uuid4(),
+                    tenant_id=scan.tenant_id,
+                    garment_id=garment.id,
+                    analysis_revision_id=revision.id,
+                    observation_type=observation.kind,
+                    stability="condition" if observation.time_varying else "stable",
+                    value={
+                        "value": observation.value,
+                        "source_image_id": str(observation.source.image_id),
+                    },
+                    confidence=float(observation.confidence),
+                )
+            )
         planner = MockCarePlanningProvider()
         proposal = await planner.propose_plan(dossier)
         report = validate_care_plan(dossier, proposal)
@@ -226,6 +288,8 @@ async def analyse_scan(
             )
         revision.status = "completed"
         scan.active_analysis_revision_id = revision.id
+        garment.active_analysis_revision_id = revision.id
+        garment.active_result_id = result.id
         scan.active_result_id = result.id
         scan.status = (
             "completed"

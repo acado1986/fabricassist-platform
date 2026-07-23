@@ -15,8 +15,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.domain.evidence import ImageRole
+from fabricassist.domain.identity import GarmentIdentifierType, normalize_instance_identifier
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
+    Garment,
+    GarmentIdentifier,
     IdempotencyRecord,
     RenderedAnswer,
     Scan,
@@ -34,6 +37,7 @@ class CreateScanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     requested_language: Literal["en", "es"] = "en"
+    fabricassist_identifier: str | None = Field(default=None, min_length=3, max_length=255)
 
 
 class ImageRequest(BaseModel):
@@ -54,6 +58,7 @@ class UploadInstruction(BaseModel):
 
 class ScanResponse(BaseModel):
     scan_id: UUID
+    garment_id: UUID | None = None
     status: str
     images_completed: int
     progress_percent: int
@@ -111,12 +116,35 @@ async def create_scan(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> CreateScanResponse:
+    garment_id = None
+    if request.fabricassist_identifier:
+        identifier = await session.scalar(
+            select(GarmentIdentifier).where(
+                GarmentIdentifier.tenant_id == user.tenant_id,
+                GarmentIdentifier.identifier_type
+                == GarmentIdentifierType.FABRICASSIST_SERIAL.value,
+                GarmentIdentifier.normalized_value
+                == normalize_instance_identifier(request.fabricassist_identifier),
+                GarmentIdentifier.verification_status == "verified",
+            )
+        )
+        if identifier is not None:
+            garment = await session.scalar(
+                select(Garment).where(
+                    Garment.id == identifier.garment_id,
+                    Garment.tenant_id == user.tenant_id,
+                    Garment.user_id == user.id,
+                )
+            )
+            if garment is not None:
+                garment_id = garment.id
     scan = Scan(
         id=uuid4(),
         tenant_id=user.tenant_id,
         user_id=user.id,
         status="draft",
         requested_language=request.requested_language,
+        garment_id=garment_id,
     )
     session.add(scan)
     await session.commit()
@@ -332,6 +360,7 @@ async def scan_detail(
     )
     return ScanResponse(
         scan_id=scan.id,
+        garment_id=scan.garment_id,
         status=scan.status,
         images_completed=completed,
         progress_percent=scan.progress_percent,

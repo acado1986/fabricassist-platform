@@ -13,6 +13,8 @@ from fabricassist.application.analysis import analyse_scan
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
     CareResult,
+    Garment,
+    GarmentIdentifier,
     RevisionImage,
     Scan,
     ScanImage,
@@ -118,14 +120,19 @@ async def test_worker_creates_tenant_owned_revision_membership_and_activates_res
     await analyse_scan(
         database=FakeDatabase(session),  # type: ignore[arg-type]
         storage=FakeStorage(image_bytes()),  # type: ignore[arg-type]
-        settings=Settings(environment="test"),
+        settings=Settings(environment="test", vision_provider="mock"),
         scan_id=scan.id,
     )
 
     memberships = [value for value in session.added if isinstance(value, RevisionImage)]
     revisions = [value for value in session.added if isinstance(value, AnalysisRevision)]
     results = [value for value in session.added if isinstance(value, CareResult)]
+    garments = [value for value in session.added if isinstance(value, Garment)]
+    identifiers = [value for value in session.added if isinstance(value, GarmentIdentifier)]
     assert len(memberships) == len(revisions) == len(results) == 1
+    assert len(garments) == len(identifiers) == 1
+    assert identifiers[0].garment_id == garments[0].id
+    assert scan.garment_id == garments[0].id
     assert memberships[0].tenant_id == tenant_id
     assert memberships[0].image_id == image.id
     assert scan.active_analysis_revision_id == revisions[0].id

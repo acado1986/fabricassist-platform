@@ -24,7 +24,7 @@ from fabricassist.api.errors import (
 )
 from fabricassist.api.logging import configure_logging
 from fabricassist.api.middleware import CorrelationIdMiddleware
-from fabricassist.api.routes import auth, scans
+from fabricassist.api.routes import auth, garments, scans
 from fabricassist.application.auth import decode_access_token
 from fabricassist.infrastructure.database import Database, DatabasePort
 from fabricassist.infrastructure.persistence.models import User
@@ -110,12 +110,15 @@ def create_app(
 
     app.dependency_overrides[auth.get_session] = get_session
     app.dependency_overrides[auth.get_settings] = get_settings
+    app.dependency_overrides[garments.get_session] = get_session
+    app.dependency_overrides[garments.get_current_user] = get_current_user
     app.dependency_overrides[scans.get_session] = get_session
     app.dependency_overrides[scans.get_current_user] = get_current_user
     app.dependency_overrides[scans.get_storage] = get_storage
     app.dependency_overrides[scans.get_settings] = get_settings
     app.include_router(auth.router)
     app.include_router(scans.router)
+    app.include_router(garments.router)
 
     @app.get("/api/v1/health/live", tags=["health"])
     async def live() -> dict[str, str]:

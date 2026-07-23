@@ -444,3 +444,149 @@ class RenderedAnswer(Base):
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
+
+
+class GarmentIdentifier(Base):
+    __tablename__ = "garment_identifiers"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "identifier_type", "normalized_value", name="uq_garment_identifiers_exact"
+        ),
+        Index("ix_garment_identifiers_garment_id", "garment_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    garment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="CASCADE"), nullable=False
+    )
+    identifier_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    normalized_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    verification_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="verified"
+    )
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="fabricassist")
+    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    confirmed_by_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    verified_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class GarmentServiceEvent(Base):
+    __tablename__ = "garment_service_events"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('planned', 'performed', 'completed')", name="ck_garment_service_events_kind"
+        ),
+        Index("ix_garment_service_events_garment_created", "garment_id", "created_at"),
+        Index("ix_garment_service_events_tenant_id", "tenant_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    garment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class GarmentIdentityMatchRun(Base):
+    __tablename__ = "garment_identity_match_runs"
+    __table_args__ = (Index("ix_garment_identity_match_runs_scan", "scan_id"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    reasons: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class GarmentIdentityCandidate(Base):
+    __tablename__ = "garment_identity_candidates"
+    __table_args__ = (
+        UniqueConstraint("match_run_id", "garment_id", name="uq_garment_identity_candidate_match"),
+        Index("ix_garment_identity_candidates_garment", "garment_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    match_run_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garment_identity_match_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    garment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="CASCADE"), nullable=False
+    )
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    reasons: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class GarmentIdentityConfirmation(Base):
+    __tablename__ = "garment_identity_confirmations"
+    __table_args__ = (UniqueConstraint("scan_id", name="uq_garment_identity_confirmations_scan"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    garment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="RESTRICT"), nullable=False
+    )
+    candidate_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garment_identity_candidates.id", ondelete="SET NULL")
+    )
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decision: Mapped[str] = mapped_column(String(20), nullable=False)
+    reasons: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class GarmentObservation(Base):
+    __tablename__ = "garment_observations"
+    __table_args__ = (Index("ix_garment_observations_garment_created", "garment_id", "created_at"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    garment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="CASCADE"), nullable=False
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    observation_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    stability: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(nullable=True)
+    supersedes_observation_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garment_observations.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )

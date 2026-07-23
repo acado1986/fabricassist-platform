@@ -39,6 +39,7 @@ type RichResult = {
   uncertainties: string[];
   follow_up_questions: string[];
   actionable: boolean;
+  change_summary?: string;
 };
 export default function Result(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
@@ -46,17 +47,57 @@ export default function Result(): ReactNode {
   const { locale, translate } = useTranslation();
   const [result, setResult] = useState<RichResult>();
   const [failed, setFailed] = useState(false);
+  const [stage, setStage] = useState<string>();
+  const [garmentId, setGarmentId] = useState<string>();
+  const stageLabel = (value: string): string => {
+    if (value === 'queued') return translate('analysisStageQueued');
+    if (value === 'processing') return translate('analysisStageProcessing');
+    if (value === 'evidence') return translate('analysisStageEvidence');
+    if (value === 'completed') return translate('analysisStageCompleted');
+    return translate('resultLoading');
+  };
   useEffect(() => {
     if (!scanId || !token) return;
-    void fetch(
-      `${getApiBaseUrl()}/api/v1/scans/${scanId}/result?language=${locale}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    )
-      .then((r) =>
-        r.ok ? (r.json() as Promise<{ result: RichResult }>) : Promise.reject(),
-      )
-      .then((v) => setResult(v.result))
-      .catch(() => setFailed(true));
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const load = async (): Promise<void> => {
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        const scan = await fetch(`${getApiBaseUrl()}/api/v1/scans/${scanId}`, {
+          headers,
+        });
+        if (!scan.ok) throw new Error('SCAN_UNAVAILABLE');
+        const status = (await scan.json()) as {
+          status: string;
+          analysis_stage?: string;
+          garment_id?: string;
+        };
+        if (cancelled) return;
+        setStage(status.analysis_stage ?? status.status);
+        setGarmentId(status.garment_id);
+        if (status.status === 'failed') {
+          setFailed(true);
+          return;
+        }
+        const response = await fetch(
+          `${getApiBaseUrl()}/api/v1/scans/${scanId}/result?language=${locale}`,
+          { headers },
+        );
+        if (response.ok) {
+          const value = (await response.json()) as { result: RichResult };
+          if (!cancelled) setResult(value.result);
+          return;
+        }
+        if (!cancelled) timeout = setTimeout(() => void load(), 1500);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+    };
   }, [locale, scanId, token]);
   return (
     <FoundationShell
@@ -65,7 +106,20 @@ export default function Result(): ReactNode {
     >
       <ScrollView contentContainerStyle={styles.content}>
         {!result && !failed ? (
-          <ActivityIndicator color={colors.primary} />
+          <View accessibilityLiveRegion="polite" style={styles.loading}>
+            <ActivityIndicator color={colors.primary} size="large" />
+            <Text style={styles.loadingTitle}>
+              {translate('resultLoading')}
+            </Text>
+            <View style={styles.progressTrack}>
+              <View style={styles.progressValue} />
+            </View>
+            <Text style={styles.loadingCopy}>
+              {stage
+                ? translate('resultStage').replace('{stage}', stageLabel(stage))
+                : translate('resultLoadingCopy')}
+            </Text>
+          </View>
         ) : null}
         {failed ? <Text>{translate('resultUnavailable')}</Text> : null}
         {result ? (
@@ -118,6 +172,19 @@ export default function Result(): ReactNode {
               title={translate('richUncertainty')}
               values={[...result.uncertainties, ...result.follow_up_questions]}
             />
+            <Section
+              title={translate('garmentChangeSummary')}
+              values={result.change_summary ? [result.change_summary] : []}
+            />
+            {garmentId ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push(`/garments/${garmentId}`)}
+                style={styles.button}
+              >
+                <Text>{translate('viewGarmentHistory')}</Text>
+              </Pressable>
+            ) : null}
           </>
         ) : null}
         <Pressable
@@ -161,6 +228,26 @@ const styles = StyleSheet.create({
   },
   warning: { backgroundColor: colors.dangerSoft },
   heading: { fontWeight: '800', color: colors.primary },
+  loading: {
+    alignItems: 'center',
+    gap: spacing.medium,
+    paddingVertical: spacing.xxlarge,
+  },
+  loadingTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
+  loadingCopy: { color: colors.muted, textAlign: 'center' },
+  progressTrack: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.pill,
+    height: 8,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  progressValue: {
+    backgroundColor: colors.primary,
+    borderRadius: radii.pill,
+    height: '100%',
+    width: '62%',
+  },
   button: {
     padding: spacing.medium,
     borderRadius: radii.medium,

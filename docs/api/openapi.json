@@ -50,9 +50,37 @@
         "title": "CompleteUploadRequest",
         "type": "object"
       },
+      "ConfirmCandidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "format": "uuid",
+            "title": "Candidate Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id"
+        ],
+        "title": "ConfirmCandidateRequest",
+        "type": "object"
+      },
       "CreateScanRequest": {
         "additionalProperties": false,
         "properties": {
+          "fabricassist_identifier": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fabricassist Identifier"
+          },
           "requested_language": {
             "default": "en",
             "enum": [
@@ -106,6 +134,56 @@
         "title": "Credentials",
         "type": "object"
       },
+      "GarmentResponse": {
+        "properties": {
+          "analysed_before": {
+            "title": "Analysed Before",
+            "type": "boolean"
+          },
+          "cleaned_before": {
+            "title": "Cleaned Before",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "identifiers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Identifiers",
+            "type": "array"
+          },
+          "last_analysis_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Analysis At"
+          },
+          "service_events": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceEventResponse"
+            },
+            "title": "Service Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "analysed_before",
+          "cleaned_before",
+          "service_events"
+        ],
+        "title": "GarmentResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -117,6 +195,73 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "properties": {
+          "garment_id": {
+            "format": "uuid",
+            "title": "Garment Id",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "service_events": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceEventResponse"
+            },
+            "title": "Service Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "garment_id",
+          "observations",
+          "service_events"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "IdentityCandidateResponse": {
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "garment_id": {
+            "format": "uuid",
+            "title": "Garment Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "reasons": {
+            "additionalProperties": true,
+            "title": "Reasons",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "garment_id",
+          "classification",
+          "reasons",
+          "status"
+        ],
+        "title": "IdentityCandidateResponse",
         "type": "object"
       },
       "ImageRequest": {
@@ -211,6 +356,18 @@
             ],
             "title": "Error Code"
           },
+          "garment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Garment Id"
+          },
           "images_completed": {
             "title": "Images Completed",
             "type": "integer"
@@ -236,6 +393,68 @@
           "progress_percent"
         ],
         "title": "ScanResponse",
+        "type": "object"
+      },
+      "ServiceEventRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "planned",
+              "performed",
+              "completed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ServiceEventRequest",
+        "type": "object"
+      },
+      "ServiceEventResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "note"
+        ],
+        "title": "ServiceEventResponse",
         "type": "object"
       },
       "SessionResponse": {
@@ -548,6 +767,270 @@
         "summary": "Register",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/garments": {
+      "get": {
+        "operationId": "list_garments_api_v1_garments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GarmentResponse"
+                  },
+                  "title": "Response List Garments Api V1 Garments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Garments",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/identity-candidates/{scan_id}": {
+      "get": {
+        "operationId": "identity_candidates_api_v1_garments_identity_candidates__scan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IdentityCandidateResponse"
+                  },
+                  "title": "Response Identity Candidates Api V1 Garments Identity Candidates  Scan Id  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Identity Candidates",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/identity-candidates/{scan_id}/confirm": {
+      "post": {
+        "operationId": "confirm_identity_candidate_api_v1_garments_identity_candidates__scan_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GarmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Identity Candidate",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/{garment_id}": {
+      "get": {
+        "operationId": "get_garment_api_v1_garments__garment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "garment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Garment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GarmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Garment",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/{garment_id}/history": {
+      "get": {
+        "operationId": "garment_history_api_v1_garments__garment_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "garment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Garment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Garment History",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/{garment_id}/service-events": {
+      "post": {
+        "operationId": "add_service_event_api_v1_garments__garment_id__service_events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "garment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Garment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceEventResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Service Event",
+        "tags": [
+          "garments"
         ]
       }
     },

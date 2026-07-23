@@ -37,9 +37,23 @@ export type CompleteUploadRequest = {
 };
 
 /**
+ * ConfirmCandidateRequest
+ */
+export type ConfirmCandidateRequest = {
+    /**
+     * Candidate Id
+     */
+    candidate_id: string;
+};
+
+/**
  * CreateScanRequest
  */
 export type CreateScanRequest = {
+    /**
+     * Fabricassist Identifier
+     */
+    fabricassist_identifier?: string | null;
     /**
      * Requested Language
      */
@@ -75,6 +89,36 @@ export type Credentials = {
 };
 
 /**
+ * GarmentResponse
+ */
+export type GarmentResponse = {
+    /**
+     * Analysed Before
+     */
+    analysed_before: boolean;
+    /**
+     * Cleaned Before
+     */
+    cleaned_before: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Identifiers
+     */
+    identifiers?: Array<string>;
+    /**
+     * Last Analysis At
+     */
+    last_analysis_at?: string | null;
+    /**
+     * Service Events
+     */
+    service_events: Array<ServiceEventResponse>;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -82,6 +126,54 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * HistoryResponse
+ */
+export type HistoryResponse = {
+    /**
+     * Garment Id
+     */
+    garment_id: string;
+    /**
+     * Observations
+     */
+    observations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Service Events
+     */
+    service_events: Array<ServiceEventResponse>;
+};
+
+/**
+ * IdentityCandidateResponse
+ */
+export type IdentityCandidateResponse = {
+    /**
+     * Classification
+     */
+    classification: string;
+    /**
+     * Garment Id
+     */
+    garment_id: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Reasons
+     */
+    reasons: {
+        [key: string]: unknown;
+    };
+    /**
+     * Status
+     */
+    status: string;
 };
 
 /**
@@ -137,6 +229,10 @@ export type ScanResponse = {
      */
     error_code?: string | null;
     /**
+     * Garment Id
+     */
+    garment_id?: string | null;
+    /**
      * Images Completed
      */
     images_completed: number;
@@ -152,6 +248,38 @@ export type ScanResponse = {
      * Status
      */
     status: string;
+};
+
+/**
+ * ServiceEventRequest
+ */
+export type ServiceEventRequest = {
+    /**
+     * Kind
+     */
+    kind: 'planned' | 'performed' | 'completed';
+    /**
+     * Note
+     */
+    note?: string | null;
+};
+
+/**
+ * ServiceEventResponse
+ */
+export type ServiceEventResponse = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Note
+     */
+    note: string | null;
 };
 
 /**
@@ -320,6 +448,176 @@ export type RegisterApiV1AuthRegisterPostResponses = {
 };
 
 export type RegisterApiV1AuthRegisterPostResponse = RegisterApiV1AuthRegisterPostResponses[keyof RegisterApiV1AuthRegisterPostResponses];
+
+export type ListGarmentsApiV1GarmentsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/garments';
+};
+
+export type ListGarmentsApiV1GarmentsGetResponses = {
+    /**
+     * Response List Garments Api V1 Garments Get
+     *
+     * Successful Response
+     */
+    200: Array<GarmentResponse>;
+};
+
+export type ListGarmentsApiV1GarmentsGetResponse = ListGarmentsApiV1GarmentsGetResponses[keyof ListGarmentsApiV1GarmentsGetResponses];
+
+export type IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/identity-candidates/{scan_id}';
+};
+
+export type IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetError = IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors[keyof IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors];
+
+export type IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses = {
+    /**
+     * Response Identity Candidates Api V1 Garments Identity Candidates  Scan Id  Get
+     *
+     * Successful Response
+     */
+    200: Array<IdentityCandidateResponse>;
+};
+
+export type IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponse = IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses[keyof IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses];
+
+export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostData = {
+    body: ConfirmCandidateRequest;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/identity-candidates/{scan_id}/confirm';
+};
+
+export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostError = ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors[keyof ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors];
+
+export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: GarmentResponse;
+};
+
+export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponse = ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses[keyof ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses];
+
+export type GetGarmentApiV1GarmentsGarmentIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Garment Id
+         */
+        garment_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/{garment_id}';
+};
+
+export type GetGarmentApiV1GarmentsGarmentIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetGarmentApiV1GarmentsGarmentIdGetError = GetGarmentApiV1GarmentsGarmentIdGetErrors[keyof GetGarmentApiV1GarmentsGarmentIdGetErrors];
+
+export type GetGarmentApiV1GarmentsGarmentIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: GarmentResponse;
+};
+
+export type GetGarmentApiV1GarmentsGarmentIdGetResponse = GetGarmentApiV1GarmentsGarmentIdGetResponses[keyof GetGarmentApiV1GarmentsGarmentIdGetResponses];
+
+export type GarmentHistoryApiV1GarmentsGarmentIdHistoryGetData = {
+    body?: never;
+    path: {
+        /**
+         * Garment Id
+         */
+        garment_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/{garment_id}/history';
+};
+
+export type GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GarmentHistoryApiV1GarmentsGarmentIdHistoryGetError = GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors[keyof GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors];
+
+export type GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: HistoryResponse;
+};
+
+export type GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponse = GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses[keyof GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses];
+
+export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostData = {
+    body: ServiceEventRequest;
+    path: {
+        /**
+         * Garment Id
+         */
+        garment_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/{garment_id}/service-events';
+};
+
+export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostError = AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors[keyof AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors];
+
+export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ServiceEventResponse;
+};
+
+export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponse = AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses[keyof AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses];
 
 export type LiveApiV1HealthLiveGetData = {
     body?: never;
