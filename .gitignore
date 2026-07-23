@@ -1,6 +1,7 @@
 # Local environment and secrets
 .env
 .env.*
+.env-*
 !.env.example
 
 # Python (Phase 2 and later)
@@ -21,8 +22,18 @@ node_modules/
 .turbo/
 coverage/
 web-build/
+frontend/playwright-report/
+frontend/test-results/
 frontend/apps/client/android/
 frontend/apps/client/ios/
+
+# OpenTofu local state and plans; keep dependency lockfiles and examples.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
 
 # Editors and operating systems
 .idea/

@@ -7,7 +7,10 @@ personal graph partially removed.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -24,6 +27,7 @@ from fabricassist.infrastructure.persistence.models import (
     EvidenceCorrection,
     EvidenceDossier,
     Garment,
+    ModelRun,
     ObjectDeletionOutbox,
     ProposedPlan,
     RenderedAnswer,
@@ -143,7 +147,26 @@ async def apply_human_correction(
         payload=dossier.model_dump(mode="json"),
     )
     session.add(evidence)
+    started = perf_counter()
     proposal = await MockCarePlanningProvider().propose_plan(dossier)
+    session.add(
+        ModelRun(
+            id=uuid4(),
+            tenant_id=review.tenant_id,
+            scan_id=scan.id,
+            operation="human_correction_planning",
+            provider="mock",
+            model="deterministic-review-safe",
+            prompt_version="care-planning-v1",
+            schema_version="proposed-care-plan-v1",
+            request_fingerprint=hashlib.sha256(
+                json.dumps(dossier.model_dump(mode="json"), sort_keys=True).encode()
+            ).hexdigest(),
+            status="completed",
+            latency_ms=round((perf_counter() - started) * 1000),
+            estimated_cost_usd=0,
+        )
+    )
     report = validate_care_plan(dossier, proposal)
     plan = ProposedPlan(
         id=uuid4(),

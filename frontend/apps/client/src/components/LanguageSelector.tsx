@@ -17,6 +17,7 @@ export function LanguageSelector(): ReactNode {
         return (
           <Pressable
             key={option}
+            aria-checked={selected}
             accessibilityRole="radio"
             accessibilityState={{ selected }}
             onPress={() => setLocale(option)}
@@ -55,6 +56,6 @@ const styles = StyleSheet.create({
   },
   optionSelected: { backgroundColor: colors.background },
   optionPressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
-  label: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  label: { color: colors.text, fontSize: 12, fontWeight: '700' },
   labelSelected: { color: colors.primary },
 });

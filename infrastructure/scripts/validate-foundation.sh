@@ -49,6 +49,9 @@ fi
 
 for expected in \
   FABRICASSIST_ENVIRONMENT \
+  FABRICASSIST_APP_BASE_URL \
+  FABRICASSIST_API_PUBLIC_URL \
+  FABRICASSIST_CORS_ALLOWED_ORIGINS \
   FABRICASSIST_DATABASE_URL \
   FABRICASSIST_VALKEY_URL \
   FABRICASSIST_S3_ENDPOINT_URL \
@@ -56,6 +59,11 @@ for expected in \
   FABRICASSIST_S3_SECRET_KEY \
   FABRICASSIST_S3_BUCKET \
   FABRICASSIST_S3_FORCE_PATH_STYLE \
+  FABRICASSIST_METRICS_ENABLED \
+  FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT \
+  FABRICASSIST_RATE_LIMIT_ENABLED \
+  FABRICASSIST_WORKER_GLOBAL_CONCURRENCY \
+  FABRICASSIST_WORKER_TENANT_CONCURRENCY \
   FABRICASSIST_LOG_LEVEL; do
   grep -Eq "^${expected}=" .env.example || fail "missing $expected placeholder"
 done
@@ -95,7 +103,10 @@ if grep -Eqi 'image:[[:space:]]*(redis|mongo)|mongodb|mongo:' docker-compose.yml
 fi
 
 legacy_pattern='cc''a:|Care''Lens|Clean''Lens|Clean''Assistant|Fabric'' Assistant'
-if grep -R -n -E "$legacy_pattern" --exclude-dir=.git --exclude-dir=node_modules . >/dev/null; then
+if grep -R -n -E "$legacy_pattern" --exclude-dir=.git --exclude-dir=.terraform \
+  --exclude-dir=node_modules \
+  --exclude-dir=android --exclude-dir=ios --exclude-dir=dist --exclude-dir=build \
+  . >/dev/null; then
   fail 'legacy product name or cache prefix found'
 fi
 
@@ -132,7 +143,10 @@ grep -Fq 'backend/src/fabricassist/' docs/adr/001-modular-monolith.md \
 grep -Fq 'fabricassist.api' docs/adr/001-modular-monolith.md \
   || fail 'ADR does not document the API package name'
 
-if grep -R -n -E --exclude-dir=.git --exclude-dir=.venv --exclude-dir=node_modules --exclude=validate-foundation.sh \
+if grep -R -n -E --exclude-dir=.git --exclude-dir=.venv --exclude-dir=.terraform \
+  --exclude-dir=node_modules \
+  --exclude-dir=android --exclude-dir=ios --exclude-dir=dist --exclude-dir=build \
+  --exclude='.env' --exclude='.env-*' --exclude=validate-foundation.sh \
   -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}' . >/dev/null; then
   fail 'probable real secret material found'
 fi

@@ -1,0 +1,43 @@
+name: Release smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 3 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  compose-and-drills:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install toolchains
+        run: |
+          python3 -m pip install --user uv==0.11.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+      - name: Start and migrate
+        run: |
+          cp .env.example .env
+          make up
+          make migrate
+          make seed
+          make smoke
+      - name: Backup and restore drill
+        run: make backup-restore-test
+      - name: Controlled metadata load
+        run: LOAD_DURATION=30 LOAD_CONCURRENCY=12 make load-test
+      - name: Valkey and worker crash drills
+        run: |
+          ./infrastructure/scripts/failure-drill.sh valkey
+          ./infrastructure/scripts/failure-drill.sh worker
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=500
+      - name: Stop
+        if: always()
+        run: make down

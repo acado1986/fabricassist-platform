@@ -1,0 +1,35 @@
+groups:
+  - name: fabricassist
+    rules:
+      - alert: FabricAssistApiErrorRateHigh
+        expr: |
+          sum(rate(fabricassist_http_requests_total{status=~"5.."}[5m]))
+          / clamp_min(sum(rate(fabricassist_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: FabricAssist API 5xx rate exceeds 5%
+      - alert: FabricAssistQueueOldestTooOld
+        expr: fabricassist_queue_oldest_age_seconds > 300
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Oldest queued scan is older than five minutes
+      - alert: FabricAssistDeletionFailures
+        expr: fabricassist_deletion_outbox{status="failed"} > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Private object deletions require operator attention
+      - alert: FabricAssistValidatorReviewSpike
+        expr: |
+          sum(fabricassist_validation_durable_total{outcome=~"blocked|needs_review"})
+          / clamp_min(sum(fabricassist_validation_durable_total), 1) > 0.25
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Validator block/review ratio exceeds 25%

@@ -1,13 +1,17 @@
 """Celery task entry points, intentionally thin around application orchestration."""
-# pyright: reportUnknownVariableType=false
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
+from typing import Any
 from uuid import UUID
 
 from celery import shared_task
 
+from fabricassist.api.logging import correlation_id_context, log_context
 from fabricassist.application.analysis import analyse_scan
 from fabricassist.application.conversations import answer_message_by_id
 from fabricassist.application.lifecycle import (
@@ -16,44 +20,96 @@ from fabricassist.application.lifecycle import (
     retention_candidates,
 )
 from fabricassist.infrastructure.database import Database
+from fabricassist.infrastructure.limits import (
+    ConcurrencyLimitExceeded,
+    DistributedConcurrencyGate,
+    LimitBackendUnavailable,
+)
+from fabricassist.infrastructure.persistence.models import ConversationMessage, Scan
 from fabricassist.infrastructure.storage.s3 import S3Storage
+from fabricassist.infrastructure.telemetry import measure_job
 from fabricassist.settings import Settings
 
 
+@contextmanager
+def _task_log_context(
+    task: Any, *, operation: str, resource_id: str
+) -> Generator[None, None, None]:
+    raw_headers: object = getattr(task.request, "headers", None)
+    headers: Mapping[str, object] = raw_headers if isinstance(raw_headers, Mapping) else {}
+    correlation_id = str(headers.get("correlation_id") or UUID(int=0))
+    token = correlation_id_context.set(correlation_id)
+    try:
+        with log_context(
+            service="fabricassist-worker",
+            job_id=str(getattr(task.request, "id", "")),
+            stage=operation,
+            resource_id=resource_id,
+        ):
+            yield
+    finally:
+        correlation_id_context.reset(token)
+
+
+async def _run_analysis_with_limit(
+    database: Database, storage: S3Storage, settings: Settings, scan_id: UUID
+) -> None:
+    async with database.session_factory() as session:
+        scan = await session.get(Scan, scan_id)
+        tenant_id = str(scan.tenant_id) if scan is not None else "missing"
+    async with DistributedConcurrencyGate(settings).slot(tenant_id=tenant_id, operation="analysis"):
+        await analyse_scan(
+            database=database,
+            storage=storage,
+            settings=settings,
+            scan_id=scan_id,
+        )
+
+
+async def _run_message_with_limit(database: Database, settings: Settings, message_id: UUID) -> None:
+    async with database.session_factory() as session:
+        message = await session.get(ConversationMessage, message_id)
+        tenant_id = str(message.tenant_id) if message is not None else "missing"
+    async with DistributedConcurrencyGate(settings).slot(
+        tenant_id=tenant_id, operation="conversation"
+    ):
+        await answer_message_by_id(database, message_id)
+
+
 @shared_task(name="fabricassist.analyse_scan", bind=True, autoretry_for=(), max_retries=3)
-def analyse_scan_task(self: object, scan_id: str) -> None:
+def analyse_scan_task(self: Any, scan_id: str) -> None:
     """Execute one idempotent scan operation without holding an API request open."""
-    _ = self
     settings = Settings()
     database = Database(settings.database_url)
     try:
-        asyncio.run(
-            analyse_scan(
-                database=database,
-                storage=S3Storage(settings),
-                settings=settings,
-                scan_id=UUID(scan_id),
-            )
-        )
+        with _task_log_context(self, operation="analysis", resource_id=scan_id):
+            with measure_job("analysis"):
+                asyncio.run(
+                    _run_analysis_with_limit(database, S3Storage(settings), settings, UUID(scan_id))
+                )
+    except (ConcurrencyLimitExceeded, LimitBackendUnavailable) as error:
+        raise self.retry(exc=error, countdown=30) from error
     finally:
         asyncio.run(database.close())
 
 
 @shared_task(name="fabricassist.answer_message", bind=True, autoretry_for=(), max_retries=3)
-def answer_message_task(self: object, message_id: str) -> None:
-    _ = self
+def answer_message_task(self: Any, message_id: str) -> None:
     settings = Settings()
     database = Database(settings.database_url)
     try:
-        asyncio.run(answer_message_by_id(database, UUID(message_id)))
+        with _task_log_context(self, operation="conversation", resource_id=message_id):
+            with measure_job("conversation"):
+                asyncio.run(_run_message_with_limit(database, settings, UUID(message_id)))
+    except (ConcurrencyLimitExceeded, LimitBackendUnavailable) as error:
+        raise self.retry(exc=error, countdown=30) from error
     finally:
         asyncio.run(database.close())
 
 
 @shared_task(name="fabricassist.process_retention", bind=True, autoretry_for=(), max_retries=3)
-def process_retention_task(self: object) -> None:
+def process_retention_task(self: Any) -> None:
     """Queue expired originals then retry private-object deletion from the DB outbox."""
-    _ = self
     settings = Settings()
     database = Database(settings.database_url)
 
@@ -72,6 +128,8 @@ def process_retention_task(self: object) -> None:
             await process_object_deletions(session, S3Storage(settings))
 
     try:
-        asyncio.run(run())
+        with _task_log_context(self, operation="retention", resource_id="retention"):
+            with measure_job("retention"):
+                asyncio.run(run())
     finally:
         asyncio.run(database.close())

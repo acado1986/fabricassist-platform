@@ -1,3 +1,4 @@
+import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 test('operator claims a review case and confirms the validated correction workflow', async ({
@@ -63,4 +64,7 @@ test('operator claims a review case and confirms the validated correction workfl
   await page.getByRole('button', { name: /validate correction/i }).click();
   await page.getByRole('button', { name: /approve result/i }).click();
   expect(approved).toBeTruthy();
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
 });

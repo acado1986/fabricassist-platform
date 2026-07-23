@@ -1,0 +1,47 @@
+name: Container release gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: containers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-scan-sbom:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - name: api
+            context: backend
+            dockerfile: backend/Dockerfile
+          - name: web
+            context: frontend
+            dockerfile: frontend/Dockerfile
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Build
+        run: docker build -t "fabricassist-${{ matrix.name }}:ci" -f "${{ matrix.dockerfile }}" "${{ matrix.context }}"
+      - name: Scan
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.59.1 \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+            "fabricassist-${{ matrix.name }}:ci"
+      - name: Generate CycloneDX SBOM
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/output" aquasec/trivy:0.59.1 image --format cyclonedx \
+            --output "/output/fabricassist-${{ matrix.name }}.cdx.json" \
+            "fabricassist-${{ matrix.name }}:ci"
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: sbom-${{ matrix.name }}
+          path: fabricassist-${{ matrix.name }}.cdx.json
+          retention-days: 14

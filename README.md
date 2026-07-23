@@ -7,7 +7,7 @@ structured evidence; lets AI propose rich care guidance; and releases actionable
 claims only after deterministic Python validation. It also remembers physical
 garments, service history, sourced product data, and contextual conversations.
 
-> **Implementation status — Phase 17:** authenticated users can collect up to
+> **Implementation status — Phase 19:** authenticated users can collect up to
 > eight typed photos, queue revision-aware analysis, and view validator-gated,
 > localized care guidance. Physical-garment history is separate from product data.
 > The local mock never calls a paid provider or external catalog: it returns
@@ -21,11 +21,12 @@ garments, service history, sourced product data, and contextual conversations.
 > non-JSON, and oversized responses. Live catalog use remains opt-in pending
 > source licensing, privacy, and outbound-network review.
 
-Phase 17 adds tenant-scoped, versioned normalized-image evidence reuse, canonical validated-plan and localized render caches, plus pHash candidate recording. Exact SHA-256 and every schema/prompt/validator/product/template safety field must match before reuse; pHash never authorizes reuse. PostgreSQL stores all cache provenance and counts. Valkey can mirror exact evidence entries when `FABRICASSIST_CACHE_HOT_MIRROR_ENABLED=true`; an outage is a cache miss and cannot remove completed data.
-
-The approved migration is intentionally breaking. When implemented, it removes
-the fixed two-photo/narrow v1 API, result, renderer, and `decide_care()` execution
-path; old clients and compatibility aliases will not be retained.
+Phase 19 adds OTLP tracing, Prometheus-compatible process and durable business
+metrics, redacted structured logs, explicit security headers/CORS, Valkey-backed
+rate and provider-concurrency limits, an optional Grafana stack, OpenTofu AWS
+staging infrastructure, supply-chain CI, backup/restore and failure drills,
+bounded load gates, and web/native release procedures. The garment-intelligence
+cutover is complete; there is no fixed two-photo or `decide_care()` fallback.
 
 ## Sources of truth
 
@@ -104,6 +105,11 @@ Never commit `.env` or real credentials.
 | `make lint` | Runs configuration validation, Ruff/Pyright, Prettier, ESLint, and TypeScript. |
 | `make openapi` | Regenerates `docs/api/openapi.json` and the read-only frontend API client. |
 | `make check` | Runs the complete default local quality gate. |
+| `make observability-up` | Starts OTEL Collector, Prometheus, and Grafana on the optional profile. |
+| `make backup-restore-test` | Restores a PostgreSQL backup into an isolated drill database. |
+| `make load-test` | Runs a bounded readiness load smoke with p95/error-rate gates. |
+| `make security-check` / `make iac-check` | Runs local hardening checks and validates OpenTofu. |
+| `make release-check` | Runs all non-cloud release gates available on the host. |
 
 `make migrate` applies all schema migrations through the running API container.
 `make seed` creates the idempotent development tenant required by public local registration.
@@ -121,8 +127,9 @@ After `make up`, the API includes:
   `GET /api/v1/scans/{id}/result`.
 
 All HTTP failures use a stable JSON error envelope and return an
-`X-Correlation-ID` response header. These endpoints are infrastructure checks,
-not product functionality.
+`X-Correlation-ID` response header. `/api/v1/metrics` is internal-only:
+production requires a 32+ character bearer token and the route is omitted from
+OpenAPI.
 
 ## Expo shell
 
@@ -151,11 +158,8 @@ FABRICASSIST_VISION_API_KEY=your-secret
 FABRICASSIST_VISION_MODEL=your-vision-model
 ```
 
-Use an endpoint compatible with `POST /chat/completions` and image data URLs.
-Never commit the API key. In the current legacy slice, the response is
-schema-validated and deterministic rules generate the result. The approved
-redesign keeps this behavior until Phase 12 replaces it with a typed AI proposal
-and deterministic validation gate.
+Never commit the API key. Provider evidence, proposed plans, and chat claims are
+schema validated and every actionable claim passes the deterministic validator.
 
 ### Azure OpenAI
 
@@ -246,11 +250,25 @@ The Docker Compose project name is `fabricassist`.
 The local PostgreSQL and MinIO values in `.env.example` are intentionally weak
 development placeholders. They are not production defaults.
 
-## Current limitations
+## Observability and production operations
 
-The local mock is intentionally conservative and must not be used as professional
-textile-care advice. Complete symbol coverage, rate limits, external product
-adapters, and production hardening remain deferred to the implementation plan.
+```bash
+make observability-up
+open http://localhost:3000  # Grafana
+open http://localhost:9090  # Prometheus
+```
+
+The optional profile uses local-only Grafana credentials. Production metrics
+must be reachable only from an internal scraper and use
+`FABRICASSIST_METRICS_ACCESS_TOKEN`. See the
+[release](docs/runbooks/release.md), [deployment](docs/runbooks/deployment.md),
+and [observability](docs/runbooks/observability.md) runbooks.
+
+The local mock remains deliberately conservative and is not professional
+textile-care advice. Production activation still requires named textile-care
+validator approval, a licensed/reviewed live provider and product source,
+privacy/subprocessor approval, an applied staging plan, and successful platform
+release gates.
 
 ## Review and privacy lifecycle
 

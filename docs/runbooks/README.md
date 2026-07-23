@@ -1,5 +1,13 @@
 # Runbooks
 
-Operational runbooks are intentionally deferred. Phase 16 will add security,
-privacy, and observability procedures; Phase 17 will add deployment and rollback
-procedures. Phase 1 has no deployable FabricAssist application to operate.
+- [Release gates](release.md)
+- [Deployment](deployment.md)
+- [Rollback](rollback.md)
+- [Backup and restore](backup-restore.md)
+- [Observability and alerts](observability.md)
+- [Provider outage](provider-outage.md)
+- [Valkey loss](valkey-loss.md)
+- [Worker crash](worker-crash.md)
+- [Deletion failures](deletion-failures.md)
+- [Mobile release](mobile-release.md)
+- [Phase 19 approval record](../release-approvals.md)

@@ -1,0 +1,19 @@
+# Copy outside version control and supply real staging values through CI.
+aws_region        = "eu-west-1"
+availability_zones = ["eu-west-1a", "eu-west-1b"]
+api_image         = "000000000000.dkr.ecr.eu-west-1.amazonaws.com/fabricassist-api@sha256:replace"
+worker_image      = "000000000000.dkr.ecr.eu-west-1.amazonaws.com/fabricassist-worker@sha256:replace"
+certificate_arn   = "arn:aws:acm:eu-west-1:000000000000:certificate/replace"
+api_hostname      = "api.staging.example.com"
+app_hostname      = "app.staging.example.com"
+database_credentials_secret_arn = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+
+application_secret_arns = {
+  FABRICASSIST_ACCESS_TOKEN_SECRET    = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_DATABASE_URL           = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_VALKEY_URL             = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_METRICS_ACCESS_TOKEN   = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_VISION_API_KEY         = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_VISION_BASE_URL        = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_VISION_MODEL           = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+}

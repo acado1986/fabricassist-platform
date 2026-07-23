@@ -314,6 +314,7 @@ async def test_other_tenant_cannot_access_scan() -> None:
 @pytest.mark.asyncio
 async def test_incomplete_upload_cannot_be_analysed() -> None:
     from fastapi import HTTPException
+    from starlette.requests import Request
 
     from fabricassist.api.routes.scans import request_analysis
     from fabricassist.infrastructure.persistence.models import Scan, User
@@ -332,7 +333,12 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
     session = ImageLifecycleSession([scan, 0])
 
     with pytest.raises(HTTPException, match="Complete at least one image") as error:
-        await request_analysis(scan.id, session, user)  # type: ignore[arg-type]
+        await request_analysis(
+            scan.id,
+            Request({"type": "http"}),
+            session,  # type: ignore[arg-type]
+            user,
+        )
 
     assert error.value.status_code == 409
     assert not session.committed

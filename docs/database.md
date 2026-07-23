@@ -15,6 +15,14 @@ applied history:
 - `20260722_0005` persists the constrained proposal retry count.
 - `20260722_0006` aligns revision-owned rendered answers with the ORM timestamp
   required for auditable result history.
+- `20260723_0007` adds physical-garment identity and confirmed service history.
+- `20260723_0008` through `20260723_0010` add sourced product lookup records,
+  metadata, and explicit invalidation reasons.
+- `20260723_0011` adds server-owned contextual conversations and summaries.
+- `20260723_0012` adds durable, versioned evidence/plan/render cache records.
+- `20260723_0013` adds operator review and deletion lifecycle/outbox records.
+- `20260723_0014` upgrades model-run telemetry with request fingerprints,
+  latency and token counts, numeric estimated USD cost, and categorized errors.
 
 Never edit those migrations to implement the approved redesign. Phase 10 of
 `IMPLEMENTATION_PLAN.md` must add a new revision after current head. The cutover
@@ -63,6 +71,8 @@ The current cutover adds:
   validation metadata;
 - Phase 17 tenant-scoped exact evidence, canonical-plan, and rendered-answer cache
   records. pHash is stored only for candidate discovery, never automatic reuse.
+- Phase 18 review/deletion lifecycle and Phase 19 low-cardinality model-run
+  telemetry used for cost, latency, and failure monitoring.
 
 The former one-extraction/one-result-per-scan constraints were removed by the
 cutover migration. Retained data is transformed into revision-owned rows; no

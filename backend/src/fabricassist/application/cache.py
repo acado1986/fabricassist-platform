@@ -29,7 +29,13 @@ def perceptual_hash(image: NormalizedImage) -> str:
     """Return a deterministic 64-bit aHash; it is never a reuse key."""
     with Image.open(BytesIO(image.jpeg_bytes)) as decoded:
         grayscale: object = cast(Any, decoded).convert("L").resize((8, 8))
-        pixels = [int(value) for value in cast(Iterable[int], cast(Any, grayscale).getdata())]
+        pixels = [
+            int(value)
+            for value in cast(
+                Iterable[int],
+                cast(Any, grayscale).get_flattened_data(),
+            )
+        ]
     mean = sum(pixels) / len(pixels)
     bits = "".join("1" if value >= mean else "0" for value in pixels)
     return f"{int(bits, 2):016x}"

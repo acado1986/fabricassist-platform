@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -132,6 +132,7 @@ async def list_messages(
 async def post_message(
     scan_id: UUID,
     request: MessageRequest,
+    http_request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -179,5 +180,8 @@ async def post_message(
     await session.commit()
     from fabricassist.worker.tasks import answer_message_task
 
-    answer_message_task.delay(str(message.id))  # pyright: ignore[reportCallIssue]
+    answer_message_task.apply_async(  # pyright: ignore[reportCallIssue]
+        args=[str(message.id)],
+        headers={"correlation_id": str(http_request.state.correlation_id)},
+    )
     return response(message)

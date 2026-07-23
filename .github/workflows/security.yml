@@ -1,0 +1,69 @@
+name: Security and supply chain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install uv
+        run: python3 -m pip install --user uv==0.11.2
+      - name: Python dependency audit
+        run: |
+          uv export --project backend --frozen --no-dev --no-emit-project \
+            --format requirements-txt --output-file /tmp/fabricassist-audit.txt
+          uvx --from pip-audit==2.9.0 pip-audit \
+            --requirement /tmp/fabricassist-audit.txt --no-deps --disable-pip
+      - name: JavaScript production dependency audit
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend audit --prod --audit-level high
+      - name: Static security policy and secret-pattern check
+        run: make security-check
+
+  filesystem:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Trivy repository scan
+        run: |
+          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.59.1 \
+            fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed /workspace
+
+  infrastructure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: OpenTofu format
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace/infrastructure/terraform/staging \
+            ghcr.io/opentofu/opentofu:1.9.0 fmt -check -recursive
+      - name: OpenTofu validate
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace/infrastructure/terraform/staging \
+            ghcr.io/opentofu/opentofu:1.9.0 init -backend=false
+          docker run --rm -v "$PWD:/workspace" -w /workspace/infrastructure/terraform/staging \
+            ghcr.io/opentofu/opentofu:1.9.0 validate
+      - name: Trivy IaC scan
+        run: |
+          docker run --rm -v "$PWD:/workspace" aquasec/trivy:0.59.1 \
+            config --exit-code 1 --severity HIGH,CRITICAL /workspace/infrastructure/terraform

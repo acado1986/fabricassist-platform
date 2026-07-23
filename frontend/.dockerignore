@@ -2,3 +2,7 @@ node_modules/
 .expo/
 dist/
 coverage/
+apps/client/android/
+apps/client/ios/
+playwright-report/
+test-results/

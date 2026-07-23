@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
+from hashlib import sha256
+from time import perf_counter
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -125,11 +128,20 @@ async def answer_message(session: AsyncSession, message_id: object) -> None:
         model="deterministic-conversation",
         prompt_version="conversation-v1",
         schema_version="conversation-v1",
-        status="completed",
+        request_fingerprint=sha256(
+            f"{message.analysis_revision_id}:{message.id}".encode()
+        ).hexdigest(),
+        status="processing",
     )
     session.add(model_run)
     await session.flush()
+    started = perf_counter()
     proposal = await MockConversationProvider().answer(context, message.text)
+    model_run.latency_ms = round((perf_counter() - started) * 1000)
+    model_run.input_tokens = None
+    model_run.output_tokens = None
+    model_run.estimated_cost_usd = Decimal(0)
+    model_run.status = "completed"
     dossier = GarmentEvidenceDossier.model_validate(context.dossier)
     reports = [validate_care_plan(dossier, claim.plan) for claim in proposal.actionable_claims]
     blocked = any(

@@ -1186,6 +1186,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [
@@ -1220,7 +1227,7 @@
     }
   },
   "info": {
-    "description": "Phase 2 backend foundation; business functionality is not implemented.",
+    "description": "Validated garment intelligence, review, and lifecycle API.",
     "title": "FabricAssist API",
     "version": "0.0.0"
   },

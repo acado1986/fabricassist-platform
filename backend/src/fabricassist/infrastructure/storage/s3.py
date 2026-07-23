@@ -30,11 +30,18 @@ class S3Storage:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         client_factory: Any = cast(Any, boto3).client
+        credentials = (
+            {
+                "aws_access_key_id": settings.s3_access_key,
+                "aws_secret_access_key": settings.s3_secret_key,
+            }
+            if settings.s3_access_key and settings.s3_secret_key
+            else {}
+        )
         self._client: Any = client_factory(
             "s3",
             endpoint_url=settings.s3_endpoint_url,
-            aws_access_key_id=settings.s3_access_key,
-            aws_secret_access_key=settings.s3_secret_key,
+            **credentials,
             config=Config(
                 s3={"addressing_style": "path" if settings.s3_force_path_style else "virtual"}
             ),
@@ -42,8 +49,7 @@ class S3Storage:
         self._presign_client: Any = client_factory(
             "s3",
             endpoint_url=settings.s3_public_endpoint_url,
-            aws_access_key_id=settings.s3_access_key,
-            aws_secret_access_key=settings.s3_secret_key,
+            **credentials,
             config=Config(
                 s3={"addressing_style": "path" if settings.s3_force_path_style else "virtual"}
             ),

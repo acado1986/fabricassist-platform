@@ -33,7 +33,10 @@ export function FoundationShell({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.topBar, isCompact && styles.topBarCompact]}>
+        <View
+          role="banner"
+          style={[styles.topBar, isCompact && styles.topBarCompact]}
+        >
           <View style={styles.brandRow}>
             <View style={styles.mark} accessibilityElementsHidden>
               <Text style={styles.markText}>FA</Text>
@@ -46,7 +49,7 @@ export function FoundationShell({
           <LanguageSelector />
         </View>
 
-        <View style={[styles.content, wide && styles.contentWide]}>
+        <View role="main" style={[styles.content, wide && styles.contentWide]}>
           {title ? (
             <View style={styles.headingGroup}>
               <Text accessibilityRole="header" style={styles.pageTitle}>

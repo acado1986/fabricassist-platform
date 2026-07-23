@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -75,3 +75,30 @@ frontend-build: ## Build the Phase 3 Expo web artifact in Docker.
 	docker build --file frontend/Dockerfile frontend
 
 check: bootstrap lint test ## Run the complete default Phase 5 local quality gate.
+
+observability-up: ## Start the optional local OTEL, Prometheus, and Grafana profile.
+	FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT=http://fabricassist-otel-collector:4318 docker compose --profile observability up -d --build --wait
+
+observability-down: ## Stop optional observability services without deleting data.
+	docker compose --profile observability down
+
+backup-restore-test: ## Prove a local PostgreSQL backup restores into an isolated drill database.
+	@./infrastructure/scripts/backup-restore-drill.sh
+
+load-test: ## Run the bounded local metadata load smoke (override LOAD_* variables).
+	python3 infrastructure/scripts/load-smoke.py \
+		--url "$${LOAD_URL:-http://localhost:8000}" \
+		--duration "$${LOAD_DURATION:-15}" \
+		--concurrency "$${LOAD_CONCURRENCY:-8}"
+
+security-check: ## Run local static secret, production-settings, and container-policy checks.
+	@./infrastructure/scripts/security-check.sh
+
+iac-check: ## Format and validate the OpenTofu staging baseline.
+	@command -v tofu >/dev/null || { echo "OpenTofu 1.9+ is required for iac-check" >&2; exit 1; }
+	tofu -chdir=infrastructure/terraform/staging fmt -check -recursive
+	tofu -chdir=infrastructure/terraform/staging init -backend=false
+	tofu -chdir=infrastructure/terraform/staging validate
+
+release-check: check security-check frontend-build ## Run non-cloud Phase 19 release gates.
+	@printf '%s\n' 'Run migration-test, E2E, Android/iOS, IaC, load, and restore gates per docs/runbooks/release.md.'

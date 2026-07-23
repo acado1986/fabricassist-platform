@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -342,6 +342,7 @@ async def complete_upload(
 @router.post("/{scan_id}/analyse", response_model=AnalysisResponse, status_code=202)
 async def request_analysis(
     scan_id: UUID,
+    http_request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -364,7 +365,11 @@ async def request_analysis(
     await session.commit()
     from fabricassist.worker.celery_app import celery_app
 
-    celery_app.send_task("fabricassist.analyse_scan", args=[str(scan.id)])
+    celery_app.send_task(
+        "fabricassist.analyse_scan",
+        args=[str(scan.id)],
+        headers={"correlation_id": str(http_request.state.correlation_id)},
+    )
     return AnalysisResponse(scan_id=scan.id, status=scan.status, operation_key=key)
 
 

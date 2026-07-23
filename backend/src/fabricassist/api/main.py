@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from secrets import compare_digest
 from typing import cast
 
 import jwt
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
 from starlette.types import ExceptionHandler
 
 from fabricassist.api.errors import (
@@ -23,12 +25,19 @@ from fabricassist.api.errors import (
     validation_error_handler,
 )
 from fabricassist.api.logging import configure_logging
-from fabricassist.api.middleware import CorrelationIdMiddleware
+from fabricassist.api.middleware import (
+    CorrelationIdMiddleware,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 from fabricassist.api.routes import auth, conversations, garments, products, reviews, scans
 from fabricassist.application.auth import decode_access_token
 from fabricassist.infrastructure.database import Database, DatabasePort
+from fabricassist.infrastructure.limits import ValkeyRateLimiter
+from fabricassist.infrastructure.operational_metrics import durable_metrics
 from fabricassist.infrastructure.persistence.models import User
 from fabricassist.infrastructure.storage.s3 import S3Storage
+from fabricassist.infrastructure.telemetry import configure_telemetry, metrics_payload
 from fabricassist.settings import Settings
 
 
@@ -39,17 +48,23 @@ def create_app(
     """Compose the API foundation without any business feature routes."""
     resolved_settings = settings or Settings()
     resolved_database = database or Database(resolved_settings.database_url)
+    rate_limiter = ValkeyRateLimiter(resolved_settings.valkey_url)
     configure_logging(resolved_settings.log_level)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-        yield
-        await resolved_database.close()
+        try:
+            yield
+        finally:
+            try:
+                await rate_limiter.close()
+            finally:
+                await resolved_database.close()
 
     app = FastAPI(
         title="FabricAssist API",
         version="0.0.0",
-        description="Phase 2 backend foundation; business functionality is not implemented.",
+        description="Validated garment intelligence, review, and lifecycle API.",
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
@@ -57,11 +72,25 @@ def create_app(
     app.state.storage = S3Storage(resolved_settings)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[origin for origin in resolved_settings.cors_origins.split(",") if origin],
+        allow_origins=[
+            origin for origin in resolved_settings.cors_allowed_origins.split(",") if origin
+        ],
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-CSRF-Token"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-CSRF-Token",
+            "X-Correlation-ID",
+        ],
     )
+    app.add_middleware(
+        RateLimitMiddleware,
+        settings=resolved_settings,
+        limiter=rate_limiter,
+    )
+    app.add_middleware(SecurityHeadersMiddleware, settings=resolved_settings)
     app.add_middleware(CorrelationIdMiddleware)
     app.add_exception_handler(ApiError, cast(ExceptionHandler, api_error_handler))
     app.add_exception_handler(Exception, cast(ExceptionHandler, unexpected_error_handler))
@@ -144,6 +173,33 @@ def create_app(
             raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Service dependencies are unavailable.")
         return {"status": "ok"}
 
+    @app.get(
+        "/api/v1/metrics",
+        tags=["operations"],
+        include_in_schema=False,
+        response_class=Response,
+    )
+    async def metrics(
+        authorization: str | None = Header(default=None),
+    ) -> Response:
+        """Expose internal metrics only when enabled and authorized."""
+        if not resolved_settings.metrics_enabled:
+            raise ApiError(404, "NOT_FOUND", "The requested resource was not found.")
+        if resolved_settings.metrics_access_token:
+            supplied = (
+                authorization.removeprefix("Bearer ")
+                if authorization and authorization.startswith("Bearer ")
+                else ""
+            )
+            if not compare_digest(supplied, resolved_settings.metrics_access_token):
+                raise ApiError(401, "UNAUTHENTICATED", "Authentication is required.")
+        payload, content_type = metrics_payload()
+        if isinstance(resolved_database, Database):
+            async with resolved_database.session_factory() as session:
+                payload += await durable_metrics(session)
+        return Response(content=payload, media_type=content_type)
+
+    configure_telemetry(app, resolved_settings)
     return app
 
 

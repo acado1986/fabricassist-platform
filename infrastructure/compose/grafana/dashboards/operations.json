@@ -1,0 +1,61 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "API request rate",
+      "targets": [{"expr": "sum by (status) (rate(fabricassist_http_requests_total[5m]))"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "API p95 latency",
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(fabricassist_http_request_duration_seconds_bucket[5m])))"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "Oldest queued scan (seconds)",
+      "targets": [{"expr": "fabricassist_queue_oldest_age_seconds"}],
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 8}
+    },
+    {
+      "type": "bargauge",
+      "title": "Validator outcomes",
+      "targets": [{"expr": "fabricassist_validation_durable_total"}],
+      "gridPos": {"h": 6, "w": 9, "x": 6, "y": 8}
+    },
+    {
+      "type": "bargauge",
+      "title": "Product lookup coverage",
+      "targets": [{"expr": "fabricassist_product_lookup_durable_total"}],
+      "gridPos": {"h": 6, "w": 9, "x": 15, "y": 8}
+    },
+    {
+      "type": "stat",
+      "title": "Estimated model cost (USD)",
+      "targets": [{"expr": "fabricassist_model_estimated_cost_usd_total"}],
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 14}
+    },
+    {
+      "type": "bargauge",
+      "title": "Review queue",
+      "targets": [{"expr": "fabricassist_review_cases"}],
+      "gridPos": {"h": 6, "w": 9, "x": 6, "y": 14}
+    },
+    {
+      "type": "bargauge",
+      "title": "Deletion outbox",
+      "targets": [{"expr": "fabricassist_deletion_outbox"}],
+      "gridPos": {"h": 6, "w": 9, "x": 15, "y": 14}
+    }
+  ],
+  "schemaVersion": 40,
+  "tags": ["fabricassist"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "FabricAssist operations",
+  "uid": "fabricassist-operations",
+  "version": 1
+}

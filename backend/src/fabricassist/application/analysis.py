@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from io import BytesIO
+from time import perf_counter
 from uuid import UUID, uuid4
 
 from PIL import Image, ImageOps
@@ -62,6 +64,7 @@ from fabricassist.infrastructure.persistence.models import (
     GarmentIdentifier,
     GarmentIdentityMatchRun,
     GarmentObservation,
+    ModelRun,
     ProductLookupRun,
     ProposedPlan,
     RenderedAnswer,
@@ -175,9 +178,33 @@ async def _lookup_barcodes_from_images(
         image for image in normalized if image.role is ImageRole.BARCODE_BRAND_LABEL
     )
     if barcode_images:
+        barcode_started = perf_counter()
+        vision_candidates = await provider.extract_barcode_candidates(barcode_images)
+        session.add(
+            ModelRun(
+                id=uuid4(),
+                tenant_id=scan.tenant_id,
+                scan_id=scan.id,
+                operation="barcode_ocr",
+                provider=settings.vision_provider,
+                model=(
+                    "deterministic-review-safe"
+                    if settings.vision_provider == "mock"
+                    else settings.vision_model
+                ),
+                prompt_version=EVIDENCE_PROMPT_VERSION,
+                schema_version="barcode-candidate-v1",
+                request_fingerprint=hashlib.sha256(
+                    ":".join(image.sha256 for image in barcode_images).encode()
+                ).hexdigest(),
+                status="completed",
+                latency_ms=round((perf_counter() - barcode_started) * 1000),
+                estimated_cost_usd=0 if settings.vision_provider == "mock" else None,
+            )
+        )
         candidates = (
             *decode_barcodes(barcode_images),
-            *await provider.extract_barcode_candidates(barcode_images),
+            *vision_candidates,
         )
         for candidate in candidates:
             try:
@@ -385,6 +412,24 @@ async def analyse_scan(
                 )
         for image in new_images:
             extracted = await provider.extract_evidence((image,), prior)
+            session.add(
+                ModelRun(
+                    id=uuid4(),
+                    tenant_id=scan.tenant_id,
+                    scan_id=scan.id,
+                    operation="evidence",
+                    provider=extracted.provider,
+                    model=extracted.model,
+                    prompt_version=EVIDENCE_PROMPT_VERSION,
+                    schema_version=EVIDENCE_SCHEMA_VERSION,
+                    request_fingerprint=image.sha256,
+                    status="completed",
+                    latency_ms=extracted.latency_ms,
+                    input_tokens=None,
+                    output_tokens=None,
+                    estimated_cost_usd=0 if extracted.provider == "mock" else None,
+                )
+            )
             deltas.append(extracted.delta)
             await hot_cache.set_json(
                 evidence_cache_key(image),
@@ -444,13 +489,37 @@ async def analyse_scan(
                     )
                 )
         planner = MockCarePlanningProvider()
+        planning_started = perf_counter()
         proposal = await planner.propose_plan(dossier)
+        planning_latency_ms = round((perf_counter() - planning_started) * 1000)
         report = validate_care_plan(dossier, proposal)
         retried = False
         if report.repairable and report.outcome == ValidationOutcome.BLOCKED:
             retried = True
+            planning_started = perf_counter()
             proposal = await planner.propose_plan(dossier, tuple(report.violations))
+            planning_latency_ms += round((perf_counter() - planning_started) * 1000)
             report = validate_care_plan(dossier, proposal)
+        session.add(
+            ModelRun(
+                id=uuid4(),
+                tenant_id=scan.tenant_id,
+                scan_id=scan.id,
+                operation="planning",
+                provider="mock",
+                model="deterministic-review-safe",
+                prompt_version="care-planning-v1",
+                schema_version="proposed-care-plan-v1",
+                request_fingerprint=hashlib.sha256(
+                    json.dumps(dossier.model_dump(mode="json"), sort_keys=True).encode()
+                ).hexdigest(),
+                status="completed",
+                latency_ms=planning_latency_ms,
+                input_tokens=None,
+                output_tokens=None,
+                estimated_cost_usd=0,
+            )
+        )
         plan = ProposedPlan(
             id=uuid4(),
             tenant_id=scan.tenant_id,

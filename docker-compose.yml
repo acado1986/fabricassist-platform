@@ -83,6 +83,19 @@ services:
       FABRICASSIST_ENVIRONMENT: ${FABRICASSIST_ENVIRONMENT:-development}
       FABRICASSIST_LOG_LEVEL: ${FABRICASSIST_LOG_LEVEL:-INFO}
       FABRICASSIST_ACCESS_TOKEN_SECRET: ${FABRICASSIST_ACCESS_TOKEN_SECRET:-change-me-local-access-secret-please-replace}
+      FABRICASSIST_APP_BASE_URL: ${FABRICASSIST_APP_BASE_URL:-http://localhost:8081}
+      FABRICASSIST_API_PUBLIC_URL: ${FABRICASSIST_API_PUBLIC_URL:-http://localhost:8000}
+      FABRICASSIST_CORS_ALLOWED_ORIGINS: ${FABRICASSIST_CORS_ALLOWED_ORIGINS:-http://localhost:8081,http://localhost:19006}
+      FABRICASSIST_METRICS_ENABLED: ${FABRICASSIST_METRICS_ENABLED:-true}
+      FABRICASSIST_METRICS_ACCESS_TOKEN: ${FABRICASSIST_METRICS_ACCESS_TOKEN:-}
+      FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT: ${FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      FABRICASSIST_OTEL_SERVICE_NAME: fabricassist-api
+      FABRICASSIST_RATE_LIMIT_ENABLED: ${FABRICASSIST_RATE_LIMIT_ENABLED:-true}
+      FABRICASSIST_RATE_LIMIT_FAIL_OPEN: ${FABRICASSIST_RATE_LIMIT_FAIL_OPEN:-true}
+      FABRICASSIST_RATE_LIMIT_GLOBAL_PER_MINUTE: ${FABRICASSIST_RATE_LIMIT_GLOBAL_PER_MINUTE:-600}
+      FABRICASSIST_RATE_LIMIT_AUTH_PER_MINUTE: ${FABRICASSIST_RATE_LIMIT_AUTH_PER_MINUTE:-10}
+      FABRICASSIST_RATE_LIMIT_ANALYSIS_PER_MINUTE: ${FABRICASSIST_RATE_LIMIT_ANALYSIS_PER_MINUTE:-10}
+      FABRICASSIST_RATE_LIMIT_CHAT_PER_MINUTE: ${FABRICASSIST_RATE_LIMIT_CHAT_PER_MINUTE:-20}
       FABRICASSIST_DATABASE_URL: ${FABRICASSIST_DATABASE_URL:-postgresql://fabricassist_dev:change-me-local-postgres@fabricassist-postgres:5432/fabricassist_dev}
       FABRICASSIST_VALKEY_URL: ${FABRICASSIST_VALKEY_URL:-valkey://fabricassist-valkey:6379/0}
       FABRICASSIST_S3_ENDPOINT_URL: ${FABRICASSIST_S3_ENDPOINT_URL:-http://fabricassist-minio:9000}
@@ -130,6 +143,11 @@ services:
     environment:
       FABRICASSIST_ENVIRONMENT: ${FABRICASSIST_ENVIRONMENT:-development}
       FABRICASSIST_LOG_LEVEL: ${FABRICASSIST_LOG_LEVEL:-INFO}
+      FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT: ${FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      FABRICASSIST_OTEL_SERVICE_NAME: fabricassist-worker
+      FABRICASSIST_WORKER_GLOBAL_CONCURRENCY: ${FABRICASSIST_WORKER_GLOBAL_CONCURRENCY:-8}
+      FABRICASSIST_WORKER_TENANT_CONCURRENCY: ${FABRICASSIST_WORKER_TENANT_CONCURRENCY:-2}
+      FABRICASSIST_WORKER_CONCURRENCY_LEASE_SECONDS: ${FABRICASSIST_WORKER_CONCURRENCY_LEASE_SECONDS:-300}
       FABRICASSIST_DATABASE_URL: ${FABRICASSIST_DATABASE_URL:-postgresql://fabricassist_dev:change-me-local-postgres@fabricassist-postgres:5432/fabricassist_dev}
       FABRICASSIST_VALKEY_URL: ${FABRICASSIST_VALKEY_URL:-valkey://fabricassist-valkey:6379/0}
       FABRICASSIST_S3_ENDPOINT_URL: ${FABRICASSIST_S3_ENDPOINT_URL:-http://fabricassist-minio:9000}
@@ -159,6 +177,54 @@ services:
         condition: service_healthy
       fabricassist-minio-init:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  fabricassist-otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    profiles: [observability]
+    command: [--config=/etc/otelcol-contrib/config.yaml]
+    volumes:
+      - ./infrastructure/compose/otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "${FABRICASSIST_OTEL_HTTP_PORT:-4318}:4318"
+    networks: [fabricassist-network]
+    restart: unless-stopped
+
+  fabricassist-prometheus:
+    image: prom/prometheus:v3.2.1
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./infrastructure/compose/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/compose/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - fabricassist-prometheus-data:/prometheus
+    ports:
+      - "${FABRICASSIST_PROMETHEUS_PORT:-9090}:9090"
+    networks: [fabricassist-network]
+    depends_on:
+      fabricassist-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  fabricassist-grafana:
+    image: grafana/grafana:11.5.2
+    profiles: [observability]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_USER: ${FABRICASSIST_GRAFANA_ADMIN_USER:-fabricassist-local}
+      GF_SECURITY_ADMIN_PASSWORD: ${FABRICASSIST_GRAFANA_ADMIN_PASSWORD:-change-me-local-grafana}
+    volumes:
+      - ./infrastructure/compose/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/compose/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - fabricassist-grafana-data:/var/lib/grafana
+    ports:
+      - "${FABRICASSIST_GRAFANA_PORT:-3000}:3000"
+    networks: [fabricassist-network]
+    depends_on:
+      - fabricassist-prometheus
     restart: unless-stopped
 
   fabricassist-postgres-test:
@@ -239,3 +305,5 @@ volumes:
   fabricassist-minio-data:
   fabricassist-postgres-test-data:
   fabricassist-minio-test-data:
+  fabricassist-prometheus-data:
+  fabricassist-grafana-data:
