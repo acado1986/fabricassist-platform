@@ -21,6 +21,7 @@ from fabricassist.application.cache import (
     uncached_images,
     upsert_exact_evidence_cache_entry,
 )
+from fabricassist.application.lifecycle import ensure_review_case
 from fabricassist.application.planning import MockCarePlanningProvider
 from fabricassist.application.products import (
     PersistedProductLookup,
@@ -339,11 +340,7 @@ async def analyse_scan(
                 )
             ).all()
         )
-        exact_entries = {
-            (entry.normalized_sha256, entry.role): entry
-            for entry in entries
-            if isinstance(entry, EvidenceCacheEntry)
-        }
+        exact_entries = {(entry.normalized_sha256, entry.role): entry for entry in entries}
         hot_cache = ValkeyHotMirror(settings.valkey_url, settings.cache_hot_mirror_enabled)
         hot_deltas: dict[tuple[str, str], GarmentEvidenceDelta] = {}
         for image in normalized:
@@ -574,4 +571,6 @@ async def analyse_scan(
         )
         scan.analysis_stage = "completed"
         scan.progress_percent = 100
+        if scan.status == "needs_review":
+            await ensure_review_case(session, scan)
         await session.commit()

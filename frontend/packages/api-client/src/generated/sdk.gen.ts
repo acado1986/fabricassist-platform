@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddImageApiV1ScansScanIdImagesPostData, AddImageApiV1ScansScanIdImagesPostErrors, AddImageApiV1ScansScanIdImagesPostResponses, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostData, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostData, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetData, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses, GetGarmentApiV1GarmentsGarmentIdGetData, GetGarmentApiV1GarmentsGarmentIdGetErrors, GetGarmentApiV1GarmentsGarmentIdGetResponses, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetData, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostData, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostErrors, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostResponses, LatestProductLookupApiV1ScansScanIdProductLookupGetData, LatestProductLookupApiV1ScansScanIdProductLookupGetErrors, LatestProductLookupApiV1ScansScanIdProductLookupGetResponses, ListGarmentsApiV1GarmentsGetData, ListGarmentsApiV1GarmentsGetResponses, ListMessagesApiV1ScansScanIdMessagesGetData, ListMessagesApiV1ScansScanIdMessagesGetErrors, ListMessagesApiV1ScansScanIdMessagesGetResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, PostMessageApiV1ScansScanIdMessagesPostData, PostMessageApiV1ScansScanIdMessagesPostErrors, PostMessageApiV1ScansScanIdMessagesPostResponses, ProductLookupApiV1ScansScanIdProductLookupPostData, ProductLookupApiV1ScansScanIdProductLookupPostErrors, ProductLookupApiV1ScansScanIdProductLookupPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses } from './types.gen';
+import type { AddImageApiV1ScansScanIdImagesPostData, AddImageApiV1ScansScanIdImagesPostErrors, AddImageApiV1ScansScanIdImagesPostResponses, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostData, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostErrors, AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses, ApproveReviewApiV1ReviewsReviewIdApprovePostData, ApproveReviewApiV1ReviewsReviewIdApprovePostErrors, ApproveReviewApiV1ReviewsReviewIdApprovePostResponses, AssignReviewApiV1ReviewsReviewIdAssignPostData, AssignReviewApiV1ReviewsReviewIdAssignPostErrors, AssignReviewApiV1ReviewsReviewIdAssignPostResponses, CompleteUploadApiV1ScansScanIdUploadsCompletePostData, CompleteUploadApiV1ScansScanIdUploadsCompletePostErrors, CompleteUploadApiV1ScansScanIdUploadsCompletePostResponses, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostData, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostErrors, ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses, ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostData, ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostErrors, ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses, CorrectReviewApiV1ReviewsReviewIdCorrectionsPostData, CorrectReviewApiV1ReviewsReviewIdCorrectionsPostErrors, CorrectReviewApiV1ReviewsReviewIdCorrectionsPostResponses, CreateScanApiV1ScansPostData, CreateScanApiV1ScansPostErrors, CreateScanApiV1ScansPostResponses, DeleteGarmentApiV1GarmentsGarmentIdDeleteData, DeleteGarmentApiV1GarmentsGarmentIdDeleteErrors, DeleteGarmentApiV1GarmentsGarmentIdDeleteResponses, DeleteScanApiV1ScansScanIdDeleteData, DeleteScanApiV1ScansScanIdDeleteErrors, DeleteScanApiV1ScansScanIdDeleteResponses, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetData, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetErrors, GarmentHistoryApiV1GarmentsGarmentIdHistoryGetResponses, GetGarmentApiV1GarmentsGarmentIdGetData, GetGarmentApiV1GarmentsGarmentIdGetErrors, GetGarmentApiV1GarmentsGarmentIdGetResponses, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetData, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetErrors, IdentityCandidatesApiV1GarmentsIdentityCandidatesScanIdGetResponses, ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetData, ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetErrors, ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetResponses, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostData, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostErrors, InvalidateLatestProductLookupApiV1ScansScanIdProductLookupInvalidatePostResponses, LatestProductLookupApiV1ScansScanIdProductLookupGetData, LatestProductLookupApiV1ScansScanIdProductLookupGetErrors, LatestProductLookupApiV1ScansScanIdProductLookupGetResponses, ListGarmentsApiV1GarmentsGetData, ListGarmentsApiV1GarmentsGetResponses, ListMessagesApiV1ScansScanIdMessagesGetData, ListMessagesApiV1ScansScanIdMessagesGetErrors, ListMessagesApiV1ScansScanIdMessagesGetResponses, ListReviewsApiV1ReviewsGetData, ListReviewsApiV1ReviewsGetResponses, LiveApiV1HealthLiveGetData, LiveApiV1HealthLiveGetResponses, LoginApiV1AuthLoginPostData, LoginApiV1AuthLoginPostErrors, LoginApiV1AuthLoginPostResponses, LogoutApiV1AuthLogoutPostData, LogoutApiV1AuthLogoutPostErrors, LogoutApiV1AuthLogoutPostResponses, PostMessageApiV1ScansScanIdMessagesPostData, PostMessageApiV1ScansScanIdMessagesPostErrors, PostMessageApiV1ScansScanIdMessagesPostResponses, ProductLookupApiV1ScansScanIdProductLookupPostData, ProductLookupApiV1ScansScanIdProductLookupPostErrors, ProductLookupApiV1ScansScanIdProductLookupPostResponses, ReadyApiV1HealthReadyGetData, ReadyApiV1HealthReadyGetResponses, RefreshApiV1AuthRefreshPostData, RefreshApiV1AuthRefreshPostErrors, RefreshApiV1AuthRefreshPostResponses, RegisterApiV1AuthRegisterPostData, RegisterApiV1AuthRegisterPostErrors, RegisterApiV1AuthRegisterPostResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RequestAnalysisApiV1ScansScanIdAnalysePostData, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, RequestAnalysisApiV1ScansScanIdAnalysePostResponses, ReviewDetailApiV1ReviewsReviewIdGetData, ReviewDetailApiV1ReviewsReviewIdGetErrors, ReviewDetailApiV1ReviewsReviewIdGetResponses, ScanDetailApiV1ScansScanIdGetData, ScanDetailApiV1ScansScanIdGetErrors, ScanDetailApiV1ScansScanIdGetResponses, ScanResultApiV1ScansScanIdResultGetData, ScanResultApiV1ScansScanIdResultGetErrors, ScanResultApiV1ScansScanIdResultGetResponses, SubmitFeedbackApiV1ScansScanIdFeedbackPostData, SubmitFeedbackApiV1ScansScanIdFeedbackPostErrors, SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -75,6 +75,11 @@ export const confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfir
 });
 
 /**
+ * Delete Garment
+ */
+export const deleteGarmentApiV1GarmentsGarmentIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteGarmentApiV1GarmentsGarmentIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteGarmentApiV1GarmentsGarmentIdDeleteResponses, DeleteGarmentApiV1GarmentsGarmentIdDeleteErrors, ThrowOnError>({ url: '/api/v1/garments/{garment_id}', ...options });
+
+/**
  * Get Garment
  */
 export const getGarmentApiV1GarmentsGarmentIdGet = <ThrowOnError extends boolean = false>(options: Options<GetGarmentApiV1GarmentsGarmentIdGetData, ThrowOnError>) => (options.client ?? client).get<GetGarmentApiV1GarmentsGarmentIdGetResponses, GetGarmentApiV1GarmentsGarmentIdGetErrors, ThrowOnError>({ url: '/api/v1/garments/{garment_id}', ...options });
@@ -111,6 +116,59 @@ export const liveApiV1HealthLiveGet = <ThrowOnError extends boolean = false>(opt
 export const readyApiV1HealthReadyGet = <ThrowOnError extends boolean = false>(options?: Options<ReadyApiV1HealthReadyGetData, ThrowOnError>) => (options?.client ?? client).get<ReadyApiV1HealthReadyGetResponses, unknown, ThrowOnError>({ url: '/api/v1/health/ready', ...options });
 
 /**
+ * List Reviews
+ */
+export const listReviewsApiV1ReviewsGet = <ThrowOnError extends boolean = false>(options?: Options<ListReviewsApiV1ReviewsGetData, ThrowOnError>) => (options?.client ?? client).get<ListReviewsApiV1ReviewsGetResponses, unknown, ThrowOnError>({ url: '/api/v1/reviews', ...options });
+
+/**
+ * Review Detail
+ */
+export const reviewDetailApiV1ReviewsReviewIdGet = <ThrowOnError extends boolean = false>(options: Options<ReviewDetailApiV1ReviewsReviewIdGetData, ThrowOnError>) => (options.client ?? client).get<ReviewDetailApiV1ReviewsReviewIdGetResponses, ReviewDetailApiV1ReviewsReviewIdGetErrors, ThrowOnError>({ url: '/api/v1/reviews/{review_id}', ...options });
+
+/**
+ * Approve Review
+ */
+export const approveReviewApiV1ReviewsReviewIdApprovePost = <ThrowOnError extends boolean = false>(options: Options<ApproveReviewApiV1ReviewsReviewIdApprovePostData, ThrowOnError>) => (options.client ?? client).post<ApproveReviewApiV1ReviewsReviewIdApprovePostResponses, ApproveReviewApiV1ReviewsReviewIdApprovePostErrors, ThrowOnError>({
+    url: '/api/v1/reviews/{review_id}/approve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Assign Review
+ */
+export const assignReviewApiV1ReviewsReviewIdAssignPost = <ThrowOnError extends boolean = false>(options: Options<AssignReviewApiV1ReviewsReviewIdAssignPostData, ThrowOnError>) => (options.client ?? client).post<AssignReviewApiV1ReviewsReviewIdAssignPostResponses, AssignReviewApiV1ReviewsReviewIdAssignPostErrors, ThrowOnError>({ url: '/api/v1/reviews/{review_id}/assign', ...options });
+
+/**
+ * Correct Review
+ */
+export const correctReviewApiV1ReviewsReviewIdCorrectionsPost = <ThrowOnError extends boolean = false>(options: Options<CorrectReviewApiV1ReviewsReviewIdCorrectionsPostData, ThrowOnError>) => (options.client ?? client).post<CorrectReviewApiV1ReviewsReviewIdCorrectionsPostResponses, CorrectReviewApiV1ReviewsReviewIdCorrectionsPostErrors, ThrowOnError>({
+    url: '/api/v1/reviews/{review_id}/corrections',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Confirm Service Event
+ *
+ * Only staff-confirmed events can make a garment appear cleaned-before.
+ */
+export const confirmServiceEventApiV1ReviewsReviewIdServiceEventsPost = <ThrowOnError extends boolean = false>(options: Options<ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostData, ThrowOnError>) => (options.client ?? client).post<ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses, ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostErrors, ThrowOnError>({
+    url: '/api/v1/reviews/{review_id}/service-events',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Create Scan
  */
 export const createScanApiV1ScansPost = <ThrowOnError extends boolean = false>(options: Options<CreateScanApiV1ScansPostData, ThrowOnError>) => (options.client ?? client).post<CreateScanApiV1ScansPostResponses, CreateScanApiV1ScansPostErrors, ThrowOnError>({
@@ -123,6 +181,11 @@ export const createScanApiV1ScansPost = <ThrowOnError extends boolean = false>(o
 });
 
 /**
+ * Delete Scan
+ */
+export const deleteScanApiV1ScansScanIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteScanApiV1ScansScanIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteScanApiV1ScansScanIdDeleteResponses, DeleteScanApiV1ScansScanIdDeleteErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}', ...options });
+
+/**
  * Scan Detail
  */
 export const scanDetailApiV1ScansScanIdGet = <ThrowOnError extends boolean = false>(options: Options<ScanDetailApiV1ScansScanIdGetData, ThrowOnError>) => (options.client ?? client).get<ScanDetailApiV1ScansScanIdGetResponses, ScanDetailApiV1ScansScanIdGetErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}', ...options });
@@ -131,6 +194,18 @@ export const scanDetailApiV1ScansScanIdGet = <ThrowOnError extends boolean = fal
  * Request Analysis
  */
 export const requestAnalysisApiV1ScansScanIdAnalysePost = <ThrowOnError extends boolean = false>(options: Options<RequestAnalysisApiV1ScansScanIdAnalysePostData, ThrowOnError>) => (options.client ?? client).post<RequestAnalysisApiV1ScansScanIdAnalysePostResponses, RequestAnalysisApiV1ScansScanIdAnalysePostErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/analyse', ...options });
+
+/**
+ * Submit Feedback
+ */
+export const submitFeedbackApiV1ScansScanIdFeedbackPost = <ThrowOnError extends boolean = false>(options: Options<SubmitFeedbackApiV1ScansScanIdFeedbackPostData, ThrowOnError>) => (options.client ?? client).post<SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses, SubmitFeedbackApiV1ScansScanIdFeedbackPostErrors, ThrowOnError>({
+    url: '/api/v1/scans/{scan_id}/feedback',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Add Image
@@ -148,6 +223,11 @@ export const addImageApiV1ScansScanIdImagesPost = <ThrowOnError extends boolean 
  * Remove Image
  */
 export const removeImageApiV1ScansScanIdImagesImageIdDelete = <ThrowOnError extends boolean = false>(options: Options<RemoveImageApiV1ScansScanIdImagesImageIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses, RemoveImageApiV1ScansScanIdImagesImageIdDeleteErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/images/{image_id}', ...options });
+
+/**
+ * Image Preview
+ */
+export const imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet = <ThrowOnError extends boolean = false>(options: Options<ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetData, ThrowOnError>) => (options.client ?? client).get<ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetResponses, ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetErrors, ThrowOnError>({ url: '/api/v1/scans/{scan_id}/images/{image_id}/preview', ...options });
 
 /**
  * List Messages

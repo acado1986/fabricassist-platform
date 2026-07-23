@@ -201,6 +201,8 @@ class ScanImage(Base):
     sha256: Mapped[str | None] = mapped_column(String(64))
     normalized_sha256: Mapped[str | None] = mapped_column(String(64))
     perceptual_hash: Mapped[str | None] = mapped_column(String(16))
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    deleted_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -869,3 +871,174 @@ class RenderedAnswerCache(Base):
         UtcTimestamp, nullable=False, server_default=func.now()
     )
     last_reused_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+
+
+class ReviewCase(Base):
+    """Operator-owned review state; analysis artifacts themselves stay immutable."""
+
+    __tablename__ = "review_cases"
+    __table_args__ = (
+        UniqueConstraint("analysis_revision_id", name="uq_review_cases_revision"),
+        CheckConstraint(
+            "status IN ('open', 'assigned', 'corrected', 'approved', 'closed')",
+            name="ck_review_cases_status",
+        ),
+        Index("ix_review_cases_tenant_status_created", "tenant_id", "status", "created_at"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    garment_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="SET NULL")
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="open")
+    assigned_operator_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    approved_result_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("care_results.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class EvidenceCorrection(Base):
+    """An append-only human assertion, linked to the corrected successor revision."""
+
+    __tablename__ = "evidence_corrections"
+    __table_args__ = (
+        Index("ix_evidence_corrections_tenant_revision", "tenant_id", "corrected_revision_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    review_case_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("review_cases.id", ondelete="CASCADE"), nullable=False
+    )
+    original_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="RESTRICT"), nullable=False
+    )
+    corrected_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="RESTRICT"), nullable=False
+    )
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    correction: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class CustomerFeedback(Base):
+    __tablename__ = "customer_feedback"
+    __table_args__ = (Index("ix_customer_feedback_tenant_scan", "tenant_id", "scan_id"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
+    rating: Mapped[int | None] = mapped_column(Integer)
+    comment: Mapped[str | None] = mapped_column(Text)
+    request_review: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class DeletionRequest(Base):
+    """Durable deletion state, separate from transient object-store execution."""
+
+    __tablename__ = "deletion_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "resource_type IN ('scan', 'garment')", name="ck_deletion_requests_resource_type"
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'completed', 'failed')",
+            name="ck_deletion_requests_status",
+        ),
+        UniqueConstraint(
+            "tenant_id", "resource_type", "resource_id", name="uq_deletion_requests_resource"
+        ),
+        Index("ix_deletion_requests_status_requested", "status", "requested_at"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
+    resource_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    resource_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="queued")
+    requested_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+
+
+class ObjectDeletionOutbox(Base):
+    __tablename__ = "object_deletion_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name="ck_object_deletion_outbox_status",
+        ),
+        UniqueConstraint("deletion_request_id", "object_key", name="uq_object_deletion_outbox_key"),
+        Index("ix_object_deletion_outbox_status_created", "status", "created_at"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    deletion_request_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("deletion_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    image_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("scan_images.id", ondelete="SET NULL")
+    )
+    object_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    deleted_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    __table_args__ = (Index("ix_audit_events_tenant_created", "tenant_id", "created_at"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    resource_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    safe_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )

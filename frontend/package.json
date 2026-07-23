@@ -12,12 +12,15 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "jest --config jest.config.js --runInBand",
+    "test:e2e": "playwright test",
+    "test:android:smoke": "maestro test e2e/maestro/customer-smoke.yaml",
     "build:web": "pnpm --filter fabricassist-app exec expo export --platform web",
     "generate:api": "pnpm --filter @fabricassist/api-client generate",
     "check:api": "pnpm generate:api && git diff --exit-code -- packages/api-client/src/generated"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.90.0",
+    "@playwright/test": "1.58.2",
     "@types/jest": "^29.5.14",
     "@types/react": "^19.0.12",
     "eslint": "^9.20.1",

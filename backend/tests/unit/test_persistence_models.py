@@ -14,6 +14,12 @@ def test_breaking_core_tables_are_registered() -> None:
         "evidence_cache_entries",
         "canonical_plan_cache_entries",
         "rendered_answer_cache_entries",
+        "review_cases",
+        "evidence_corrections",
+        "customer_feedback",
+        "deletion_requests",
+        "object_deletion_outbox",
+        "audit_events",
     } <= set(Base.metadata.tables)
     assert "label_extractions" not in Base.metadata.tables
 
@@ -30,5 +36,11 @@ def test_tenant_owned_core_tables_have_tenant_id() -> None:
         "evidence_cache_entries",
         "canonical_plan_cache_entries",
         "rendered_answer_cache_entries",
+        "review_cases",
+        "evidence_corrections",
+        "customer_feedback",
+        "deletion_requests",
+        "object_deletion_outbox",
+        "audit_events",
     ):
         assert "tenant_id" in Base.metadata.tables[name].c

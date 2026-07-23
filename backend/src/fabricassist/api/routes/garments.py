@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.lifecycle import enqueue_deletion
 from fabricassist.domain.identity import IdentityClassification
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
@@ -20,7 +21,9 @@ from fabricassist.infrastructure.persistence.models import (
     GarmentIdentityMatchRun,
     GarmentObservation,
     GarmentServiceEvent,
+    ProductLookupRun,
     Scan,
+    ScanImage,
     User,
 )
 
@@ -65,6 +68,11 @@ class HistoryResponse(BaseModel):
     garment_id: UUID
     observations: list[dict[str, object]]
     service_events: list[ServiceEventResponse]
+
+
+class DeletionResponse(BaseModel):
+    id: UUID
+    status: str
 
 
 async def get_session() -> AsyncSession:
@@ -157,6 +165,8 @@ async def add_service_event(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> ServiceEventResponse:
+    if request.kind in {"performed", "completed"} and user.role not in {"operator", "admin"}:
+        raise HTTPException(403, "Only an operator can confirm a completed service.")
     await owned_garment(session, user, garment_id)
     event = GarmentServiceEvent(
         tenant_id=user.tenant_id,
@@ -204,6 +214,61 @@ async def garment_history(
         ],
         service_events=events,
     )
+
+
+@router.delete("/{garment_id}", response_model=DeletionResponse, status_code=202)
+async def delete_garment(
+    garment_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> DeletionResponse:
+    garment = await owned_garment(session, user, garment_id)
+    scans = list(
+        (
+            await session.scalars(
+                select(Scan).where(Scan.garment_id == garment.id, Scan.tenant_id == user.tenant_id)
+            )
+        ).all()
+    )
+    scan_ids = [scan.id for scan in scans]
+    images = (
+        list(
+            (
+                await session.scalars(
+                    select(ScanImage).where(
+                        ScanImage.scan_id.in_(scan_ids), ScanImage.deleted_at.is_(None)
+                    )
+                )
+            ).all()
+        )
+        if scan_ids
+        else []
+    )
+    request = await enqueue_deletion(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        resource_type="garment",
+        resource_id=garment.id,
+        images=images,
+    )
+    for scan in scans:
+        scan.status = "deleted"
+        scan.user_id = None
+        scan.garment_id = None
+    if scan_ids:
+        runs = list(
+            (
+                await session.scalars(
+                    select(ProductLookupRun).where(ProductLookupRun.scan_id.in_(scan_ids))
+                )
+            ).all()
+        )
+        for run in runs:
+            await session.delete(run)
+    await session.delete(garment)
+    await session.commit()
+    return DeletionResponse(id=request.id, status=request.status)
 
 
 @router.get("/identity-candidates/{scan_id}", response_model=list[IdentityCandidateResponse])

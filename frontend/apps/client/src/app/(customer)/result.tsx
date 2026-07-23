@@ -59,6 +59,30 @@ export default function Result(): ReactNode {
   const [failed, setFailed] = useState(false);
   const [stage, setStage] = useState<string>();
   const [garmentId, setGarmentId] = useState<string>();
+  const [lifecycleMessage, setLifecycleMessage] = useState<string>();
+  const requestReview = async (): Promise<void> => {
+    if (!scanId || !token) return;
+    const response = await fetch(
+      `${getApiBaseUrl()}/api/v1/scans/${scanId}/feedback`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ request_review: true }),
+      },
+    );
+    if (response.ok) setLifecycleMessage(translate('reviewRequested'));
+  };
+  const deleteAnalysis = async (): Promise<void> => {
+    if (!scanId || !token) return;
+    const response = await fetch(`${getApiBaseUrl()}/api/v1/scans/${scanId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok) setLifecycleMessage(translate('deletionRequested'));
+  };
   const stageLabel = (value: string): string => {
     if (value === 'queued') return translate('analysisStageQueued');
     if (value === 'processing') return translate('analysisStageProcessing');
@@ -224,6 +248,23 @@ export default function Result(): ReactNode {
               >
                 <Text>{translate('viewGarmentHistory')}</Text>
               </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void requestReview()}
+              style={styles.button}
+            >
+              <Text>{translate('requestReview')}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void deleteAnalysis()}
+              style={styles.button}
+            >
+              <Text>{translate('deleteScan')}</Text>
+            </Pressable>
+            {lifecycleMessage ? (
+              <Text accessibilityLiveRegion="polite">{lifecycleMessage}</Text>
             ) : null}
           </>
         ) : null}

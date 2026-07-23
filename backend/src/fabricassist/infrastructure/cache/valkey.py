@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from redis import asyncio as redis
 
@@ -12,7 +12,8 @@ class ValkeyHotMirror:
     """A cache outage is deliberately indistinguishable from a miss."""
 
     def __init__(self, url: str, enabled: bool) -> None:
-        self._client = redis.from_url(url, decode_responses=True) if enabled else None
+        client_factory: Any = cast(Any, redis).from_url
+        self._client: Any | None = client_factory(url, decode_responses=True) if enabled else None
 
     async def get_json(self, key: str) -> dict[str, Any] | None:
         if self._client is None:
@@ -20,7 +21,7 @@ class ValkeyHotMirror:
         try:
             value = await self._client.get(key)
             parsed = json.loads(value) if value else None
-            return parsed if isinstance(parsed, dict) else None
+            return cast(dict[str, Any], parsed) if isinstance(parsed, dict) else None
         except (redis.RedisError, json.JSONDecodeError):
             return None
 

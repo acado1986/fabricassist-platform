@@ -249,6 +249,21 @@ development placeholders. They are not production defaults.
 ## Current limitations
 
 The local mock is intentionally conservative and must not be used as professional
-textile-care advice. Contextual chat, cache reuse, human review, complete symbol
-coverage, rate limits, external product adapters, and production hardening remain
-deferred to the implementation plan.
+textile-care advice. Complete symbol coverage, rate limits, external product
+adapters, and production hardening remain deferred to the implementation plan.
+
+## Review and privacy lifecycle
+
+Operators use `/api/v1/reviews` to inspect source evidence, proposals, and
+validation reports, claim review cases, append a corrected evidence dossier, and
+approve the successor result. Corrections never overwrite provider evidence or a
+prior proposal. Customers can submit feedback or request review through
+`POST /api/v1/scans/{scan_id}/feedback`.
+
+`DELETE /api/v1/scans/{scan_id}` and `DELETE /api/v1/garments/{garment_id}`
+create idempotent PostgreSQL deletion requests. Private image objects are put in
+a durable outbox and only marked deleted after the storage adapter succeeds;
+retry the `fabricassist.process_retention` worker task after an object-store
+outage. Garment deletion removes personal conversation, service-history, and
+product-lookup associations while generic product profiles can remain cached.
+Short-lived authenticated image previews are available only for retained images.

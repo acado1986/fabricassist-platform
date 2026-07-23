@@ -25,6 +25,77 @@
         "title": "AnalysisResponse",
         "type": "object"
       },
+      "ApprovalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "customer_note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Note"
+          }
+        },
+        "title": "ApprovalRequest",
+        "type": "object"
+      },
+      "CareFact": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "integer"
+          },
+          "original_text": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Original Text",
+            "type": "string"
+          },
+          "permission": {
+            "pattern": "^(allowed|prohibited|unknown)$",
+            "title": "Permission",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/EvidenceSource"
+          },
+          "temperature_c": {
+            "anyOf": [
+              {
+                "maximum": 95.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature C"
+          }
+        },
+        "required": [
+          "code",
+          "permission",
+          "confidence",
+          "source"
+        ],
+        "title": "CareFact",
+        "type": "object"
+      },
       "CompleteUploadRequest": {
         "additionalProperties": false,
         "properties": {
@@ -63,6 +134,53 @@
           "candidate_id"
         ],
         "title": "ConfirmCandidateRequest",
+        "type": "object"
+      },
+      "ConfirmServiceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "pattern": "^(performed|completed)$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ConfirmServiceRequest",
+        "type": "object"
+      },
+      "CorrectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "dossier": {
+            "$ref": "#/components/schemas/GarmentEvidenceDossier"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dossier",
+          "reason"
+        ],
+        "title": "CorrectionRequest",
         "type": "object"
       },
       "CreateScanRequest": {
@@ -132,6 +250,140 @@
           "password"
         ],
         "title": "Credentials",
+        "type": "object"
+      },
+      "DeletionResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "DeletionResponse",
+        "type": "object"
+      },
+      "EvidenceSource": {
+        "additionalProperties": false,
+        "properties": {
+          "image_id": {
+            "format": "uuid",
+            "title": "Image Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ImageRole"
+          }
+        },
+        "required": [
+          "image_id",
+          "role"
+        ],
+        "title": "EvidenceSource",
+        "type": "object"
+      },
+      "FeedbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "request_review": {
+            "default": false,
+            "title": "Request Review",
+            "type": "boolean"
+          }
+        },
+        "title": "FeedbackRequest",
+        "type": "object"
+      },
+      "FeedbackResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "review_case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Case Id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "FeedbackResponse",
+        "type": "object"
+      },
+      "GarmentEvidenceDossier": {
+        "additionalProperties": false,
+        "properties": {
+          "care_facts": {
+            "items": {
+              "$ref": "#/components/schemas/CareFact"
+            },
+            "title": "Care Facts",
+            "type": "array"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/Observation"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "garment-evidence-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "uncertainties": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Uncertainties",
+            "type": "array"
+          }
+        },
+        "title": "GarmentEvidenceDossier",
         "type": "object"
       },
       "GarmentResponse": {
@@ -262,6 +514,31 @@
           "status"
         ],
         "title": "IdentityCandidateResponse",
+        "type": "object"
+      },
+      "ImagePreviewResponse": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "image_id": {
+            "format": "uuid",
+            "title": "Image Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_id",
+          "url",
+          "expires_at"
+        ],
+        "title": "ImagePreviewResponse",
         "type": "object"
       },
       "ImageRequest": {
@@ -514,6 +791,51 @@
         "title": "MessageResponse",
         "type": "object"
       },
+      "Observation": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/EvidenceSource"
+          },
+          "time_varying": {
+            "default": false,
+            "title": "Time Varying",
+            "type": "boolean"
+          },
+          "value": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "value",
+          "confidence",
+          "source"
+        ],
+        "title": "Observation",
+        "type": "object"
+      },
       "ResultResponse": {
         "properties": {
           "result": {
@@ -537,6 +859,138 @@
           "result"
         ],
         "title": "ResultResponse",
+        "type": "object"
+      },
+      "ReviewDetail": {
+        "properties": {
+          "analysis_revision_id": {
+            "format": "uuid",
+            "title": "Analysis Revision Id",
+            "type": "string"
+          },
+          "approved_result_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Result Id"
+          },
+          "assigned_operator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Operator Id"
+          },
+          "dossier": {
+            "additionalProperties": true,
+            "title": "Dossier",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "proposal": {
+            "additionalProperties": true,
+            "title": "Proposal",
+            "type": "object"
+          },
+          "scan_id": {
+            "format": "uuid",
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "validation": {
+            "additionalProperties": true,
+            "title": "Validation",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "scan_id",
+          "analysis_revision_id",
+          "status",
+          "assigned_operator_id",
+          "approved_result_id",
+          "dossier",
+          "proposal",
+          "validation"
+        ],
+        "title": "ReviewDetail",
+        "type": "object"
+      },
+      "ReviewResponse": {
+        "properties": {
+          "analysis_revision_id": {
+            "format": "uuid",
+            "title": "Analysis Revision Id",
+            "type": "string"
+          },
+          "approved_result_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Result Id"
+          },
+          "assigned_operator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Operator Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "scan_id": {
+            "format": "uuid",
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scan_id",
+          "analysis_revision_id",
+          "status",
+          "assigned_operator_id",
+          "approved_result_id"
+        ],
+        "title": "ReviewResponse",
         "type": "object"
       },
       "ScanResponse": {
@@ -1103,6 +1557,47 @@
       }
     },
     "/api/v1/garments/{garment_id}": {
+      "delete": {
+        "operationId": "delete_garment_api_v1_garments__garment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "garment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Garment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Garment",
+        "tags": [
+          "garments"
+        ]
+      },
       "get": {
         "operationId": "get_garment_api_v1_garments__garment_id__get",
         "parameters": [
@@ -1293,6 +1788,297 @@
         ]
       }
     },
+    "/api/v1/reviews": {
+      "get": {
+        "operationId": "list_reviews_api_v1_reviews_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewResponse"
+                  },
+                  "title": "Response List Reviews Api V1 Reviews Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Reviews",
+        "tags": [
+          "reviews"
+        ]
+      }
+    },
+    "/api/v1/reviews/{review_id}": {
+      "get": {
+        "operationId": "review_detail_api_v1_reviews__review_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Review Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Detail",
+        "tags": [
+          "reviews"
+        ]
+      }
+    },
+    "/api/v1/reviews/{review_id}/approve": {
+      "post": {
+        "operationId": "approve_review_api_v1_reviews__review_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Review Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Review",
+        "tags": [
+          "reviews"
+        ]
+      }
+    },
+    "/api/v1/reviews/{review_id}/assign": {
+      "post": {
+        "operationId": "assign_review_api_v1_reviews__review_id__assign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Review Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Review",
+        "tags": [
+          "reviews"
+        ]
+      }
+    },
+    "/api/v1/reviews/{review_id}/corrections": {
+      "post": {
+        "operationId": "correct_review_api_v1_reviews__review_id__corrections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Review Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Correct Review",
+        "tags": [
+          "reviews"
+        ]
+      }
+    },
+    "/api/v1/reviews/{review_id}/service-events": {
+      "post": {
+        "description": "Only staff-confirmed events can make a garment appear cleaned-before.",
+        "operationId": "confirm_service_event_api_v1_reviews__review_id__service_events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Review Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Confirm Service Event Api V1 Reviews  Review Id  Service Events Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Service Event",
+        "tags": [
+          "reviews"
+        ]
+      }
+    },
     "/api/v1/scans": {
       "post": {
         "operationId": "create_scan_api_v1_scans_post",
@@ -1335,6 +2121,47 @@
       }
     },
     "/api/v1/scans/{scan_id}": {
+      "delete": {
+        "operationId": "delete_scan_api_v1_scans__scan_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Scan",
+        "tags": [
+          "scans"
+        ]
+      },
       "get": {
         "operationId": "scan_detail_api_v1_scans__scan_id__get",
         "parameters": [
@@ -1431,6 +2258,59 @@
           }
         },
         "summary": "Request Analysis",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/feedback": {
+      "post": {
+        "operationId": "submit_feedback_api_v1_scans__scan_id__feedback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Feedback",
         "tags": [
           "scans"
         ]
@@ -1546,6 +2426,59 @@
           }
         },
         "summary": "Remove Image",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/{scan_id}/images/{image_id}/preview": {
+      "get": {
+        "operationId": "image_preview_api_v1_scans__scan_id__images__image_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagePreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Image Preview",
         "tags": [
           "scans"
         ]

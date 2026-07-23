@@ -21,6 +21,10 @@ export default function RootLayout(): ReactNode {
             name="(customer)/result"
             options={{ headerShown: false }}
           />
+          <Stack.Screen
+            name="(operator)/review"
+            options={{ headerShown: false }}
+          />
         </Stack>
       </SessionProvider>
     </AppProviders>

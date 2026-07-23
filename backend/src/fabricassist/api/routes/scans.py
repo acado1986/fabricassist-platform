@@ -14,10 +14,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.lifecycle import enqueue_deletion, ensure_review_case
 from fabricassist.domain.evidence import ImageRole
 from fabricassist.domain.identity import GarmentIdentifierType, normalize_instance_identifier
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
+    CustomerFeedback,
     Garment,
     GarmentIdentifier,
     IdempotencyRecord,
@@ -81,6 +83,29 @@ class ResultResponse(BaseModel):
     scan_id: UUID
     status: str
     result: dict[str, object]
+
+
+class FeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    rating: int | None = Field(default=None, ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=2000)
+    request_review: bool = False
+
+
+class FeedbackResponse(BaseModel):
+    id: UUID
+    review_case_id: UUID | None = None
+
+
+class DeletionResponse(BaseModel):
+    id: UUID
+    status: str
+
+
+class ImagePreviewResponse(BaseModel):
+    image_id: UUID
+    url: str
+    expires_at: datetime
 
 
 async def get_session() -> AsyncSession:
@@ -392,3 +417,84 @@ async def scan_result(
         status=result.status,
         result=rendered.answer if rendered else result.canonical_data,
     )
+
+
+@router.post("/{scan_id}/feedback", response_model=FeedbackResponse, status_code=201)
+async def submit_feedback(
+    scan_id: UUID,
+    request: FeedbackRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> FeedbackResponse:
+    scan = await owned_scan(session, user, scan_id)
+    feedback = CustomerFeedback(
+        id=uuid4(),
+        tenant_id=user.tenant_id,
+        scan_id=scan.id,
+        user_id=user.id,
+        rating=request.rating,
+        comment=request.comment,
+        request_review=request.request_review,
+    )
+    session.add(feedback)
+    review_id = None
+    if request.request_review:
+        review = await ensure_review_case(session, scan)
+        review_id = review.id
+        scan.status = "needs_review"
+    await session.commit()
+    return FeedbackResponse(id=feedback.id, review_case_id=review_id)
+
+
+@router.get("/{scan_id}/images/{image_id}/preview", response_model=ImagePreviewResponse)
+async def image_preview(
+    scan_id: UUID,
+    image_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[S3Storage, Depends(get_storage)],
+) -> ImagePreviewResponse:
+    scan = await owned_scan(session, user, scan_id)
+    image = await session.scalar(
+        select(ScanImage).where(
+            ScanImage.id == image_id,
+            ScanImage.scan_id == scan.id,
+            ScanImage.tenant_id == user.tenant_id,
+            ScanImage.deleted_at.is_(None),
+        )
+    )
+    if image is None:
+        raise HTTPException(404, "Image was not found.")
+    url, expires_at = storage.presign_get(key=image.object_key)
+    return ImagePreviewResponse(image_id=image.id, url=url, expires_at=expires_at)
+
+
+@router.delete("/{scan_id}", response_model=DeletionResponse, status_code=202)
+async def delete_scan(
+    scan_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> DeletionResponse:
+    scan = await owned_scan(session, user, scan_id)
+    images = list(
+        (
+            await session.scalars(
+                select(ScanImage).where(
+                    ScanImage.scan_id == scan.id, ScanImage.deleted_at.is_(None)
+                )
+            )
+        ).all()
+    )
+    request = await enqueue_deletion(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        resource_type="scan",
+        resource_id=scan.id,
+        images=images,
+    )
+    scan.status = "deleted"
+    scan.user_id = None
+    scan.garment_id = None
+    await session.commit()
+    return DeletionResponse(id=request.id, status=request.status)

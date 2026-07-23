@@ -67,6 +67,19 @@ class S3Storage:
         )
         return url, {"Content-Type": content_type}, expires
 
+    def presign_get(self, *, key: str) -> tuple[str, datetime]:
+        """Create a short-lived private preview URL without exposing storage keys."""
+        expires = datetime.now(UTC) + timedelta(minutes=self._settings.upload_url_minutes)
+        url = str(
+            self._presign_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self._settings.s3_bucket, "Key": key},
+                ExpiresIn=self._settings.upload_url_minutes * 60,
+                HttpMethod="GET",
+            )
+        )
+        return url, expires
+
     def verify_image(self, key: str, declared_mime_type: str) -> ObjectMetadata:
         head: dict[str, Any] = self._client.head_object(Bucket=self._settings.s3_bucket, Key=key)
         content_type = str(head.get("ContentType", "")).split(";", 1)[0].lower()

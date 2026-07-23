@@ -1,0 +1,10 @@
+appId: com.fabricassist.app
+---
+- launchApp:
+    clearState: true
+- tapOn: 'Create your account'
+- inputText: 'smoke@example.com'
+- tapOn: 'At least 12 characters'
+- inputText: 'safe-smoke-password'
+- tapOn: 'Create account'
+- assertVisible: 'Add a garment or care label photo'

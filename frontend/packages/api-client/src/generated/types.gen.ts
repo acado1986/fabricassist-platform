@@ -23,6 +23,43 @@ export type AnalysisResponse = {
 };
 
 /**
+ * ApprovalRequest
+ */
+export type ApprovalRequest = {
+    /**
+     * Customer Note
+     */
+    customer_note?: string | null;
+};
+
+/**
+ * CareFact
+ */
+export type CareFact = {
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Confidence
+     */
+    confidence: number;
+    /**
+     * Original Text
+     */
+    original_text?: string;
+    /**
+     * Permission
+     */
+    permission: string;
+    source: EvidenceSource;
+    /**
+     * Temperature C
+     */
+    temperature_c?: number | null;
+};
+
+/**
  * CompleteUploadRequest
  */
 export type CompleteUploadRequest = {
@@ -44,6 +81,31 @@ export type ConfirmCandidateRequest = {
      * Candidate Id
      */
     candidate_id: string;
+};
+
+/**
+ * ConfirmServiceRequest
+ */
+export type ConfirmServiceRequest = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Note
+     */
+    note?: string | null;
+};
+
+/**
+ * CorrectionRequest
+ */
+export type CorrectionRequest = {
+    dossier: GarmentEvidenceDossier;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -86,6 +148,85 @@ export type Credentials = {
      * Password
      */
     password: string;
+};
+
+/**
+ * DeletionResponse
+ */
+export type DeletionResponse = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
+ * EvidenceSource
+ */
+export type EvidenceSource = {
+    /**
+     * Image Id
+     */
+    image_id: string;
+    role: ImageRole;
+};
+
+/**
+ * FeedbackRequest
+ */
+export type FeedbackRequest = {
+    /**
+     * Comment
+     */
+    comment?: string | null;
+    /**
+     * Rating
+     */
+    rating?: number | null;
+    /**
+     * Request Review
+     */
+    request_review?: boolean;
+};
+
+/**
+ * FeedbackResponse
+ */
+export type FeedbackResponse = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Review Case Id
+     */
+    review_case_id?: string | null;
+};
+
+/**
+ * GarmentEvidenceDossier
+ */
+export type GarmentEvidenceDossier = {
+    /**
+     * Care Facts
+     */
+    care_facts?: Array<CareFact>;
+    /**
+     * Observations
+     */
+    observations?: Array<Observation>;
+    /**
+     * Schema Version
+     */
+    schema_version?: string;
+    /**
+     * Uncertainties
+     */
+    uncertainties?: Array<string>;
 };
 
 /**
@@ -174,6 +315,24 @@ export type IdentityCandidateResponse = {
      * Status
      */
     status: string;
+};
+
+/**
+ * ImagePreviewResponse
+ */
+export type ImagePreviewResponse = {
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Image Id
+     */
+    image_id: string;
+    /**
+     * Url
+     */
+    url: string;
 };
 
 /**
@@ -319,6 +478,33 @@ export type MessageResponse = {
 };
 
 /**
+ * Observation
+ */
+export type Observation = {
+    /**
+     * Confidence
+     */
+    confidence: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    source: EvidenceSource;
+    /**
+     * Time Varying
+     */
+    time_varying?: boolean;
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
  * ResultResponse
  */
 export type ResultResponse = {
@@ -328,6 +514,84 @@ export type ResultResponse = {
     result: {
         [key: string]: unknown;
     };
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
+ * ReviewDetail
+ */
+export type ReviewDetail = {
+    /**
+     * Analysis Revision Id
+     */
+    analysis_revision_id: string;
+    /**
+     * Approved Result Id
+     */
+    approved_result_id: string | null;
+    /**
+     * Assigned Operator Id
+     */
+    assigned_operator_id: string | null;
+    /**
+     * Dossier
+     */
+    dossier: {
+        [key: string]: unknown;
+    };
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Proposal
+     */
+    proposal: {
+        [key: string]: unknown;
+    };
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Validation
+     */
+    validation: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * ReviewResponse
+ */
+export type ReviewResponse = {
+    /**
+     * Analysis Revision Id
+     */
+    analysis_revision_id: string;
+    /**
+     * Approved Result Id
+     */
+    approved_result_id: string | null;
+    /**
+     * Assigned Operator Id
+     */
+    assigned_operator_id: string | null;
+    /**
+     * Id
+     */
+    id: string;
     /**
      * Scan Id
      */
@@ -651,6 +915,36 @@ export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirm
 
 export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponse = ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses[keyof ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses];
 
+export type DeleteGarmentApiV1GarmentsGarmentIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Garment Id
+         */
+        garment_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/{garment_id}';
+};
+
+export type DeleteGarmentApiV1GarmentsGarmentIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteGarmentApiV1GarmentsGarmentIdDeleteError = DeleteGarmentApiV1GarmentsGarmentIdDeleteErrors[keyof DeleteGarmentApiV1GarmentsGarmentIdDeleteErrors];
+
+export type DeleteGarmentApiV1GarmentsGarmentIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    202: DeletionResponse;
+};
+
+export type DeleteGarmentApiV1GarmentsGarmentIdDeleteResponse = DeleteGarmentApiV1GarmentsGarmentIdDeleteResponses[keyof DeleteGarmentApiV1GarmentsGarmentIdDeleteResponses];
+
 export type GetGarmentApiV1GarmentsGarmentIdGetData = {
     body?: never;
     path: {
@@ -781,6 +1075,184 @@ export type ReadyApiV1HealthReadyGetResponses = {
 
 export type ReadyApiV1HealthReadyGetResponse = ReadyApiV1HealthReadyGetResponses[keyof ReadyApiV1HealthReadyGetResponses];
 
+export type ListReviewsApiV1ReviewsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/reviews';
+};
+
+export type ListReviewsApiV1ReviewsGetResponses = {
+    /**
+     * Response List Reviews Api V1 Reviews Get
+     *
+     * Successful Response
+     */
+    200: Array<ReviewResponse>;
+};
+
+export type ListReviewsApiV1ReviewsGetResponse = ListReviewsApiV1ReviewsGetResponses[keyof ListReviewsApiV1ReviewsGetResponses];
+
+export type ReviewDetailApiV1ReviewsReviewIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Review Id
+         */
+        review_id: string;
+    };
+    query?: never;
+    url: '/api/v1/reviews/{review_id}';
+};
+
+export type ReviewDetailApiV1ReviewsReviewIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviewDetailApiV1ReviewsReviewIdGetError = ReviewDetailApiV1ReviewsReviewIdGetErrors[keyof ReviewDetailApiV1ReviewsReviewIdGetErrors];
+
+export type ReviewDetailApiV1ReviewsReviewIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReviewDetail;
+};
+
+export type ReviewDetailApiV1ReviewsReviewIdGetResponse = ReviewDetailApiV1ReviewsReviewIdGetResponses[keyof ReviewDetailApiV1ReviewsReviewIdGetResponses];
+
+export type ApproveReviewApiV1ReviewsReviewIdApprovePostData = {
+    body: ApprovalRequest;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Review Id
+         */
+        review_id: string;
+    };
+    query?: never;
+    url: '/api/v1/reviews/{review_id}/approve';
+};
+
+export type ApproveReviewApiV1ReviewsReviewIdApprovePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ApproveReviewApiV1ReviewsReviewIdApprovePostError = ApproveReviewApiV1ReviewsReviewIdApprovePostErrors[keyof ApproveReviewApiV1ReviewsReviewIdApprovePostErrors];
+
+export type ApproveReviewApiV1ReviewsReviewIdApprovePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReviewResponse;
+};
+
+export type ApproveReviewApiV1ReviewsReviewIdApprovePostResponse = ApproveReviewApiV1ReviewsReviewIdApprovePostResponses[keyof ApproveReviewApiV1ReviewsReviewIdApprovePostResponses];
+
+export type AssignReviewApiV1ReviewsReviewIdAssignPostData = {
+    body?: never;
+    path: {
+        /**
+         * Review Id
+         */
+        review_id: string;
+    };
+    query?: never;
+    url: '/api/v1/reviews/{review_id}/assign';
+};
+
+export type AssignReviewApiV1ReviewsReviewIdAssignPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AssignReviewApiV1ReviewsReviewIdAssignPostError = AssignReviewApiV1ReviewsReviewIdAssignPostErrors[keyof AssignReviewApiV1ReviewsReviewIdAssignPostErrors];
+
+export type AssignReviewApiV1ReviewsReviewIdAssignPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReviewResponse;
+};
+
+export type AssignReviewApiV1ReviewsReviewIdAssignPostResponse = AssignReviewApiV1ReviewsReviewIdAssignPostResponses[keyof AssignReviewApiV1ReviewsReviewIdAssignPostResponses];
+
+export type CorrectReviewApiV1ReviewsReviewIdCorrectionsPostData = {
+    body: CorrectionRequest;
+    path: {
+        /**
+         * Review Id
+         */
+        review_id: string;
+    };
+    query?: never;
+    url: '/api/v1/reviews/{review_id}/corrections';
+};
+
+export type CorrectReviewApiV1ReviewsReviewIdCorrectionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CorrectReviewApiV1ReviewsReviewIdCorrectionsPostError = CorrectReviewApiV1ReviewsReviewIdCorrectionsPostErrors[keyof CorrectReviewApiV1ReviewsReviewIdCorrectionsPostErrors];
+
+export type CorrectReviewApiV1ReviewsReviewIdCorrectionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReviewResponse;
+};
+
+export type CorrectReviewApiV1ReviewsReviewIdCorrectionsPostResponse = CorrectReviewApiV1ReviewsReviewIdCorrectionsPostResponses[keyof CorrectReviewApiV1ReviewsReviewIdCorrectionsPostResponses];
+
+export type ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostData = {
+    body: ConfirmServiceRequest;
+    path: {
+        /**
+         * Review Id
+         */
+        review_id: string;
+    };
+    query?: never;
+    url: '/api/v1/reviews/{review_id}/service-events';
+};
+
+export type ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostError = ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostErrors[keyof ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostErrors];
+
+export type ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses = {
+    /**
+     * Response Confirm Service Event Api V1 Reviews  Review Id  Service Events Post
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: string;
+    };
+};
+
+export type ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponse = ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses[keyof ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses];
+
 export type CreateScanApiV1ScansPostData = {
     body: CreateScanRequest;
     path?: never;
@@ -805,6 +1277,36 @@ export type CreateScanApiV1ScansPostResponses = {
 };
 
 export type CreateScanApiV1ScansPostResponse = CreateScanApiV1ScansPostResponses[keyof CreateScanApiV1ScansPostResponses];
+
+export type DeleteScanApiV1ScansScanIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}';
+};
+
+export type DeleteScanApiV1ScansScanIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteScanApiV1ScansScanIdDeleteError = DeleteScanApiV1ScansScanIdDeleteErrors[keyof DeleteScanApiV1ScansScanIdDeleteErrors];
+
+export type DeleteScanApiV1ScansScanIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    202: DeletionResponse;
+};
+
+export type DeleteScanApiV1ScansScanIdDeleteResponse = DeleteScanApiV1ScansScanIdDeleteResponses[keyof DeleteScanApiV1ScansScanIdDeleteResponses];
 
 export type ScanDetailApiV1ScansScanIdGetData = {
     body?: never;
@@ -871,6 +1373,36 @@ export type RequestAnalysisApiV1ScansScanIdAnalysePostResponses = {
 };
 
 export type RequestAnalysisApiV1ScansScanIdAnalysePostResponse = RequestAnalysisApiV1ScansScanIdAnalysePostResponses[keyof RequestAnalysisApiV1ScansScanIdAnalysePostResponses];
+
+export type SubmitFeedbackApiV1ScansScanIdFeedbackPostData = {
+    body: FeedbackRequest;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/feedback';
+};
+
+export type SubmitFeedbackApiV1ScansScanIdFeedbackPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SubmitFeedbackApiV1ScansScanIdFeedbackPostError = SubmitFeedbackApiV1ScansScanIdFeedbackPostErrors[keyof SubmitFeedbackApiV1ScansScanIdFeedbackPostErrors];
+
+export type SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: FeedbackResponse;
+};
+
+export type SubmitFeedbackApiV1ScansScanIdFeedbackPostResponse = SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses[keyof SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses];
 
 export type AddImageApiV1ScansScanIdImagesPostData = {
     body: ImageRequest;
@@ -941,6 +1473,40 @@ export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses = {
 };
 
 export type RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponse = RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses[keyof RemoveImageApiV1ScansScanIdImagesImageIdDeleteResponses];
+
+export type ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+        /**
+         * Image Id
+         */
+        image_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/images/{image_id}/preview';
+};
+
+export type ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetError = ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetErrors[keyof ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetErrors];
+
+export type ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ImagePreviewResponse;
+};
+
+export type ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetResponse = ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetResponses[keyof ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetResponses];
 
 export type ListMessagesApiV1ScansScanIdMessagesGetData = {
     body?: never;
