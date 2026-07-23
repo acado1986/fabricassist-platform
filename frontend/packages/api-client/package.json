@@ -7,6 +7,6 @@
     "generate": "openapi-ts -i ../../../docs/api/openapi.json -o src/generated --client @hey-api/client-fetch"
   },
   "dependencies": {
-    "@hey-api/client-fetch": "^0.5.0"
+    "@hey-api/client-fetch": "^0.13.1"
   }
 }
