@@ -26,6 +26,7 @@ from fabricassist.infrastructure.persistence.models import (
     ScanImage,
     User,
 )
+from fabricassist.infrastructure.storage.s3 import S3Storage
 
 router = APIRouter(prefix="/api/v1/garments", tags=["garments"])
 
@@ -57,6 +58,7 @@ class IdentityCandidateResponse(BaseModel):
     classification: str
     reasons: dict[str, object]
     status: str
+    thumbnail_url: str | None = None
 
 
 class ConfirmCandidateRequest(BaseModel):
@@ -81,6 +83,10 @@ async def get_session() -> AsyncSession:
 
 async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
+
+
+async def get_storage() -> S3Storage:
+    raise RuntimeError("Storage dependency was not configured.")
 
 
 async def owned_garment(session: AsyncSession, user: User, garment_id: UUID) -> Garment:
@@ -276,6 +282,7 @@ async def identity_candidates(
     scan_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[S3Storage, Depends(get_storage)],
 ) -> list[IdentityCandidateResponse]:
     run_ids = select(GarmentIdentityMatchRun.id).where(
         GarmentIdentityMatchRun.tenant_id == user.tenant_id,
@@ -291,10 +298,32 @@ async def identity_candidates(
             )
         ).all()
     )
-    return [
-        IdentityCandidateResponse.model_validate(candidate, from_attributes=True)
-        for candidate in candidates
-    ]
+    responses: list[IdentityCandidateResponse] = []
+    for candidate in candidates:
+        image = await session.scalar(
+            select(ScanImage)
+            .join(Scan, Scan.id == ScanImage.scan_id)
+            .where(
+                Scan.tenant_id == user.tenant_id,
+                Scan.user_id == user.id,
+                Scan.garment_id == candidate.garment_id,
+                ScanImage.deleted_at.is_(None),
+            )
+            .order_by(ScanImage.created_at.desc())
+            .limit(1)
+        )
+        thumbnail_url = storage.presign_get(key=image.object_key)[0] if image else None
+        responses.append(
+            IdentityCandidateResponse(
+                id=candidate.id,
+                garment_id=candidate.garment_id,
+                classification=candidate.classification,
+                reasons=candidate.reasons,
+                status=candidate.status,
+                thumbnail_url=thumbnail_url,
+            )
+        )
+    return responses
 
 
 @router.post("/identity-candidates/{scan_id}/confirm", response_model=GarmentResponse)

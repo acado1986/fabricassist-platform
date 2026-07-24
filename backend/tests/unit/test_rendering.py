@@ -16,7 +16,36 @@ def test_rich_result_keeps_validation_state() -> None:
         CareValidationReport(outcome=ValidationOutcome.PASSED_WITH_WARNINGS),
         "en",
     )
-    assert out["validation_state"] == "passed_with_warnings"
+    assert out["validation_state"] == "Validated with important notes"
+
+
+def test_rich_result_renders_care_codes_in_spanish() -> None:
+    out = render_rich_result(
+        GarmentEvidenceDossier(),
+        ProposedCarePlan(
+            classification="provisional",
+            cleaning=Cleaning(method="water_wash"),
+            detergent="no_domestic_detergent",
+            uncertainties=["care_label_facts_unknown"],
+        ),
+        CareValidationReport(
+            outcome=ValidationOutcome.BLOCKED,
+            violations=["LABEL_PROHIBITS_WATER_WASH"],
+        ),
+        "es",
+    )
+    assert out["validation_state"] == (
+        "Las indicaciones de cuidado aún no se pueden mostrar de forma segura"
+    )
+    assert out["cleaning"] == {
+        "method": "Lavar con agua",
+        "maximum_temperature_c": None,
+    }
+    assert out["detergent"] == "No uses detergente doméstico"
+    assert out["violations"] == ["La etiqueta indica que no se debe lavar esta prenda con agua"]
+    assert out["uncertainties"] == [
+        "No pudimos confirmar las indicaciones de la etiqueta de cuidado"
+    ]
 
 
 def test_rich_result_preserves_sourced_product_metadata() -> None:

@@ -4,6 +4,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -52,6 +53,14 @@ type RichResult = {
     product: Record<string, unknown> | null;
   } | null;
 };
+type IdentityCandidate = {
+  id: string;
+  garment_id: string;
+  classification: string;
+  reasons: Record<string, unknown>;
+  status: string;
+  thumbnail_url: string | null;
+};
 export default function Result(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
   const { token } = useSession();
@@ -61,6 +70,22 @@ export default function Result(): ReactNode {
   const [stage, setStage] = useState<string>();
   const [garmentId, setGarmentId] = useState<string>();
   const [lifecycleMessage, setLifecycleMessage] = useState<string>();
+  const [identityCandidates, setIdentityCandidates] = useState<IdentityCandidate[]>([]);
+  const confirmIdentityCandidate = async (candidateId: string): Promise<void> => {
+    if (!scanId || !token) return;
+    const response = await fetch(
+      `${getApiBaseUrl()}/api/v1/garments/identity-candidates/${scanId}/confirm`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidate_id: candidateId }),
+      },
+    );
+    if (response.ok) {
+      setIdentityCandidates([]);
+      setLifecycleMessage(translate('identityCandidateConfirmed'));
+    }
+  };
   const requestReview = async (): Promise<void> => {
     if (!scanId || !token) return;
     const response = await fetch(
@@ -119,6 +144,13 @@ export default function Result(): ReactNode {
         if (cancelled) return;
         setStage(status.analysis_stage ?? status.status);
         setGarmentId(status.garment_id);
+        const candidates = await fetch(
+          `${getApiBaseUrl()}/api/v1/garments/identity-candidates/${scanId}`,
+          { headers },
+        );
+        if (candidates.ok && !cancelled) {
+          setIdentityCandidates((await candidates.json()) as IdentityCandidate[]);
+        }
         if (status.status === 'failed') {
           setFailed(true);
           return;
@@ -241,6 +273,47 @@ export default function Result(): ReactNode {
               title={translate('garmentChangeSummary')}
               values={result.change_summary ? [result.change_summary] : []}
             />
+            {identityCandidates.slice(0, 1).map((candidate) => (
+              <View key={candidate.id} style={styles.identityCandidate}>
+                {candidate.thumbnail_url ? (
+                  <Image
+                    accessibilityLabel={translate('identityCandidateThumbnail')}
+                    source={{ uri: candidate.thumbnail_url }}
+                    style={styles.identityThumbnail}
+                  />
+                ) : null}
+                <Text style={styles.heading}>
+                  {translate(
+                    candidate.classification === 'probable_instance'
+                      ? 'likelySameGarment'
+                      : 'likelySameModel',
+                  )}
+                </Text>
+                <Text>
+                  {translate(
+                    candidate.classification === 'probable_instance'
+                      ? 'likelySameGarmentDescription'
+                      : 'likelySameModelDescription',
+                  )}
+                </Text>
+                <Text style={styles.identityHistory}>
+                  {translate(
+                    candidate.classification === 'probable_instance'
+                      ? 'sameGarmentAnalysedBefore'
+                      : 'sameModelAnalysedBefore',
+                  )}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void confirmIdentityCandidate(candidate.id)}
+                  style={styles.identityButton}
+                >
+                  <Text style={styles.identityButtonText}>
+                    {translate('confirmSameGarment')}
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
             <Pressable
               accessibilityRole="button"
               onPress={() =>
@@ -378,6 +451,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.medium,
   },
+  identityCandidate: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: radii.medium,
+    gap: spacing.small,
+    padding: spacing.medium,
+  },
+  identityThumbnail: { borderRadius: radii.small, height: 120, width: '100%' },
+  identityButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: radii.small,
+    paddingHorizontal: spacing.medium,
+    paddingVertical: spacing.small,
+  },
+  identityButtonText: { color: colors.background, fontWeight: '800' },
+  identityHistory: { color: colors.muted, fontWeight: '700' },
   warning: { backgroundColor: colors.dangerSoft },
   heading: { fontWeight: '800', color: colors.primary },
   loading: {

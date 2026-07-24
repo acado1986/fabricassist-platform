@@ -123,6 +123,18 @@ export const es: TranslationCatalog = {
     productSource: 'Fuente',
     productRetrievedAt: 'Consultado',
     garmentChangeSummary: 'Resumen de cambios',
+    likelySameModel: 'Probablemente el mismo modelo',
+    likelySameGarment: 'Probablemente la misma prenda',
+    likelySameGarmentDescription:
+      'Ya se analizó exactamente la misma foto. Confirma solo si es la misma prenda física.',
+    sameGarmentAnalysedBefore: 'Es posible que esta prenda ya se haya analizado.',
+    likelySameModelDescription:
+      'Un identificador de producto verificado coincide con una prenda que analizaste antes. Puede ser otra unidad del mismo modelo.',
+    sameModelAnalysedBefore:
+      'Ya se analizó una prenda con este identificador de producto verificado.',
+    confirmSameGarment: 'Es la misma prenda física',
+    identityCandidateConfirmed: 'Este análisis ya está vinculado a la prenda confirmada.',
+    identityCandidateThumbnail: 'Foto de la prenda analizada anteriormente',
     chatTitle: 'Preguntas de seguimiento',
     chatPlaceholder: 'Pregunta sobre esta prenda',
     chatSend: 'Enviar',

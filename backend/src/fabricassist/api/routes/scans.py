@@ -14,8 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.analysis import TEMPLATE_VERSION, render_rich_result
 from fabricassist.application.lifecycle import enqueue_deletion, ensure_review_case
-from fabricassist.domain.evidence import ImageRole
+from fabricassist.domain.care import CareValidationReport, ProposedCarePlan
+from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
 from fabricassist.domain.identity import GarmentIdentifierType, normalize_instance_identifier
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
@@ -414,9 +416,29 @@ async def scan_result(
         raise HTTPException(409, "Analysis result is not available yet.")
     rendered = await session.scalar(
         select(RenderedAnswer).where(
-            RenderedAnswer.care_result_id == result.id, RenderedAnswer.language == language
+            RenderedAnswer.care_result_id == result.id,
+            RenderedAnswer.language == language,
+            RenderedAnswer.template_version == TEMPLATE_VERSION,
         )
     )
+    if rendered is None:
+        canonical = result.canonical_data
+        answer = render_rich_result(
+            GarmentEvidenceDossier.model_validate(canonical["dossier"]),
+            ProposedCarePlan.model_validate(canonical["proposal"]),
+            CareValidationReport.model_validate(canonical["validation"]),
+            language,
+        )
+        rendered = RenderedAnswer(
+            id=uuid4(),
+            tenant_id=result.tenant_id,
+            care_result_id=result.id,
+            language=language,
+            template_version=TEMPLATE_VERSION,
+            answer=answer,
+        )
+        session.add(rendered)
+        await session.commit()
     return ResultResponse(
         scan_id=scan.id,
         status=result.status,

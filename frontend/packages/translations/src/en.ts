@@ -117,6 +117,18 @@ export const en = {
     productSource: 'Source',
     productRetrievedAt: 'Retrieved',
     garmentChangeSummary: 'Change summary',
+    likelySameModel: 'Likely the same model',
+    likelySameGarment: 'Likely the same garment',
+    likelySameGarmentDescription:
+      'The exact same photo was analysed before. Confirm only if this is the same physical item.',
+    sameGarmentAnalysedBefore: 'This garment may have been analysed before.',
+    likelySameModelDescription:
+      'A verified product identifier matches a garment you analysed before. This may be another item of the same model.',
+    sameModelAnalysedBefore:
+      'A garment with this verified product identifier was analysed before.',
+    confirmSameGarment: 'This is the same physical garment',
+    identityCandidateConfirmed: 'This scan is now linked to the confirmed garment.',
+    identityCandidateThumbnail: 'Previously analysed garment photo',
     chatTitle: 'Follow-up questions',
     chatPlaceholder: 'Ask about this garment',
     chatSend: 'Send',

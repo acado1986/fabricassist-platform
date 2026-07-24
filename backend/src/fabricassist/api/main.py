@@ -141,6 +141,7 @@ def create_app(
     app.dependency_overrides[auth.get_settings] = get_settings
     app.dependency_overrides[garments.get_session] = get_session
     app.dependency_overrides[garments.get_current_user] = get_current_user
+    app.dependency_overrides[garments.get_storage] = get_storage
     app.dependency_overrides[scans.get_session] = get_session
     app.dependency_overrides[scans.get_current_user] = get_current_user
     app.dependency_overrides[scans.get_storage] = get_storage

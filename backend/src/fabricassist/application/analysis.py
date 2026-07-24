@@ -62,6 +62,7 @@ from fabricassist.infrastructure.persistence.models import (
     EvidenceDossier,
     Garment,
     GarmentIdentifier,
+    GarmentIdentityCandidate,
     GarmentIdentityMatchRun,
     GarmentObservation,
     ModelRun,
@@ -78,7 +79,86 @@ from fabricassist.infrastructure.storage.s3 import S3Storage
 from fabricassist.infrastructure.vision.providers import get_vision_provider
 from fabricassist.settings import Settings
 
-TEMPLATE_VERSION = "rich-result-v1"
+TEMPLATE_VERSION = "rich-result-v2"
+
+
+_RENDERED_CARE_TEXT: dict[str, tuple[str, str]] = {
+    "passed": ("Validated for release", "Validado para mostrar"),
+    "passed_with_warnings": (
+        "Validated with important notes",
+        "Validado con indicaciones importantes",
+    ),
+    "blocked": (
+        "Care guidance cannot be safely released yet",
+        "Las indicaciones de cuidado aún no se pueden mostrar de forma segura",
+    ),
+    "needs_better_image": (
+        "A clearer photo is needed",
+        "Se necesita una foto más clara",
+    ),
+    "needs_review": (
+        "A care specialist needs to review this",
+        "Un especialista debe revisar este caso",
+    ),
+    "water_wash": ("Wash with water", "Lavar con agua"),
+    "professional_dry_clean": (
+        "Professional dry cleaning only",
+        "Solo limpieza profesional en seco",
+    ),
+    "unknown": ("Not confirmed", "Sin confirmar"),
+    "no_domestic_detergent": (
+        "Do not use household detergent",
+        "No uses detergente doméstico",
+    ),
+    "permitted": ("Allowed", "Permitido"),
+    "prohibited": ("Do not use", "No utilizar"),
+    "wash": ("Water washing", "Lavado con agua"),
+    "dry_clean": ("Dry cleaning", "Limpieza en seco"),
+    "care_label_facts_unknown": (
+        "The care-label instructions could not be confirmed",
+        "No pudimos confirmar las indicaciones de la etiqueta de cuidado",
+    ),
+    "GARMENT_ONLY_MUST_BE_PROVISIONAL": (
+        "A garment photo alone cannot confirm final care instructions",
+        "Una foto de la prenda por sí sola no confirma las instrucciones finales",
+    ),
+    "GARMENT_ONLY_CANNOT_AUTHORIZE_CLEANING": (
+        "A garment photo alone cannot confirm that washing is safe",
+        "Una foto de la prenda por sí sola no confirma que lavarla sea seguro",
+    ),
+    "LABEL_PROHIBITS_WATER_WASH": (
+        "The label says not to wash this item with water",
+        "La etiqueta indica que no se debe lavar esta prenda con agua",
+    ),
+    "WASH_TEMPERATURE_EXCEEDS_LABEL": (
+        "The proposed temperature is higher than the label allows",
+        "La temperatura propuesta supera la permitida por la etiqueta",
+    ),
+    "LABEL_PROHIBITS_DRY_CLEAN": (
+        "The label says not to dry clean this item",
+        "La etiqueta indica que no se debe limpiar esta prenda en seco",
+    ),
+    "NO_CONSUMER_PROFESSIONAL_SOLVENTS": (
+        "Professional cleaning solvents are not safe for home use",
+        "Los disolventes de limpieza profesional no son seguros para uso doméstico",
+    ),
+    "SENSITIVE_MATERIAL_REQUIRES_REVIEW": (
+        "This sensitive material needs specialist review",
+        "Este material delicado necesita revisión especializada",
+    ),
+    "Please add a clear photo of the care label.": (
+        "Please add a clear photo of the care label.",
+        "Añade una foto clara de la etiqueta de cuidado.",
+    ),
+}
+
+
+def _friendly_care_text(value: str, language: str) -> str:
+    """Render known machine values without exposing codes to customers."""
+    translated = _RENDERED_CARE_TEXT.get(value)
+    if translated is not None:
+        return translated[1] if language == "es" else translated[0]
+    return value
 
 
 def normalize_image(raw: bytes, image_id: UUID, role: str) -> NormalizedImage:
@@ -119,29 +199,38 @@ def render_rich_result(
     return {
         "template_version": TEMPLATE_VERSION,
         "title": "Guía de cuidado validada" if es else "Validated care guidance",
-        "validation_state": report.outcome.value,
-        "warnings": report.warnings,
-        "violations": report.violations,
+        "validation_state": _friendly_care_text(report.outcome.value, language),
+        "warnings": [_friendly_care_text(item, language) for item in report.warnings],
+        "violations": [_friendly_care_text(item, language) for item in report.violations],
         "sources": [
             {
                 "kind": "photographed",
                 "image_id": str(f.source.image_id),
-                "fact": f.code,
-                "permission": f.permission,
+                "fact": _friendly_care_text(f.code, language),
+                "permission": _friendly_care_text(f.permission, language),
                 "temperature_c": f.temperature_c,
             }
             for f in dossier.care_facts
         ],
-        "preparation": proposal.preparation,
-        "stain_guidance": proposal.stain_guidance,
-        "cleaning": proposal.cleaning.model_dump(),
-        "detergent": proposal.detergent,
-        "drying": proposal.drying,
-        "ironing": proposal.ironing,
-        "professional_care": proposal.professional_care,
-        "prohibitions": proposal.prohibited_actions,
-        "uncertainties": proposal.uncertainties,
-        "follow_up_questions": proposal.follow_up_questions,
+        "preparation": [_friendly_care_text(item, language) for item in proposal.preparation],
+        "stain_guidance": [_friendly_care_text(item, language) for item in proposal.stain_guidance],
+        "cleaning": {
+            "method": _friendly_care_text(proposal.cleaning.method, language),
+            "maximum_temperature_c": proposal.cleaning.maximum_temperature_c,
+        },
+        "detergent": _friendly_care_text(proposal.detergent, language),
+        "drying": [_friendly_care_text(item, language) for item in proposal.drying],
+        "ironing": [_friendly_care_text(item, language) for item in proposal.ironing],
+        "professional_care": [
+            _friendly_care_text(item, language) for item in proposal.professional_care
+        ],
+        "prohibitions": [
+            _friendly_care_text(item, language) for item in proposal.prohibited_actions
+        ],
+        "uncertainties": [_friendly_care_text(item, language) for item in proposal.uncertainties],
+        "follow_up_questions": [
+            _friendly_care_text(item, language) for item in proposal.follow_up_questions
+        ],
         "actionable": not blocked,
         "change_summary": "Initial revision" if es else "Initial revision",
         "product_information": (
@@ -302,17 +391,14 @@ async def analyse_scan(
                 )
             )
             scan.garment_id = garment.id
-        session.add(
-            GarmentIdentityMatchRun(
-                id=uuid4(),
-                tenant_id=scan.tenant_id,
-                scan_id=scan.id,
-                classification=identity_classification.value,
-                reasons={
-                    "source": "confirmed_scan_link" if linked_before_analysis else "new_analysis"
-                },
-            )
+        identity_match_run = GarmentIdentityMatchRun(
+            id=uuid4(),
+            tenant_id=scan.tenant_id,
+            scan_id=scan.id,
+            classification=identity_classification.value,
+            reasons={"source": "confirmed_scan_link" if linked_before_analysis else "new_analysis"},
         )
+        session.add(identity_match_run)
         revision = AnalysisRevision(
             id=uuid4(),
             tenant_id=scan.tenant_id,
@@ -461,9 +547,88 @@ async def analyse_scan(
             dossier = merge_evidence(dossier, delta)
         if dossier is None:
             dossier = GarmentEvidenceDossier(uncertainties=["care_label_facts_unknown"])
+        exact_image_garment_ids = list(
+            (
+                await session.scalars(
+                    select(Scan.garment_id)
+                    .join(ScanImage, ScanImage.scan_id == Scan.id)
+                    .where(
+                        Scan.tenant_id == scan.tenant_id,
+                        Scan.user_id == scan.user_id,
+                        Scan.id != scan.id,
+                        Scan.garment_id.is_not(None),
+                        ScanImage.normalized_sha256.in_([image.sha256 for image in normalized]),
+                    )
+                    .distinct()
+                )
+            ).all()
+        )
+        candidate_garment_ids: set[UUID] = set()
+        for candidate_garment_id in exact_image_garment_ids:
+            if candidate_garment_id is None or candidate_garment_id == garment.id:
+                continue
+            candidate_garment_ids.add(candidate_garment_id)
+            session.add(
+                GarmentIdentityCandidate(
+                    id=uuid4(),
+                    tenant_id=scan.tenant_id,
+                    match_run_id=identity_match_run.id,
+                    garment_id=candidate_garment_id,
+                    classification=IdentityClassification.PROBABLE_INSTANCE.value,
+                    reasons={"source": "exact_normalized_image_match"},
+                )
+            )
+        if candidate_garment_ids:
+            identity_match_run.classification = IdentityClassification.PROBABLE_INSTANCE.value
+            identity_match_run.reasons = {"source": "exact_normalized_image_match"}
         product_lookup = await _lookup_barcodes_from_images(
             session=session, scan=scan, provider=provider, normalized=normalized, settings=settings
         )
+        if product_lookup is not None and product_lookup.status in {"exact", "probable"}:
+            matching_garment_ids = list(
+                (
+                    await session.scalars(
+                        select(Scan.garment_id)
+                        .join(ProductLookupRun, ProductLookupRun.scan_id == Scan.id)
+                        .where(
+                            Scan.tenant_id == scan.tenant_id,
+                            Scan.user_id == scan.user_id,
+                            Scan.id != scan.id,
+                            Scan.garment_id.is_not(None),
+                            ProductLookupRun.barcode == product_lookup.barcode,
+                            ProductLookupRun.status.in_(("exact", "probable")),
+                        )
+                        .distinct()
+                    )
+                ).all()
+            )
+            for candidate_garment_id in matching_garment_ids:
+                if (
+                    candidate_garment_id is None
+                    or candidate_garment_id == garment.id
+                    or candidate_garment_id in candidate_garment_ids
+                ):
+                    continue
+                candidate_garment_ids.add(candidate_garment_id)
+                session.add(
+                    GarmentIdentityCandidate(
+                        id=uuid4(),
+                        tenant_id=scan.tenant_id,
+                        match_run_id=identity_match_run.id,
+                        garment_id=candidate_garment_id,
+                        classification=IdentityClassification.SAME_PRODUCT.value,
+                        reasons={
+                            "matched_barcode": product_lookup.barcode,
+                            "product_lookup_status": product_lookup.status,
+                        },
+                    )
+                )
+            if matching_garment_ids:
+                identity_match_run.classification = IdentityClassification.SAME_PRODUCT.value
+                identity_match_run.reasons = {
+                    "source": "verified_barcode_match",
+                    "matched_barcode": product_lookup.barcode,
+                }
         evidence = EvidenceDossier(
             id=uuid4(),
             tenant_id=scan.tenant_id,
