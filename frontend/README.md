@@ -19,3 +19,5 @@ SPA fallback and security headers. `eas.json` is optional; credentials and store
 identifiers are supplied outside the repository. The Maestro command expects an
 already installed ABI-compatible development APK plus running mock API and Metro;
 see [`docs/runbooks/mobile-release.md`](../docs/runbooks/mobile-release.md).
+For local physical-device startup, including ADB API/Metro/MinIO forwarding, see
+[`docs/runbooks/android-start-local.md`](../docs/runbooks/android-start-local.md).

@@ -425,8 +425,8 @@ async def analyse_scan(
                     request_fingerprint=image.sha256,
                     status="completed",
                     latency_ms=extracted.latency_ms,
-                    input_tokens=None,
-                    output_tokens=None,
+                    input_tokens=extracted.input_tokens,
+                    output_tokens=extracted.output_tokens,
                     estimated_cost_usd=0 if extracted.provider == "mock" else None,
                 )
             )

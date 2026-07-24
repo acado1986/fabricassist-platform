@@ -19,6 +19,7 @@ from fabricassist.application.lifecycle import (
     process_object_deletions,
     retention_candidates,
 )
+from fabricassist.application.vision import VisionProviderError
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.limits import (
     ConcurrencyLimitExceeded,
@@ -73,7 +74,20 @@ async def _run_message_with_limit(database: Database, settings: Settings, messag
     async with DistributedConcurrencyGate(settings).slot(
         tenant_id=tenant_id, operation="conversation"
     ):
-        await answer_message_by_id(database, message_id)
+        await answer_message_by_id(database, message_id, settings)
+
+
+async def _mark_analysis_failed(database: Database, scan_id: UUID, error_code: str) -> None:
+    """Persist terminal worker errors so a client never polls a stale queued scan."""
+    async with database.session_factory() as session:
+        scan = await session.get(Scan, scan_id)
+        if scan is None or scan.status in {"completed", "deleted"}:
+            return
+        scan.status = "failed"
+        scan.analysis_stage = "failed"
+        scan.analysis_error_code = error_code
+        scan.progress_percent = 100
+        await session.commit()
 
 
 @shared_task(name="fabricassist.analyse_scan", bind=True, autoretry_for=(), max_retries=3)
@@ -89,6 +103,12 @@ def analyse_scan_task(self: Any, scan_id: str) -> None:
                 )
     except (ConcurrencyLimitExceeded, LimitBackendUnavailable) as error:
         raise self.retry(exc=error, countdown=30) from error
+    except VisionProviderError as error:
+        asyncio.run(_mark_analysis_failed(database, UUID(scan_id), error.code))
+        raise
+    except Exception:
+        asyncio.run(_mark_analysis_failed(database, UUID(scan_id), "ANALYSIS_INTERNAL_ERROR"))
+        raise
     finally:
         asyncio.run(database.close())
 

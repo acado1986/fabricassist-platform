@@ -33,6 +33,8 @@ class EvidenceProviderResult:
     provider: str
     model: str
     latency_ms: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 @dataclass(frozen=True)

@@ -73,7 +73,11 @@ export default function Result(): ReactNode {
         body: JSON.stringify({ request_review: true }),
       },
     );
-    if (response.ok) setLifecycleMessage(translate('reviewRequested'));
+    setLifecycleMessage(
+      response.ok
+        ? translate('reviewRequested')
+        : translate('reviewRequestFailed'),
+    );
   };
   const deleteAnalysis = async (): Promise<void> => {
     if (!scanId || !token) return;
@@ -81,7 +85,12 @@ export default function Result(): ReactNode {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (response.ok) setLifecycleMessage(translate('deletionRequested'));
+    if (response.ok) {
+      setLifecycleMessage(translate('deletionRequested'));
+      router.replace('/scan');
+      return;
+    }
+    setLifecycleMessage(translate('deletionRequestFailed'));
   };
   const stageLabel = (value: string): string => {
     if (value === 'queued') return translate('analysisStageQueued');

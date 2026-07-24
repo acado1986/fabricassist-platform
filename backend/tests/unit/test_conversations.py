@@ -1,6 +1,7 @@
 from typing import cast
 from uuid import uuid4
 
+from fabricassist.api.routes.conversations import string_items
 from fabricassist.application.conversations import select_relevant_image_ids
 from fabricassist.domain.care import Cleaning, ProposedCarePlan
 from fabricassist.domain.conversations import AssistantMessageProposal
@@ -37,3 +38,8 @@ def test_relevant_images_prioritize_the_questioned_evidence_role() -> None:
         stain.id,
         label.id,
     ]
+
+
+def test_message_response_items_accept_legacy_array_defaults() -> None:
+    assert string_items([]) == []
+    assert string_items({"items": ["label unclear", 123]}) == ["label unclear"]

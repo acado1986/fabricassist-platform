@@ -161,35 +161,20 @@ FABRICASSIST_VISION_MODEL=your-vision-model
 Never commit the API key. Provider evidence, proposed plans, and chat claims are
 schema validated and every actionable claim passes the deterministic validator.
 
-### Azure OpenAI
-
-FabricAssist also supports Azure's deployment-based chat-completions endpoint.
-Put these values in ignored `.env`—**do not send the key in chat**—then run
-`make up` to recreate the API and worker:
-
-```bash
-FABRICASSIST_VISION_PROVIDER=azure_openai
-FABRICASSIST_AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE.openai.azure.com
-FABRICASSIST_AZURE_OPENAI_API_KEY=your-azure-key
-FABRICASSIST_AZURE_OPENAI_DEPLOYMENT=your-vision-deployment-name
-FABRICASSIST_AZURE_OPENAI_API_VERSION=2024-10-21
-```
-
-The deployment must be vision-capable. FabricAssist sends the image as a base64
-data URL to Azure's deployment chat-completions endpoint using the `api-key`
-header. This follows the [Azure OpenAI REST reference](https://learn.microsoft.com/en-us/azure/foundry/openai/reference).
-
 ## Provider-neutral model interface
 
-The current worker depends only on the `VisionExtractionProvider` interface. Azure OpenAI,
-an OpenAI-compatible endpoint, and the no-network mock are infrastructure
-adapters selected by `FABRICASSIST_VISION_PROVIDER`; neither the worker nor the
-care rules contain vendor-specific logic. Adding another model provider means
-implementing and registering one adapter. Planned provider-neutral ports for
+The current worker depends only on the `VisionEvidenceProvider` interface. The
+no-network mock and the configured OpenAI **Responses**-compatible HTTP adapter
+are infrastructure adapters selected by `FABRICASSIST_VISION_PROVIDER`; neither
+the worker nor the care rules contain vendor-specific logic. The adapter sends
+each normalized image as a data URL, requires strict JSON-schema evidence, and
+rejects facts whose source does not match a supplied image. Adding another
+provider means implementing and registering one adapter. Planned provider-neutral ports for
 evidence extraction, care planning, product information, and conversation are
 defined in the architecture and will retain strict schemas and validation gates.
 
-For an OpenAI Responses-compatible gateway, use the generic configuration below;
+For an OpenAI Responses-compatible gateway (including an Azure API Management
+gateway that exposes `/v1/responses`), use the generic configuration below;
 gateway-specific headers remain local configuration rather than source code:
 
 ```bash

@@ -671,15 +671,17 @@ class ConversationMessage(Base):
     model_run_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("model_runs.id", ondelete="SET NULL")
     )
-    actionable_claims: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, server_default="[]"
+    actionable_claims: Mapped[dict[str, Any] | list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
     )
-    evidence_ids: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="[]")
-    uncertainties: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, server_default="[]"
+    evidence_ids: Mapped[dict[str, Any] | list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
     )
-    follow_up_questions: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, server_default="[]"
+    uncertainties: Mapped[dict[str, Any] | list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    follow_up_questions: Mapped[dict[str, Any] | list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
     )
     validation_report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error_code: Mapped[str | None] = mapped_column(String(100))

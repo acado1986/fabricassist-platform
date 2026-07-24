@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # pyright: reportUnknownVariableType=false
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -42,6 +42,14 @@ class MessagePage(BaseModel):
     next_cursor: UUID | None = None
 
 
+def string_items(value: object) -> list[str]:
+    """Read both legacy JSON arrays and the current envelope without a 500 response."""
+    raw = cast(dict[str, object], value).get("items", []) if isinstance(value, dict) else value
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, str)]
+
+
 async def get_session() -> AsyncSession:
     raise RuntimeError("Database session dependency was not configured.")
 
@@ -58,8 +66,8 @@ def response(message: ConversationMessage) -> MessageResponse:
         text=message.text,
         analysis_revision_id=message.analysis_revision_id,
         care_result_id=message.care_result_id,
-        uncertainties=message.uncertainties.get("items", []),
-        follow_up_questions=message.follow_up_questions.get("items", []),
+        uncertainties=string_items(message.uncertainties),
+        follow_up_questions=string_items(message.follow_up_questions),
     )
 
 
@@ -178,9 +186,10 @@ async def post_message(
     )
     session.add(message)
     await session.commit()
-    from fabricassist.worker.tasks import answer_message_task
+    from fabricassist.worker.celery_app import celery_app
 
-    answer_message_task.apply_async(  # pyright: ignore[reportCallIssue]
+    celery_app.send_task(  # pyright: ignore[reportUnknownMemberType]
+        "fabricassist.answer_message",
         args=[str(message.id)],
         headers={"correlation_id": str(http_request.state.correlation_id)},
     )
