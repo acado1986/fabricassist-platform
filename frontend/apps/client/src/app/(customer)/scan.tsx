@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useCallback, useState } from 'react';
+import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import {
@@ -327,11 +328,15 @@ export default function Scan(): ReactNode {
           disabled={items.length >= maximumImages || busy}
           onPress={() => setCameraVisible(true)}
           style={({ pressed }) => [
-            styles.button,
+            styles.cameraButton,
+            (items.length >= maximumImages || busy) && styles.buttonDisabled,
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={styles.buttonText}>{translate('addPhoto')}</Text>
+          <View style={styles.buttonContent}>
+            <Feather color={colors.background} name="camera" size={19} />
+            <Text style={styles.cameraButtonText}>{translate('addPhoto')}</Text>
+          </View>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -339,25 +344,34 @@ export default function Scan(): ReactNode {
           onPress={() => void addFromLibrary()}
           style={({ pressed }) => [
             styles.secondaryButton,
+            (items.length >= maximumImages || busy) &&
+              styles.secondaryButtonDisabled,
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={styles.secondaryButtonText}>
-            {translate('addFromLibrary')}
-          </Text>
+          <View style={styles.buttonContent}>
+            <Feather color={colors.primary} name="image" size={19} />
+            <Text style={styles.secondaryButtonText}>
+              {translate('addFromLibrary')}
+            </Text>
+          </View>
         </Pressable>
         <Pressable
           accessibilityRole="button"
           disabled={!items.length || busy}
           onPress={() => void submit()}
           style={({ pressed }) => [
-            styles.button,
+            styles.analyseButton,
+            (!items.length || busy) && styles.buttonDisabled,
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={styles.buttonText}>
-            {busy ? translate('uploadingImages') : translate('uploadImages')}
-          </Text>
+          <View style={styles.buttonContent}>
+            <Feather color={colors.text} name="search" size={19} />
+            <Text style={styles.buttonText}>
+              {busy ? translate('uploadingImages') : translate('uploadImages')}
+            </Text>
+          </View>
         </Pressable>
       </ScrollView>
       <CameraCapture
@@ -442,7 +456,30 @@ const styles = StyleSheet.create({
     color: colors.danger,
     padding: spacing.medium,
   },
-  button: {
+  analyseButton: {
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: radii.medium,
+    justifyContent: 'center',
+    minHeight: 52,
+    padding: spacing.medium,
+    shadowColor: colors.accent,
+    shadowOffset: { height: 5, width: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 9,
+    elevation: 3,
+  },
+  buttonDisabled: {
+    backgroundColor: colors.borderStrong,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  buttonContent: {
+    alignItems: 'center',
+    flexDirection: 'column',
+    gap: spacing.xsmall,
+  },
+  cameraButton: {
     alignItems: 'center',
     backgroundColor: colors.primary,
     borderRadius: radii.medium,
@@ -455,6 +492,11 @@ const styles = StyleSheet.create({
     shadowRadius: 9,
     elevation: 3,
   },
+  cameraButtonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: '800',
+  },
   secondaryButton: {
     alignItems: 'center',
     backgroundColor: colors.background,
@@ -465,8 +507,9 @@ const styles = StyleSheet.create({
     minHeight: 44,
     padding: spacing.medium,
   },
+  secondaryButtonDisabled: { borderColor: colors.border, opacity: 0.55 },
   buttonPressed: { opacity: 0.86, transform: [{ translateY: 1 }] },
-  buttonText: { color: colors.background, fontSize: 16, fontWeight: '800' },
+  buttonText: { color: colors.text, fontSize: 16, fontWeight: '800' },
   secondaryButtonText: {
     color: colors.primary,
     fontSize: 16,

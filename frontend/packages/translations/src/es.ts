@@ -131,6 +131,8 @@ export const es: TranslationCatalog = {
     chatSendFailed: 'No se pudo enviar tu pregunta. Vuelve a intentarlo.',
     chatQueued: 'Preparando una respuesta segura…',
     viewGarmentHistory: 'Ver historial de la prenda',
+    historyUnavailable:
+      'Disponible cuando este análisis esté vinculado a una prenda.',
     garmentHistoryTitle: 'Historial de la prenda',
     garmentHistoryDescription:
       'Identidad e historial de servicios confirmados de esta prenda física.',

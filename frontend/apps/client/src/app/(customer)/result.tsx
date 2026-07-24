@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -245,32 +246,85 @@ export default function Result(): ReactNode {
               onPress={() =>
                 router.push({ pathname: '/chat', params: { scanId } })
               }
-              style={styles.button}
+              style={({ pressed }) => [
+                styles.chatButton,
+                pressed && styles.buttonPressed,
+              ]}
             >
-              <Text>{translate('chatTitle')}</Text>
+              <View style={styles.buttonContent}>
+                <Feather
+                  color={colors.background}
+                  name="message-circle"
+                  size={19}
+                />
+                <Text style={styles.chatButtonText}>
+                  {translate('chatTitle')}
+                </Text>
+              </View>
             </Pressable>
-            {garmentId ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push(`/garments/${garmentId}`)}
-                style={styles.button}
-              >
-                <Text>{translate('viewGarmentHistory')}</Text>
-              </Pressable>
-            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !garmentId }}
+              disabled={!garmentId}
+              onPress={() => {
+                if (garmentId) router.push(`/garments/${garmentId}`);
+              }}
+              style={({ pressed }) => [
+                styles.historyButton,
+                !garmentId && styles.historyButtonDisabled,
+                pressed && garmentId && styles.buttonPressed,
+              ]}
+            >
+              <View style={styles.buttonContent}>
+                <Feather
+                  color={garmentId ? colors.text : colors.muted}
+                  name="rotate-ccw"
+                  size={18}
+                />
+                <Text
+                  style={[
+                    styles.neutralButtonText,
+                    !garmentId && styles.neutralButtonTextDisabled,
+                  ]}
+                >
+                  {translate('viewGarmentHistory')}
+                </Text>
+              </View>
+              {!garmentId ? (
+                <Text style={styles.historyHint}>
+                  {translate('historyUnavailable')}
+                </Text>
+              ) : null}
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() => void requestReview()}
-              style={styles.button}
+              style={({ pressed }) => [
+                styles.reviewButton,
+                pressed && styles.buttonPressed,
+              ]}
             >
-              <Text>{translate('requestReview')}</Text>
+              <View style={styles.buttonContent}>
+                <Feather color={colors.text} name="alert-circle" size={18} />
+                <Text style={styles.reviewButtonText}>
+                  {translate('requestReview')}
+                </Text>
+              </View>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() => void deleteAnalysis()}
-              style={styles.button}
+              style={({ pressed }) => [
+                styles.deleteButton,
+                pressed && styles.buttonPressed,
+              ]}
             >
-              <Text>{translate('deleteScan')}</Text>
+              <View style={styles.buttonContent}>
+                <Feather color={colors.danger} name="trash-2" size={18} />
+                <Text style={styles.deleteButtonText}>
+                  {translate('deleteScan')}
+                </Text>
+              </View>
             </Pressable>
             {lifecycleMessage ? (
               <Text accessibilityLiveRegion="polite">{lifecycleMessage}</Text>
@@ -280,9 +334,17 @@ export default function Result(): ReactNode {
         <Pressable
           accessibilityRole="button"
           onPress={() => router.replace('/scan')}
-          style={styles.button}
+          style={({ pressed }) => [
+            styles.backButton,
+            pressed && styles.buttonPressed,
+          ]}
         >
-          <Text>{translate('backToScan')}</Text>
+          <View style={styles.buttonContent}>
+            <Feather color={colors.text} name="arrow-left" size={18} />
+            <Text style={styles.neutralButtonText}>
+              {translate('backToScan')}
+            </Text>
+          </View>
         </Pressable>
       </ScrollView>
     </FoundationShell>
@@ -338,10 +400,68 @@ const styles = StyleSheet.create({
     height: '100%',
     width: '62%',
   },
-  button: {
-    padding: spacing.medium,
+  backButton: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.borderStrong,
     borderRadius: radii.medium,
     borderWidth: 1,
-    borderColor: colors.primary,
+    justifyContent: 'center',
+    minHeight: 48,
+    padding: spacing.medium,
   },
+  buttonPressed: { opacity: 0.86, transform: [{ translateY: 1 }] },
+  buttonContent: {
+    alignItems: 'center',
+    flexDirection: 'column',
+    gap: spacing.xsmall,
+  },
+  chatButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radii.medium,
+    justifyContent: 'center',
+    minHeight: 52,
+    padding: spacing.medium,
+  },
+  chatButtonText: { color: colors.background, fontSize: 16, fontWeight: '800' },
+  deleteButton: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderColor: colors.danger,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    padding: spacing.medium,
+  },
+  deleteButtonText: { color: colors.danger, fontWeight: '800' },
+  historyButton: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    padding: spacing.medium,
+  },
+  historyButtonDisabled: { borderColor: colors.border, opacity: 0.7 },
+  neutralButtonText: { color: colors.text, fontWeight: '800' },
+  neutralButtonTextDisabled: { color: colors.muted },
+  historyHint: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: spacing.xsmall,
+    textAlign: 'center',
+  },
+  reviewButton: {
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: radii.medium,
+    justifyContent: 'center',
+    minHeight: 48,
+    padding: spacing.medium,
+  },
+  reviewButtonText: { color: colors.text, fontWeight: '800' },
 });

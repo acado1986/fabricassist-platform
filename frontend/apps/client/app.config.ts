@@ -16,6 +16,7 @@ const config: ExpoConfig = {
       process.env.FABRICASSIST_API_PUBLIC_URL ?? 'http://localhost:8000',
   },
   plugins: [
+    'expo-dev-client',
     'expo-localization',
     'expo-router',
     'expo-secure-store',

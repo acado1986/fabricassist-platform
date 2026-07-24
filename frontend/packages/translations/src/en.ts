@@ -125,6 +125,7 @@ export const en = {
     chatSendFailed: 'Your question could not be sent. Please try again.',
     chatQueued: 'Preparing a safe answer…',
     viewGarmentHistory: 'View garment history',
+    historyUnavailable: 'Available once this scan is linked to a garment.',
     garmentHistoryTitle: 'Garment history',
     garmentHistoryDescription:
       'Identity and confirmed service history for this physical garment.',

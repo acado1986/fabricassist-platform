@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
+import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams } from 'expo-router';
 import {
   Pressable,
@@ -153,6 +154,7 @@ export default function Chat(): ReactNode {
             value={text}
           />
           <Pressable
+            accessibilityLabel={translate('chatSend')}
             accessibilityRole="button"
             accessibilityState={{ disabled: !canSend }}
             disabled={!canSend}
@@ -163,7 +165,7 @@ export default function Chat(): ReactNode {
               pressed && canSend && styles.sendButtonPressed,
             ]}
           >
-            <Text style={styles.sendButtonText}>{translate('chatSend')}</Text>
+            <Feather color={colors.background} name="send" size={18} />
           </Pressable>
         </View>
       </ScrollView>
@@ -221,11 +223,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.medium,
     justifyContent: 'center',
     minHeight: 52,
-    paddingHorizontal: spacing.medium,
+    width: 52,
   },
   sendButtonDisabled: { backgroundColor: colors.borderStrong },
   sendButtonPressed: { backgroundColor: colors.primaryPressed },
-  sendButtonText: { color: colors.background, fontSize: 15, fontWeight: '800' },
   userBubble: {
     backgroundColor: colors.primary,
     borderTopRightRadius: radii.small,

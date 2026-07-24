@@ -10,5 +10,6 @@
 - [Worker crash](worker-crash.md)
 - [Deletion failures](deletion-failures.md)
 - [Mobile release](mobile-release.md)
-- [Start Android locally](android-start-local.md)
+- [Start desktop browser locally](desktop-local.md)
+- [Start Android locally (USB or wireless)](android-start-local.md)
 - [Phase 19 approval record](../release-approvals.md)
