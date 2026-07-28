@@ -108,6 +108,11 @@ class Settings(BaseSettings):
         min_length=1,
     )
     database_migration_url: str = ""
+    database_pool_size: int = Field(default=5, ge=1, le=20)
+    database_max_overflow: int = Field(default=10, ge=0, le=20)
+    database_pool_recycle_seconds: int = Field(default=-1, ge=-1, le=3_600)
+    database_connect_attempts: int = Field(default=1, ge=1, le=5)
+    database_connect_retry_seconds: float = Field(default=0, ge=0, le=30)
     valkey_url: str = "valkey://fabricassist-valkey:6379/0"
     qstash_token: str = ""
     qstash_current_signing_key: str = ""
@@ -131,6 +136,11 @@ class Settings(BaseSettings):
         ):
             values = values.copy()
             values.setdefault("max_images_per_scan", 3)
+            values.setdefault("database_pool_size", 2)
+            values.setdefault("database_max_overflow", 1)
+            values.setdefault("database_pool_recycle_seconds", 300)
+            values.setdefault("database_connect_attempts", 3)
+            values.setdefault("database_connect_retry_seconds", 1)
             return values
         return values
 
@@ -175,6 +185,14 @@ class Settings(BaseSettings):
             ):
                 raise ValueError(
                     "FABRICASSIST_DATABASE_URL must not use local development defaults in alpha"
+                )
+            if not self.database_migration_url:
+                raise ValueError("FABRICASSIST_DATABASE_MIGRATION_URL is required in alpha")
+            if "sslmode=require" not in self.database_url:
+                raise ValueError("FABRICASSIST_DATABASE_URL must configure PostgreSQL TLS in alpha")
+            if "sslmode=require" not in self.database_migration_url:
+                raise ValueError(
+                    "FABRICASSIST_DATABASE_MIGRATION_URL must configure PostgreSQL TLS in alpha"
                 )
             if (
                 self.s3_bucket == "fabricassist-local"
@@ -285,3 +303,8 @@ class Settings(BaseSettings):
                 "FABRICASSIST_PRODUCT_BASE_URL and FABRICASSIST_PRODUCT_ALLOWED_HOSTS are required"
             )
         return self
+
+    @property
+    def migration_database_url(self) -> str:
+        """Use a direct administrative URL when configured, otherwise the local runtime URL."""
+        return self.database_migration_url or self.database_url

@@ -61,17 +61,21 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert TEST_DATABASE_URL is not None
-    monkeypatch.setenv("FABRICASSIST_DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("FABRICASSIST_DATABASE_URL", "postgresql://unreachable.invalid/fabricassist")
+    monkeypatch.setenv("FABRICASSIST_DATABASE_MIGRATION_URL", TEST_DATABASE_URL)
     engine = create_engine(normalise_database_url(TEST_DATABASE_URL))
     reset_database(engine)
     config = alembic_config()
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
+    with engine.connect() as connection:
+        extensions = set(connection.scalars(text("SELECT extname FROM pg_extension")))
+    assert {"citext", "vector"} <= extensions
     assert set(inspector.get_table_names()) >= set(Base.metadata.tables)
     for table_name in Base.metadata.tables:
         columns = {column["name"] for column in inspector.get_columns(table_name)}
-        if table_name not in {"tenants", "analysis_revision_images"}:
+        if table_name not in {"tenants", "analysis_revision_images", "analysis_job_operations"}:
             assert "tenant_id" in columns
 
     with Session(engine) as session:
@@ -92,11 +96,11 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0014"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260728_0016"
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0014"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260728_0016"
     engine.dispose()
 
 

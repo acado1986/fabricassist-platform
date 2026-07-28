@@ -94,7 +94,7 @@ async def _mark_analysis_failed(database: Database, scan_id: UUID, error_code: s
 def analyse_scan_task(self: Any, scan_id: str) -> None:
     """Execute one idempotent scan operation without holding an API request open."""
     settings = Settings()
-    database = Database(settings.database_url)
+    database = Database.from_settings(settings)
     try:
         with _task_log_context(self, operation="analysis", resource_id=scan_id):
             with measure_job("analysis"):
@@ -116,7 +116,7 @@ def analyse_scan_task(self: Any, scan_id: str) -> None:
 @shared_task(name="fabricassist.answer_message", bind=True, autoretry_for=(), max_retries=3)
 def answer_message_task(self: Any, message_id: str) -> None:
     settings = Settings()
-    database = Database(settings.database_url)
+    database = Database.from_settings(settings)
     try:
         with _task_log_context(self, operation="conversation", resource_id=message_id):
             with measure_job("conversation"):
@@ -131,7 +131,7 @@ def answer_message_task(self: Any, message_id: str) -> None:
 def process_retention_task(self: Any) -> None:
     """Queue expired originals then retry private-object deletion from the DB outbox."""
     settings = Settings()
-    database = Database(settings.database_url)
+    database = Database.from_settings(settings)
 
     async def run() -> None:
         async with database.session_factory() as session:

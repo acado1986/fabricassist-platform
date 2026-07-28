@@ -23,11 +23,12 @@ non-MinIO S3 endpoint, and at most three images per scan.
 selected. The current API composition still uses Valkey for rate limiting; no
 runtime composition change is made in this phase.
 
-`FABRICASSIST_DATABASE_MIGRATION_URL`, `FABRICASSIST_S3_REGION`,
-`FABRICASSIST_VISION_MAX_CONCURRENCY`,
-`FABRICASSIST_JOB_STAGE_BUDGET_SECONDS`, and
-`FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` are typed now for later deployment
-phases. They do not alter the local runtime yet.
+`FABRICASSIST_DATABASE_MIGRATION_URL` is required in alpha and is selected by
+Alembic for direct administrative migration connections; see
+[`neon-database.md`](neon-database.md). `FABRICASSIST_S3_REGION`,
+`FABRICASSIST_VISION_MAX_CONCURRENCY`, `FABRICASSIST_JOB_STAGE_BUDGET_SECONDS`,
+and `FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` are typed for the relevant
+deployment profiles without changing local defaults.
 
 ## Local and production compatibility
 

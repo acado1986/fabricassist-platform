@@ -55,7 +55,7 @@ def create_app(
 ) -> FastAPI:
     """Compose the API foundation without any business feature routes."""
     resolved_settings = settings or Settings()
-    resolved_database = database or Database(resolved_settings.database_url)
+    resolved_database = database or Database.from_settings(resolved_settings)
     rate_limiter = ValkeyRateLimiter(resolved_settings.valkey_url)
     configure_logging(resolved_settings.log_level)
 

@@ -19,6 +19,9 @@ def alpha_settings(**overrides: object) -> Settings:
         "api_public_url": "https://api.example.test",
         "cors_allowed_origins": "https://app.example.test",
         "database_url": "postgresql://alpha:password@db.example.test/fabricassist?sslmode=require",
+        "database_migration_url": (
+            "postgresql://alpha:password@db-direct.example.test/fabricassist?sslmode=require"
+        ),
         "s3_endpoint_url": "https://account.r2.cloudflarestorage.com",
         "s3_public_endpoint_url": "https://account.r2.cloudflarestorage.com",
         "s3_bucket": "fabricassist-alpha",
@@ -66,6 +69,10 @@ def test_alpha_settings_accept_complete_qstash_configuration_without_valkey() ->
     assert settings.valkey_url == ""
     assert settings.max_images_per_scan == 3
     assert settings.vision_max_concurrency == 1
+    assert settings.database_pool_size == 2
+    assert settings.database_max_overflow == 1
+    assert settings.database_pool_recycle_seconds == 300
+    assert settings.migration_database_url == settings.database_migration_url
 
 
 @pytest.mark.parametrize(
@@ -79,6 +86,16 @@ def test_alpha_settings_accept_complete_qstash_configuration_without_valkey() ->
         (
             {"database_url": "postgresql://fabricassist_dev:change-me@fabricassist-postgres/db"},
             "DATABASE_URL",
+        ),
+        ({"database_migration_url": ""}, "DATABASE_MIGRATION_URL"),
+        ({"database_url": "postgresql://alpha:password@db.example.test/fabricassist"}, "TLS"),
+        (
+            {
+                "database_migration_url": (
+                    "postgresql://alpha:password@db-direct.example.test/fabricassist"
+                )
+            },
+            "MIGRATION_URL.*TLS",
         ),
         ({"s3_endpoint_url": "http://fabricassist-minio:9000"}, "MinIO defaults"),
         ({"max_images_per_scan": 4}, "MAX_IMAGES_PER_SCAN"),

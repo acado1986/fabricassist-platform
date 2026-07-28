@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-object-storage test-object-storage-r2 test lint openapi frontend-build check check-alpha-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi frontend-build check check-alpha-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -49,6 +49,12 @@ migration-test: ## Run Alembic/storage integration tests against isolated Compos
 	until [ "$$(docker inspect -f '{{.State.Status}}' $$container_id)" = "exited" ]; do sleep 1; done; \
 	test "$$(docker inspect -f '{{.State.ExitCode}}' $$container_id)" = "0"
 	cd backend && FABRICASSIST_TEST_DATABASE_URL=postgresql://fabricassist_test:change-me-local-postgres-test@localhost:$${FABRICASSIST_POSTGRES_TEST_PORT:-5433}/fabricassist_test uv run pytest tests/integration
+
+test-migrations: migration-test ## Run local PostgreSQL migration compatibility tests.
+
+test-neon: ## Run opt-in Neon smoke with protected runtime and direct migration URLs.
+	@test "$${FABRICASSIST_NEON_SMOKE:-}" = "1" || { echo "Set FABRICASSIST_NEON_SMOKE=1 to enable the live Neon smoke." >&2; exit 2; }
+	cd backend && FABRICASSIST_NEON_SMOKE=1 FABRICASSIST_NEON_RUNTIME_URL="$${FABRICASSIST_NEON_RUNTIME_URL:?missing FABRICASSIST_NEON_RUNTIME_URL}" FABRICASSIST_NEON_MIGRATION_URL="$${FABRICASSIST_NEON_MIGRATION_URL:?missing FABRICASSIST_NEON_MIGRATION_URL}" uv run pytest tests/integration/test_neon.py
 
 test-object-storage: ## Run the S3 storage contract against the local private MinIO service.
 	docker compose --profile test up -d fabricassist-minio-test fabricassist-minio-test-init
