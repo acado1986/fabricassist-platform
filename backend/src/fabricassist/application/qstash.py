@@ -127,6 +127,7 @@ async def execute_checkpoint(
             AnalysisJobOperation.scan_id == message.scan_id,
             AnalysisJobOperation.operation_key == message.operation_key,
             AnalysisJobOperation.revision_id == message.revision_id,
+            AnalysisJobOperation.stage == message.stage,
         )
         .with_for_update()
     )

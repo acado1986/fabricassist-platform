@@ -75,8 +75,10 @@ class CheckpointSession:
         self.scan = scan
         self.added: list[object] = []
         self.commit_count = 0
+        self.scalar_statements: list[object] = []
 
-    async def scalar(self, _statement: object) -> object | None:
+    async def scalar(self, statement: object) -> object | None:
+        self.scalar_statements.append(statement)
         return self.responses.pop(0)
 
     async def get(
@@ -179,6 +181,7 @@ async def test_execute_analysis_stage_uses_shared_application_pipeline(
     assert calls[0]["storage"] is storage  # type: ignore[index]
     assert operation.status == "completed"
     assert session.commit_count == 2
+    assert "analysis_job_operations.stage =" in str(session.scalar_statements[0])
 
 
 def test_internal_route_retries_when_continuation_publication_fails(
