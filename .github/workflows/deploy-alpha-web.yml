@@ -1,0 +1,46 @@
+name: Deploy alpha web to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-alpha-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy Expo static web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: alpha
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Activate pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Export static web application
+        env:
+          EXPO_PUBLIC_FABRICASSIST_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+          EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT: alpha
+        run: pnpm --dir frontend build:web
+      - name: Verify generated bundle contains no secret markers
+        run: make check-web-bundle-secrets
+      - name: Deploy frontend to Cloudflare Pages
+        id: deploy-pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy frontend/apps/client/dist
+            --project-name=fabricassist-alpha
+            --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

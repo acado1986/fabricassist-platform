@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi frontend-build check check-alpha-config check-koyeb-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-koyeb-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -90,6 +90,13 @@ openapi: ## Generate deterministic FastAPI OpenAPI and the frontend client.
 
 frontend-build: ## Build the Phase 3 Expo web artifact in Docker.
 	docker build --file frontend/Dockerfile frontend
+
+build-alpha-web: ## Export the Expo static web artifact and verify it has no secret markers.
+	pnpm --dir frontend build:web
+	$(MAKE) check-web-bundle-secrets
+
+check-web-bundle-secrets: ## Scan the generated Expo web bundle without printing secret values.
+	python3 infrastructure/scripts/check-web-bundle-secrets.py frontend/apps/client/dist
 
 check: bootstrap lint test ## Run the complete default Phase 5 local quality gate.
 

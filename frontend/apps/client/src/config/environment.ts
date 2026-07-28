@@ -9,7 +9,7 @@ export function getApiBaseUrl(): string {
   const parsedUrl = new URL(candidate);
 
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    throw new Error('FABRICASSIST_API_PUBLIC_URL must use http or https.');
+    throw new Error('EXPO_PUBLIC_FABRICASSIST_API_URL must use http or https.');
   }
 
   return parsedUrl.toString().replace(/\/$/, '');

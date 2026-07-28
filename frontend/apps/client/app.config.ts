@@ -10,10 +10,12 @@ const config: ExpoConfig = {
   platforms: ['ios', 'android', 'web'],
   android: { package: 'com.fabricassist.app' },
   ios: { bundleIdentifier: 'com.fabricassist.app' },
-  web: { bundler: 'metro', output: 'single' },
+  web: { bundler: 'metro', output: 'static' },
   extra: {
     fabricassistApiPublicUrl:
-      process.env.FABRICASSIST_API_PUBLIC_URL ?? 'http://localhost:8000',
+      process.env.EXPO_PUBLIC_FABRICASSIST_API_URL ?? 'http://localhost:8000',
+    fabricassistEnvironment:
+      process.env.EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT ?? 'development',
   },
   plugins: [
     'expo-dev-client',
