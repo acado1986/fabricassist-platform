@@ -1,13 +1,25 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from uuid import uuid4
 
 import httpx
+import jwt
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from fabricassist.api.main import create_app
+from fabricassist.api.routes import internal_jobs
 from fabricassist.application.jobs import AnalysisJobMessage
+from fabricassist.application.qstash import (
+    DeliveryVerificationError,
+    parse_delivery,
+    verify_qstash_signature,
+)
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 from fabricassist.infrastructure.jobs.qstash import (
     PermanentJobDispatchError,
@@ -34,7 +46,7 @@ def settings() -> Settings:
         qstash_current_signing_key="current",
         qstash_next_signing_key="next",
         qstash_destination_url="https://api.example.test/internal/jobs/qstash",
-        valkey_url="",
+        valkey_url="valkey://localhost:6379/15",
     )
 
 
@@ -102,3 +114,65 @@ def test_message_is_strict_and_deduplication_is_stable() -> None:
     job = message()
     assert QStashJobDispatcher.deduplication_id(job) == QStashJobDispatcher.deduplication_id(job)
     assert isinstance(create_job_dispatcher(settings()), QStashJobDispatcher)
+
+
+def signed_delivery(body: bytes, *, key: str = "current", destination: str | None = None) -> str:
+    return jwt.encode(
+        {
+            "sub": destination or settings().qstash_destination_url,
+            "body": sha256(body).hexdigest(),
+            "exp": datetime.now(UTC) + timedelta(minutes=1),
+        },
+        key,
+        algorithm="HS256",
+    )
+
+
+@pytest.mark.parametrize("key", ["current", "next"])
+def test_qstash_verifies_current_and_next_keys_against_raw_body(key: str) -> None:
+    body = message().model_dump_json().encode()
+    verify_qstash_signature(
+        raw_body=body, signature=signed_delivery(body, key=key), settings=settings()
+    )
+
+
+@pytest.mark.parametrize(
+    "signature",
+    [
+        lambda body: signed_delivery(b"other"),
+        lambda body: signed_delivery(body, destination="https://wrong.example.test/job"),
+        lambda body: jwt.encode(
+            {"sub": settings().qstash_destination_url, "body": sha256(body).hexdigest(), "exp": 1},
+            "current",
+            algorithm="HS256",
+        ),
+    ],
+)
+def test_qstash_rejects_modified_destination_or_expired_signature(signature: object) -> None:
+    body = message().model_dump_json().encode()
+    assert callable(signature)
+    with pytest.raises(DeliveryVerificationError):
+        verify_qstash_signature(raw_body=body, signature=signature(body), settings=settings())  # type: ignore[operator]
+
+
+def test_signed_invalid_message_is_non_retryable() -> None:
+    with pytest.raises(Exception, match="permanently invalid"):
+        parse_delivery(b'{"message_schema_version": 2}')
+
+
+def test_internal_route_marks_signed_permanent_payload_non_retryable() -> None:
+    body = b'{"message_schema_version": 2}'
+    app = create_app(settings())
+
+    async def unused_session() -> object:
+        return object()
+
+    app.dependency_overrides[internal_jobs.get_session] = unused_session
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/internal/jobs/scans/{uuid4()}/execute-stage",
+            content=body,
+            headers={"Upstash-Signature": signed_delivery(body)},
+        )
+    assert response.status_code == 489
+    assert response.headers["Upstash-NonRetryable-Error"] == "true"

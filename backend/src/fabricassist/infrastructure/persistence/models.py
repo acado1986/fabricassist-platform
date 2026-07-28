@@ -161,6 +161,30 @@ class Scan(Base):
     )
 
 
+class AnalysisJobOperation(Base):
+    """PostgreSQL-authoritative QStash stage claim/checkpoint record."""
+
+    __tablename__ = "analysis_job_operations"
+    __table_args__ = (
+        UniqueConstraint("scan_id", "operation_key", name="uq_analysis_job_operations_scan_key"),
+        Index("ix_analysis_job_operations_scan_id", "scan_id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    revision_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    operation_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    stage: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="queued")
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    published_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
 class ScanImage(Base):
     """Private object metadata only; object bytes remain in S3-compatible storage."""
 

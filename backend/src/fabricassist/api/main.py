@@ -30,7 +30,15 @@ from fabricassist.api.middleware import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
 )
-from fabricassist.api.routes import auth, conversations, garments, products, reviews, scans
+from fabricassist.api.routes import (
+    auth,
+    conversations,
+    garments,
+    internal_jobs,
+    products,
+    reviews,
+    scans,
+)
 from fabricassist.application.auth import decode_access_token
 from fabricassist.infrastructure.database import Database, DatabasePort
 from fabricassist.infrastructure.limits import ValkeyRateLimiter
@@ -153,12 +161,15 @@ def create_app(
     app.dependency_overrides[conversations.get_current_user] = get_current_user
     app.dependency_overrides[reviews.get_session] = get_session
     app.dependency_overrides[reviews.get_current_user] = get_current_user
+    app.dependency_overrides[internal_jobs.get_session] = get_session
+    app.dependency_overrides[internal_jobs.get_settings] = get_settings
     app.include_router(auth.router)
     app.include_router(scans.router)
     app.include_router(garments.router)
     app.include_router(products.router)
     app.include_router(conversations.router)
     app.include_router(reviews.router)
+    app.include_router(internal_jobs.router)
 
     @app.get("/api/v1/health/live", tags=["health"])
     async def live() -> dict[str, str]:

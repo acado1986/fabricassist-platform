@@ -15,11 +15,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.analysis import TEMPLATE_VERSION, render_rich_result
+from fabricassist.application.jobs import AnalysisJobMessage
 from fabricassist.application.lifecycle import enqueue_deletion, ensure_review_case
 from fabricassist.domain.care import CareValidationReport, ProposedCarePlan
 from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
 from fabricassist.domain.identity import GarmentIdentifierType, normalize_instance_identifier
 from fabricassist.infrastructure.persistence.models import (
+    AnalysisJobOperation,
     CareResult,
     CustomerFeedback,
     Garment,
@@ -31,7 +33,7 @@ from fabricassist.infrastructure.persistence.models import (
     User,
 )
 from fabricassist.infrastructure.storage.s3 import S3Storage
-from fabricassist.settings import Settings
+from fabricassist.settings import JobDispatcherType, Settings
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
 Mime = Literal["image/jpeg", "image/png", "image/webp"]
@@ -347,6 +349,7 @@ async def request_analysis(
     http_request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnalysisResponse:
     scan = await owned_scan(session, user, scan_id)
@@ -364,14 +367,50 @@ async def request_analysis(
     scan.analysis_operation_key = key
     scan.status = "queued"
     scan.analysis_stage = "queued"
-    await session.commit()
-    from fabricassist.worker.celery_app import celery_app
+    if settings.job_dispatcher == JobDispatcherType.QSTASH:
+        # This durable row is the redispatch record: if publication fails after
+        # this commit, the reconciler can safely publish the same message.
+        revision_id = uuid4()
+        session.add(
+            AnalysisJobOperation(
+                id=uuid4(),
+                scan_id=scan.id,
+                revision_id=revision_id,
+                operation_key=key,
+                stage="validate_uploaded_images",
+            )
+        )
+        await session.commit()
+        from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 
-    celery_app.send_task(
-        "fabricassist.analyse_scan",
-        args=[str(scan.id)],
-        headers={"correlation_id": str(http_request.state.correlation_id)},
-    )
+        dispatcher = create_job_dispatcher(settings)
+        await dispatcher.dispatch_analysis(
+            AnalysisJobMessage(
+                scan_id=scan.id,
+                operation_key=key,
+                revision_id=revision_id,
+                stage="validate_uploaded_images",
+            ),
+            correlation_id=str(http_request.state.correlation_id),
+        )
+        operation = await session.scalar(
+            select(AnalysisJobOperation).where(
+                AnalysisJobOperation.scan_id == scan.id,
+                AnalysisJobOperation.operation_key == key,
+            )
+        )
+        if isinstance(operation, AnalysisJobOperation):
+            operation.published_at = datetime.now(UTC)
+            await session.commit()
+    else:
+        await session.commit()
+        from fabricassist.worker.celery_app import celery_app
+
+        celery_app.send_task(
+            "fabricassist.analyse_scan",
+            args=[str(scan.id)],
+            headers={"correlation_id": str(http_request.state.correlation_id)},
+        )
     return AnalysisResponse(scan_id=scan.id, status=scan.status, operation_key=key)
 
 

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check check-alpha-config test-qstash observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check check-alpha-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -82,6 +82,9 @@ check-alpha-config: ## Validate typed alpha settings and safe alpha example conf
 
 test-qstash: ## Run synthetic QStash dispatcher adapter tests without network access.
 	cd backend && uv run pytest tests/unit/test_qstash.py
+
+test-worker: ## Run analysis-worker orchestration tests without infrastructure services.
+	cd backend && uv run pytest tests/unit/test_analysis.py
 
 observability-up: ## Start the optional local OTEL, Prometheus, and Grafana profile.
 	FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT=http://fabricassist-otel-collector:4318 docker compose --profile observability up -d --build --wait
