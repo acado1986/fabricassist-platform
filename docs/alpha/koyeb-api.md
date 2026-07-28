@@ -65,6 +65,9 @@ Run without contacting Koyeb:
 make check-koyeb-config
 ```
 
-The deployment action uses `git-sha: ${{ github.sha }}` so Koyeb builds the
-same commit that triggered the workflow. Phase 8 owns tag/manual-ref deployment
-and post-deployment live smoke coverage.
+Phase 8 replaces the independent `main` push deployment with `deploy-alpha.yml`.
+It resolves a tag or manually supplied ref once in the `quality` job, then uses
+that immutable checkout SHA as Koyeb's `git-sha` and as the frontend checkout.
+The deployment order is quality, migration, API/web deployment, then hosted
+mock-provider smoke. Rollback is a manual dispatch of that workflow with a
+known-good ref; published tags are never moved or re-pushed.

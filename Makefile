@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-koyeb-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-koyeb-config check-alpha-workflows alpha-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -88,6 +88,10 @@ openapi: ## Generate deterministic FastAPI OpenAPI and the frontend client.
 	cd backend && uv run python -c "import json; from fabricassist.api.main import app; print(json.dumps(app.openapi(), indent=2, sort_keys=True))" > ../docs/api/openapi.json
 	pnpm --dir frontend generate:api
 
+check-openapi-drift: ## Regenerate OpenAPI/client and fail if checked-in artifacts drift.
+	$(MAKE) openapi
+	git diff --exit-code -- docs/api/openapi.json frontend/packages/api-client/src/generated
+
 frontend-build: ## Build the Phase 3 Expo web artifact in Docker.
 	docker build --file frontend/Dockerfile frontend
 
@@ -106,6 +110,12 @@ check-alpha-config: ## Validate typed alpha settings and safe alpha example conf
 
 check-koyeb-config: ## Validate the Koyeb alpha API workflow and container contract.
 	@./infrastructure/scripts/validate-koyeb-api-workflow.sh
+
+check-alpha-workflows: ## Validate Alpha CI, deployment, and live-smoke workflow contracts.
+	python3 infrastructure/scripts/validate-alpha-workflows.py
+
+alpha-live-smoke: ## Run the opt-in hosted alpha smoke using protected credentials.
+	python3 infrastructure/scripts/alpha-live-smoke.py
 
 test-qstash: ## Run synthetic QStash dispatcher adapter tests without network access.
 	cd backend && uv run pytest tests/unit/test_qstash.py

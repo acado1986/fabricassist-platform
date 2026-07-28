@@ -1,0 +1,179 @@
+name: Deploy alpha
+
+on:
+  push:
+    tags:
+      - "v*-alpha*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch, or tag to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-alpha-${{ inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    outputs:
+      git_sha: ${{ steps.revision.outputs.git_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Install toolchains
+        run: |
+          python3 -m pip install --user uv==0.11.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+      - name: Run deterministic deployment quality checks
+        run: |
+          make check
+          make check-alpha-config
+          make test-qstash
+          make test-migrations
+          make test-object-storage
+          make check-openapi-drift
+          make build-alpha-web
+      - id: revision
+        name: Record selected revision
+        run: echo "git_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  migrate:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: alpha
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.quality.outputs.git_sha }}
+      - name: Install uv
+        run: |
+          python3 -m pip install --user uv==0.11.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Apply backward-compatible migrations
+        env:
+          FABRICASSIST_DATABASE_MIGRATION_URL: ${{ secrets.FABRICASSIST_DATABASE_MIGRATION_URL }}
+        run: uv run --project backend alembic -c backend/alembic.ini upgrade head
+
+  deploy-api:
+    needs: [quality, migrate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: alpha
+    steps:
+      - name: Install and configure Koyeb CLI
+        uses: koyeb-community/koyeb-actions@v2
+        with:
+          api_token: ${{ secrets.KOYEB_API_TOKEN }}
+      - name: Deploy API to Koyeb
+        uses: koyeb/action-git-deploy@v1
+        with:
+          app-name: fabricassist-alpha
+          service-name: api
+          service-type: web
+          service-instance-type: free
+          service-regions: fra
+          git-builder: docker
+          git-branch: main
+          git-sha: ${{ needs.quality.outputs.git_sha }}
+          git-workdir: backend
+          git-docker-dockerfile: Dockerfile
+          service-ports: "8000:http"
+          service-routes: "/:8000"
+          service-checks: "8000:http:/api/v1/health/live"
+          service-env: >-
+            PORT=8000,
+            FABRICASSIST_ENVIRONMENT=alpha,
+            FABRICASSIST_DEPLOYMENT_PROFILE=alpha,
+            FABRICASSIST_JOB_DISPATCHER=qstash,
+            FABRICASSIST_VISION_PROVIDER=mock,
+            FABRICASSIST_ACCESS_TOKEN_SECRET=@FABRICASSIST_ACCESS_TOKEN_SECRET,
+            FABRICASSIST_APP_BASE_URL=@FABRICASSIST_APP_BASE_URL,
+            FABRICASSIST_API_PUBLIC_URL=@FABRICASSIST_API_PUBLIC_URL,
+            FABRICASSIST_CORS_ALLOWED_ORIGINS=@FABRICASSIST_CORS_ALLOWED_ORIGINS,
+            FABRICASSIST_DATABASE_URL=@FABRICASSIST_DATABASE_URL,
+            FABRICASSIST_DATABASE_MIGRATION_URL=@FABRICASSIST_DATABASE_MIGRATION_URL,
+            FABRICASSIST_S3_ENDPOINT_URL=@FABRICASSIST_S3_ENDPOINT_URL,
+            FABRICASSIST_S3_PUBLIC_ENDPOINT_URL=@FABRICASSIST_S3_PUBLIC_ENDPOINT_URL,
+            FABRICASSIST_S3_REGION=auto,
+            FABRICASSIST_S3_BUCKET=@FABRICASSIST_S3_BUCKET,
+            FABRICASSIST_S3_FORCE_PATH_STYLE=false,
+            FABRICASSIST_S3_ACCESS_KEY=@FABRICASSIST_S3_ACCESS_KEY,
+            FABRICASSIST_S3_SECRET_KEY=@FABRICASSIST_S3_SECRET_KEY,
+            FABRICASSIST_QSTASH_TOKEN=@FABRICASSIST_QSTASH_TOKEN,
+            FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY=@FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY,
+            FABRICASSIST_QSTASH_NEXT_SIGNING_KEY=@FABRICASSIST_QSTASH_NEXT_SIGNING_KEY,
+            FABRICASSIST_QSTASH_DESTINATION_URL=@FABRICASSIST_QSTASH_DESTINATION_URL
+      - name: Verify API liveness and readiness
+        env:
+          FABRICASSIST_ALPHA_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+        run: |
+          curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/live" > /dev/null
+          curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/ready" > /dev/null
+
+  deploy-web:
+    needs: [quality, migrate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: alpha
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.quality.outputs.git_sha }}
+      - name: Activate pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Export static web application
+        env:
+          EXPO_PUBLIC_FABRICASSIST_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+          EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT: alpha
+        run: pnpm --dir frontend build:web
+      - name: Verify generated bundle contains no secret markers
+        run: make check-web-bundle-secrets
+      - name: Deploy frontend to Cloudflare Pages
+        id: deploy-pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy frontend/apps/client/dist
+            --project-name=fabricassist-alpha
+            --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record deployed Pages URL
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy-pages.outputs.deployment-url }}
+        run: |
+          echo "Cloudflare Pages deployment: $DEPLOYMENT_URL" >> "$GITHUB_STEP_SUMMARY"
+
+  live-smoke:
+    needs: [deploy-api, deploy-web]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: alpha
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.quality.outputs.git_sha }}
+      - name: Run hosted mock-provider smoke
+        env:
+          FABRICASSIST_ALPHA_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+          FABRICASSIST_ALPHA_SMOKE_EMAIL: ${{ secrets.FABRICASSIST_ALPHA_SMOKE_EMAIL }}
+          FABRICASSIST_ALPHA_SMOKE_PASSWORD: ${{ secrets.FABRICASSIST_ALPHA_SMOKE_PASSWORD }}
+        run: make alpha-live-smoke

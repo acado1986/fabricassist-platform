@@ -4,7 +4,7 @@ set -eu
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repository_root"
 
-workflow=.github/workflows/deploy-alpha-api.yml
+workflow=.github/workflows/deploy-alpha.yml
 
 [ -f "$workflow" ] || {
   printf '%s\n' "Koyeb workflow is missing: $workflow" >&2
@@ -26,7 +26,7 @@ for required in \
   'service-instance-type: free' \
   'service-regions: fra' \
   'git-builder: docker' \
-  'git-sha: ${{ github.sha }}' \
+  'git-sha: ${{ needs.quality.outputs.git_sha }}' \
   'git-workdir: backend' \
   'git-docker-dockerfile: Dockerfile' \
   'service-checks: "8000:http:/api/v1/health/live"' \
