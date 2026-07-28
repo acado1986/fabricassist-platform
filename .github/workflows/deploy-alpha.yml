@@ -83,15 +83,25 @@ jobs:
       - name: Wait for API liveness and readiness
         env:
           FABRICASSIST_ALPHA_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+          SELECTED_SHA: ${{ needs.quality.outputs.git_sha }}
         run: |
           for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/live" > /dev/null \
-              && curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/ready" > /dev/null; then
+            headers="$(mktemp)"
+            if curl --fail --silent --show-error \
+                --dump-header "$headers" \
+                --output /dev/null \
+                "$FABRICASSIST_ALPHA_API_URL/api/v1/health/live" \
+              && grep --ignore-case --quiet \
+                "^X-FabricAssist-Revision: ${SELECTED_SHA}" "$headers" \
+              && curl --fail --silent --show-error \
+                "$FABRICASSIST_ALPHA_API_URL/api/v1/health/ready" > /dev/null; then
+              rm -f "$headers"
               exit 0
             fi
+            rm -f "$headers"
             sleep 10
           done
-          echo "Render API did not become ready within 10 minutes." >&2
+          echo "Selected Render API revision did not become ready within 10 minutes." >&2
           exit 1
 
   deploy-web:

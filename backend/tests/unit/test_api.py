@@ -37,6 +37,7 @@ def test_liveness_is_independent_of_database() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert response.headers["X-FabricAssist-Revision"] == "local"
 
 
 def test_readiness_succeeds_when_database_is_available() -> None:

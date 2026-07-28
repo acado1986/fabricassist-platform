@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from secrets import compare_digest
@@ -180,8 +181,9 @@ def create_app(
     app.include_router(internal_jobs.router)
 
     @app.get("/api/v1/health/live", tags=["health"])
-    async def live() -> dict[str, str]:
+    async def live(response: Response) -> dict[str, str]:
         """Report process liveness without checking dependencies."""
+        response.headers["X-FabricAssist-Revision"] = os.environ.get("RENDER_GIT_COMMIT", "local")
         return {"status": "ok"}
 
     @app.get("/api/v1/health/ready", tags=["health"])
