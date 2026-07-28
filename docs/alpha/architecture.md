@@ -22,6 +22,14 @@ Cloudflare Pages (Expo static app)
 
 QStash payloads contain a schema version plus identifiers only. The internal endpoint verifies raw request bytes and the exact configured destination using current/next signing keys. PostgreSQL keeps durable stage/checkpoint state and the executor handles duplicate deliveries; neither QStash nor R2 is a system of record.
 
+The alpha QStash adapter persists two bounded transport checkpoints:
+`validate_uploaded_images` and `execute_analysis`. The first commits the upload
+gate and publishes the second through QStash. The second invokes the same
+application-level `analyse_scan` use case used by Celery, then commits the
+terminal operation checkpoint. Celery remains an in-process worker transport;
+QStash remains an HTTP continuation transport. Selection is configuration-only,
+and care-analysis business rules are not duplicated between adapters.
+
 ## Boundaries to preserve
 
 - Do not expose the internal QStash endpoint through the generated customer API client.

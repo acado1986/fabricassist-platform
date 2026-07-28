@@ -166,7 +166,12 @@ class AnalysisJobOperation(Base):
 
     __tablename__ = "analysis_job_operations"
     __table_args__ = (
-        UniqueConstraint("scan_id", "operation_key", name="uq_analysis_job_operations_scan_key"),
+        UniqueConstraint(
+            "scan_id",
+            "operation_key",
+            "stage",
+            name="uq_analysis_job_operations_scan_key_stage",
+        ),
         Index("ix_analysis_job_operations_scan_id", "scan_id"),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)

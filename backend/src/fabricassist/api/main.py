@@ -110,6 +110,12 @@ def create_app(
     def get_database(request: Request) -> DatabasePort:
         return request.app.state.database  # type: ignore[no-any-return]
 
+    def get_runtime_database(request: Request) -> Database:
+        database_instance = request.app.state.database
+        if not isinstance(database_instance, Database):
+            raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Database runtime is unavailable.")
+        return database_instance
+
     async def get_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
         database_instance = request.app.state.database
         if not isinstance(database_instance, Database):
@@ -163,6 +169,8 @@ def create_app(
     app.dependency_overrides[reviews.get_current_user] = get_current_user
     app.dependency_overrides[internal_jobs.get_session] = get_session
     app.dependency_overrides[internal_jobs.get_settings] = get_settings
+    app.dependency_overrides[internal_jobs.get_database] = get_runtime_database
+    app.dependency_overrides[internal_jobs.get_storage] = get_storage
     app.include_router(auth.router)
     app.include_router(scans.router)
     app.include_router(garments.router)

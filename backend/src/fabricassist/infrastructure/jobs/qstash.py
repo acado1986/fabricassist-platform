@@ -33,6 +33,7 @@ class QStashJobDispatcher:
         self._token = settings.qstash_token
         self._destination_url = settings.qstash_destination_url
         self._timeout = float(min(settings.job_stage_budget_seconds, 30))
+        self._delivery_timeout = settings.job_stage_budget_seconds
         self._transport = transport
 
     @staticmethod
@@ -46,6 +47,7 @@ class QStashJobDispatcher:
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
             "Upstash-Method": "POST",
+            "Upstash-Timeout": f"{self._delivery_timeout}s",
             "Upstash-Deduplication-Id": self.deduplication_id(message),
             "Upstash-Forward-X-Correlation-ID": correlation_id,
         }

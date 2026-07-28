@@ -377,6 +377,7 @@ async def request_analysis(
             select(AnalysisJobOperation).where(
                 AnalysisJobOperation.scan_id == scan.id,
                 AnalysisJobOperation.operation_key == key,
+                AnalysisJobOperation.stage == "validate_uploaded_images",
             )
         )
         if existing_operation is not None:

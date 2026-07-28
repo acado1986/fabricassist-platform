@@ -18,6 +18,8 @@ from fabricassist.api.routes import internal_jobs
 from fabricassist.application.jobs import AnalysisJobMessage
 from fabricassist.application.qstash import (
     DeliveryVerificationError,
+    StageResult,
+    execute_checkpoint,
     parse_delivery,
     verify_qstash_signature,
 )
@@ -65,6 +67,168 @@ def message() -> AnalysisJobMessage:
         stage="validate_uploaded_images",
         revision_id=uuid4(),
     )
+
+
+class CheckpointSession:
+    def __init__(self, responses: list[object | None], scan: object) -> None:
+        self.responses = responses
+        self.scan = scan
+        self.added: list[object] = []
+        self.commit_count = 0
+
+    async def scalar(self, _statement: object) -> object | None:
+        return self.responses.pop(0)
+
+    async def get(
+        self, _model: object, _identifier: object, *, with_for_update: bool = False
+    ) -> object:
+        assert with_for_update
+        return self.scan
+
+    def add(self, value: object) -> None:
+        self.added.append(value)
+
+    async def commit(self) -> None:
+        self.commit_count += 1
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_persists_and_recovers_unpublished_continuation() -> None:
+    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
+
+    job = message()
+    scan = Scan(id=job.scan_id, tenant_id=uuid4(), status="queued", requested_language="en")
+    operation = AnalysisJobOperation(
+        id=uuid4(),
+        scan_id=job.scan_id,
+        revision_id=job.revision_id,
+        operation_key=job.operation_key,
+        stage=job.stage,
+    )
+    session = CheckpointSession([operation, uuid4()], scan)
+
+    first = await execute_checkpoint(
+        session=session,  # type: ignore[arg-type]
+        message=job,
+        settings=settings(),
+    )
+
+    continuation = next(value for value in session.added if isinstance(value, AnalysisJobOperation))
+    assert first.outcome is StageResult.COMPLETE
+    assert first.continuation is not None
+    assert first.continuation.stage == "execute_analysis"
+    assert operation.status == "completed"
+    assert continuation.stage == "execute_analysis"
+
+    session.responses.extend([operation, continuation])
+    recovered = await execute_checkpoint(
+        session=session,  # type: ignore[arg-type]
+        message=job,
+        settings=settings(),
+    )
+    assert recovered.continuation == first.continuation
+
+    continuation.published_at = datetime.now(UTC)
+    session.responses.extend([operation, None])
+    duplicate = await execute_checkpoint(
+        session=session,  # type: ignore[arg-type]
+        message=job,
+        settings=settings(),
+    )
+    assert duplicate.outcome is StageResult.COMPLETE
+    assert duplicate.continuation is None
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_stage_uses_shared_application_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
+
+    initial = message()
+    job = initial.model_copy(update={"stage": "execute_analysis"})
+    scan = Scan(id=job.scan_id, tenant_id=uuid4(), status="queued", requested_language="en")
+    operation = AnalysisJobOperation(
+        id=uuid4(),
+        scan_id=job.scan_id,
+        revision_id=job.revision_id,
+        operation_key=job.operation_key,
+        stage=job.stage,
+    )
+    session = CheckpointSession([operation], scan)
+    calls: list[object] = []
+
+    async def record_analysis(**kwargs: object) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr("fabricassist.application.qstash.analyse_scan", record_analysis)
+    database = object()
+    storage = object()
+    result = await execute_checkpoint(
+        session=session,  # type: ignore[arg-type]
+        message=job,
+        settings=settings(),
+        database=database,  # type: ignore[arg-type]
+        storage=storage,  # type: ignore[arg-type]
+    )
+
+    assert result.outcome is StageResult.COMPLETE
+    assert result.continuation is None
+    assert len(calls) == 1
+    assert calls[0]["database"] is database  # type: ignore[index]
+    assert calls[0]["storage"] is storage  # type: ignore[index]
+    assert operation.status == "completed"
+    assert session.commit_count == 2
+
+
+def test_internal_route_retries_when_continuation_publication_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
+
+    job = message()
+    scan = Scan(id=job.scan_id, tenant_id=uuid4(), status="queued", requested_language="en")
+    operation = AnalysisJobOperation(
+        id=uuid4(),
+        scan_id=job.scan_id,
+        revision_id=job.revision_id,
+        operation_key=job.operation_key,
+        stage=job.stage,
+    )
+    session = CheckpointSession([operation, uuid4()], scan)
+
+    class FailingDispatcher:
+        async def dispatch_analysis(
+            self, _message: AnalysisJobMessage, *, correlation_id: str
+        ) -> None:
+            assert correlation_id
+            raise RetryableJobDispatchError("synthetic failure")
+
+    monkeypatch.setattr(
+        "fabricassist.api.routes.internal_jobs.create_job_dispatcher",
+        lambda _settings: FailingDispatcher(),
+    )
+    body = job.model_dump_json().encode()
+    app = create_app(settings())
+    app.dependency_overrides[internal_jobs.get_session] = lambda: session
+    app.dependency_overrides[internal_jobs.get_database] = lambda: object()
+    app.dependency_overrides[internal_jobs.get_storage] = lambda: object()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/internal/jobs/qstash",
+            content=body,
+            headers={"Upstash-Signature": signed_delivery(body)},
+        )
+
+    continuation = next(
+        value
+        for value in session.added
+        if isinstance(value, AnalysisJobOperation) and value.stage == "execute_analysis"
+    )
+    assert response.status_code == 503
+    assert operation.status == "completed"
+    assert continuation.published_at is None
 
 
 @pytest.mark.asyncio

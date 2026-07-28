@@ -3,18 +3,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import cast
+from uuid import uuid4
 
 import jwt
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.application.jobs import AnalysisJobMessage, JobDispatcher
+from fabricassist.application.analysis import analyse_scan
+from fabricassist.application.jobs import (
+    ANALYSIS_STAGES,
+    AnalysisJobMessage,
+    AnalysisStage,
+    JobDispatcher,
+)
+from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan, ScanImage
+from fabricassist.infrastructure.storage.s3 import S3Storage
 from fabricassist.settings import Settings
 
 
@@ -35,6 +47,26 @@ class StageResult(str, Enum):
     NOOP = "noop"
     BLOCKED = "blocked"
     NEEDS_BETTER_IMAGE = "needs_better_image"
+
+
+@dataclass(frozen=True)
+class CheckpointResult:
+    outcome: StageResult
+    continuation: AnalysisJobMessage | None = None
+
+
+def _next_stage(stage: AnalysisStage) -> AnalysisStage | None:
+    index = ANALYSIS_STAGES.index(stage)
+    return ANALYSIS_STAGES[index + 1] if index + 1 < len(ANALYSIS_STAGES) else None
+
+
+def _message(operation: AnalysisJobOperation) -> AnalysisJobMessage:
+    return AnalysisJobMessage(
+        scan_id=operation.scan_id,
+        operation_key=operation.operation_key,
+        revision_id=operation.revision_id,
+        stage=cast(AnalysisStage, operation.stage),
+    )
 
 
 def verify_qstash_signature(*, raw_body: bytes, signature: str | None, settings: Settings) -> None:
@@ -76,14 +108,18 @@ def parse_delivery(raw_body: bytes) -> AnalysisJobMessage:
 
 
 async def execute_checkpoint(
-    *, session: AsyncSession, message: AnalysisJobMessage, settings: Settings
-) -> StageResult:
-    """Claim and complete the existing first persisted stage exactly once.
+    *,
+    session: AsyncSession,
+    message: AnalysisJobMessage,
+    settings: Settings,
+    database: Database | None = None,
+    storage: S3Storage | None = None,
+) -> CheckpointResult:
+    """Claim one durable stage and return its unpublished continuation.
 
-    This phase deliberately checkpoints *validation* only.  The pre-existing
-    Celery worker remains the sole owner of the legacy full-pipeline execution;
-    that avoids a second analysis pipeline while providing the secure, durable
-    HTTP execution seam required for later stage extraction.
+    Celery and QStash both invoke ``analyse_scan``.  QStash adds a short upload
+    validation checkpoint before invoking that shared application use case, so
+    transport selection never forks the care-analysis business rules.
     """
     operation = await session.scalar(
         select(AnalysisJobOperation)
@@ -97,13 +133,28 @@ async def execute_checkpoint(
     if operation is None:
         raise PermanentDeliveryError("unknown job operation")
     if operation.status == "completed":
-        return StageResult.COMPLETE
+        next_stage = _next_stage(message.stage)
+        if next_stage is None:
+            return CheckpointResult(StageResult.COMPLETE)
+        continuation = await session.scalar(
+            select(AnalysisJobOperation).where(
+                AnalysisJobOperation.scan_id == message.scan_id,
+                AnalysisJobOperation.operation_key == message.operation_key,
+                AnalysisJobOperation.revision_id == message.revision_id,
+                AnalysisJobOperation.stage == next_stage,
+                AnalysisJobOperation.published_at.is_(None),
+            )
+        )
+        return CheckpointResult(
+            StageResult.COMPLETE,
+            _message(continuation) if isinstance(continuation, AnalysisJobOperation) else None,
+        )
     scan = await session.get(Scan, message.scan_id, with_for_update=True)
     if scan is None or scan.status == "deleted":
         operation.status = "obsolete"
         operation.completed_at = datetime.now(UTC)
         await session.commit()
-        return StageResult.NOOP
+        return CheckpointResult(StageResult.NOOP)
     if operation.stage != message.stage:
         raise PermanentDeliveryError("message stage does not match operation")
     now = datetime.now(UTC)
@@ -112,27 +163,62 @@ async def execute_checkpoint(
         # retry after the short DB lease, rather than double-processing.
         raise TemporaryJobError("job operation is leased")
     operation.lease_expires_at = now + timedelta(seconds=settings.job_stage_budget_seconds)
-    image_count = await session.scalar(
-        select(ScanImage.id)
-        .where(ScanImage.scan_id == scan.id, ScanImage.completed_at.is_not(None))
-        .limit(1)
-    )
-    if image_count is None:
-        scan.status = "needs_better_image"
-        scan.analysis_error_code = "UPLOAD_MISSING"
-        scan.progress_percent = 100
+    if message.stage == "validate_uploaded_images":
+        image_count = await session.scalar(
+            select(ScanImage.id)
+            .where(ScanImage.scan_id == scan.id, ScanImage.completed_at.is_not(None))
+            .limit(1)
+        )
+        if image_count is None:
+            scan.status = "needs_better_image"
+            scan.analysis_error_code = "UPLOAD_MISSING"
+            scan.progress_percent = 100
+            operation.status = "completed"
+            operation.completed_at = now
+            operation.lease_expires_at = None
+            await session.commit()
+            return CheckpointResult(StageResult.NEEDS_BETTER_IMAGE)
+        next_stage = _next_stage(message.stage)
+        if next_stage is None:  # pragma: no cover - guarded by the stage contract
+            raise PermanentDeliveryError("analysis stage has no continuation")
+        continuation = AnalysisJobOperation(
+            id=uuid4(),
+            scan_id=scan.id,
+            revision_id=message.revision_id,
+            operation_key=message.operation_key,
+            stage=next_stage,
+        )
+        session.add(continuation)
+        scan.analysis_stage = next_stage
+        scan.status = "queued"
+        scan.progress_percent = 10
         operation.status = "completed"
         operation.completed_at = now
         operation.lease_expires_at = None
         await session.commit()
-        return StageResult.NEEDS_BETTER_IMAGE
+        return CheckpointResult(StageResult.COMPLETE, _message(continuation))
+
+    if database is None or storage is None:
+        raise TemporaryJobError("analysis runtime dependencies are unavailable")
+    operation.status = "processing"
     scan.analysis_stage = message.stage
-    scan.status = "queued"
+    scan.status = "processing"
+    await session.commit()
+    try:
+        async with asyncio.timeout(max(1, settings.job_stage_budget_seconds - 5)):
+            await analyse_scan(
+                database=database,
+                storage=storage,
+                settings=settings,
+                scan_id=message.scan_id,
+            )
+    except TimeoutError as error:
+        raise TemporaryJobError("analysis stage exceeded its execution budget") from error
     operation.status = "completed"
-    operation.completed_at = now
+    operation.completed_at = datetime.now(UTC)
     operation.lease_expires_at = None
     await session.commit()
-    return StageResult.COMPLETE
+    return CheckpointResult(StageResult.COMPLETE)
 
 
 async def reconcile_unpublished_operations(
@@ -161,7 +247,7 @@ async def reconcile_unpublished_operations(
             scan_id=operation.scan_id,
             operation_key=operation.operation_key,
             revision_id=operation.revision_id,
-            stage="validate_uploaded_images",
+            stage=cast(AnalysisStage, operation.stage),
         )
         await dispatcher.dispatch_analysis(message, correlation_id=correlation_id)
         operation.published_at = datetime.now(UTC)

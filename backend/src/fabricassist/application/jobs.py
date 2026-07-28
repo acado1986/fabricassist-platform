@@ -7,6 +7,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+type AnalysisStage = Literal["validate_uploaded_images", "execute_analysis"]
+ANALYSIS_STAGES: tuple[AnalysisStage, ...] = (
+    "validate_uploaded_images",
+    "execute_analysis",
+)
+
 
 class AnalysisJobMessage(BaseModel):
     """Identifier-only, versioned message accepted by the future job executor."""
@@ -16,10 +22,9 @@ class AnalysisJobMessage(BaseModel):
     message_schema_version: Literal[1] = 1
     scan_id: UUID
     operation_key: str = Field(min_length=1, max_length=255)
-    # Each delivery is deliberately small.  The legacy Celery worker continues
-    # to own the full local analysis orchestration; QStash uses this envelope
-    # only for persisted checkpoints.
-    stage: Literal["validate_uploaded_images"]
+    # Celery executes the same application use case in-process; QStash uses
+    # these bounded transport checkpoints without duplicating business rules.
+    stage: AnalysisStage
     revision_id: UUID
 
 
