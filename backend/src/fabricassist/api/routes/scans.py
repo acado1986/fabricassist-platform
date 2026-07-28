@@ -128,12 +128,15 @@ async def get_settings() -> Settings:
     raise RuntimeError("Settings dependency was not configured.")
 
 
-async def owned_scan(session: AsyncSession, user: User, scan_id: UUID) -> Scan:
-    scan = await session.scalar(
-        select(Scan).where(
-            Scan.id == scan_id, Scan.tenant_id == user.tenant_id, Scan.user_id == user.id
-        )
+async def owned_scan(
+    session: AsyncSession, user: User, scan_id: UUID, *, for_update: bool = False
+) -> Scan:
+    statement = select(Scan).where(
+        Scan.id == scan_id, Scan.tenant_id == user.tenant_id, Scan.user_id == user.id
     )
+    if for_update:
+        statement = statement.with_for_update()
+    scan = await session.scalar(statement)
     if scan is None:
         raise HTTPException(404, "Scan was not found.")
     return scan
@@ -352,7 +355,12 @@ async def request_analysis(
     settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnalysisResponse:
-    scan = await owned_scan(session, user, scan_id)
+    scan = await owned_scan(
+        session,
+        user,
+        scan_id,
+        for_update=settings.job_dispatcher == JobDispatcherType.QSTASH,
+    )
     count = (
         await session.scalar(
             select(func.count())
@@ -364,6 +372,19 @@ async def request_analysis(
     if not count:
         raise HTTPException(409, "Complete at least one image before analysis.")
     key = idempotency_key or f"scan:{scan.id}"
+    if settings.job_dispatcher == JobDispatcherType.QSTASH:
+        existing_operation = await session.scalar(
+            select(AnalysisJobOperation).where(
+                AnalysisJobOperation.scan_id == scan.id,
+                AnalysisJobOperation.operation_key == key,
+            )
+        )
+        if existing_operation is not None:
+            return AnalysisResponse(
+                scan_id=scan.id,
+                status=scan.status,
+                operation_key=existing_operation.operation_key,
+            )
     scan.analysis_operation_key = key
     scan.status = "queued"
     scan.analysis_stage = "queued"
@@ -371,15 +392,14 @@ async def request_analysis(
         # This durable row is the redispatch record: if publication fails after
         # this commit, the reconciler can safely publish the same message.
         revision_id = uuid4()
-        session.add(
-            AnalysisJobOperation(
-                id=uuid4(),
-                scan_id=scan.id,
-                revision_id=revision_id,
-                operation_key=key,
-                stage="validate_uploaded_images",
-            )
+        operation = AnalysisJobOperation(
+            id=uuid4(),
+            scan_id=scan.id,
+            revision_id=revision_id,
+            operation_key=key,
+            stage="validate_uploaded_images",
         )
+        session.add(operation)
         await session.commit()
         from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 
@@ -393,15 +413,8 @@ async def request_analysis(
             ),
             correlation_id=str(http_request.state.correlation_id),
         )
-        operation = await session.scalar(
-            select(AnalysisJobOperation).where(
-                AnalysisJobOperation.scan_id == scan.id,
-                AnalysisJobOperation.operation_key == key,
-            )
-        )
-        if isinstance(operation, AnalysisJobOperation):
-            operation.published_at = datetime.now(UTC)
-            await session.commit()
+        operation.published_at = datetime.now(UTC)
+        await session.commit()
     else:
         await session.commit()
         from fabricassist.worker.celery_app import celery_app

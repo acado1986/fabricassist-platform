@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -46,15 +47,22 @@ def verify_qstash_signature(*, raw_body: bytes, signature: str | None, settings:
     """
     if not signature:
         raise DeliveryVerificationError("missing signature")
-    digest = hashlib.sha256(raw_body).hexdigest()
+    digest = base64.urlsafe_b64encode(hashlib.sha256(raw_body).digest()).decode().rstrip("=")
     for key in (settings.qstash_current_signing_key, settings.qstash_next_signing_key):
         if not key:
             continue
         try:
-            claims = jwt.decode(signature, key, algorithms=["HS256"], options={"require": ["exp"]})
+            claims = jwt.decode(
+                signature,
+                key,
+                algorithms=["HS256"],
+                issuer="Upstash",
+                options={"require": ["iss", "sub", "exp", "nbf", "body"]},
+            )
         except jwt.PyJWTError:
             continue
-        if claims.get("sub") != settings.qstash_destination_url or claims.get("body") != digest:
+        body_claim = str(claims.get("body", "")).rstrip("=")
+        if claims.get("sub") != settings.qstash_destination_url or body_claim != digest:
             continue
         return
     raise DeliveryVerificationError("invalid signature")

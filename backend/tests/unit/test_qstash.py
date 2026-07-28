@@ -1,6 +1,7 @@
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false
 from __future__ import annotations
 
+import base64
 import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -129,9 +130,11 @@ def test_message_is_strict_and_deduplication_is_stable() -> None:
 def signed_delivery(body: bytes, *, key: str = "current", destination: str | None = None) -> str:
     return jwt.encode(
         {
+            "iss": "Upstash",
             "sub": destination or settings().qstash_destination_url,
-            "body": sha256(body).hexdigest(),
+            "body": base64.urlsafe_b64encode(sha256(body).digest()).decode(),
             "exp": datetime.now(UTC) + timedelta(minutes=1),
+            "nbf": datetime.now(UTC) - timedelta(seconds=1),
         },
         key,
         algorithm="HS256",
@@ -152,7 +155,13 @@ def test_qstash_verifies_current_and_next_keys_against_raw_body(key: str) -> Non
         lambda body: signed_delivery(b"other"),
         lambda body: signed_delivery(body, destination="https://wrong.example.test/job"),
         lambda body: jwt.encode(
-            {"sub": settings().qstash_destination_url, "body": sha256(body).hexdigest(), "exp": 1},
+            {
+                "iss": "Not-Upstash",
+                "sub": settings().qstash_destination_url,
+                "body": base64.urlsafe_b64encode(sha256(body).digest()).decode(),
+                "exp": datetime.now(UTC) + timedelta(minutes=1),
+                "nbf": datetime.now(UTC) - timedelta(seconds=1),
+            },
             "current",
             algorithm="HS256",
         ),

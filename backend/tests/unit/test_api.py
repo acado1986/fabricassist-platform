@@ -168,6 +168,7 @@ class ImageLifecycleSession:
         self.responses = responses
         self.added: list[object] = []
         self.committed = False
+        self.commit_count = 0
 
     async def scalar(self, statement: object) -> object | None:
         return self.responses.pop(0)
@@ -177,6 +178,7 @@ class ImageLifecycleSession:
 
     async def commit(self) -> None:
         self.committed = True
+        self.commit_count += 1
 
     async def delete(self, value: object) -> None:
         self.added.append(value)
@@ -387,6 +389,84 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
 
     assert error.value.status_code == 409
     assert not session.committed
+
+
+@pytest.mark.asyncio
+async def test_repeated_qstash_analysis_request_reuses_durable_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from starlette.requests import Request
+
+    from fabricassist.api.routes.scans import request_analysis
+    from fabricassist.application.jobs import AnalysisJobMessage
+    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan, User
+    from fabricassist.settings import JobDispatcherType
+
+    class RecordingDispatcher:
+        def __init__(self) -> None:
+            self.messages: list[AnalysisJobMessage] = []
+
+        async def dispatch_analysis(
+            self, message: AnalysisJobMessage, *, correlation_id: str
+        ) -> None:
+            assert correlation_id == "test-correlation"
+            self.messages.append(message)
+
+    dispatcher = RecordingDispatcher()
+
+    def create_recording_dispatcher(_settings: Settings) -> RecordingDispatcher:
+        return dispatcher
+
+    monkeypatch.setattr(
+        "fabricassist.infrastructure.jobs.factory.create_job_dispatcher",
+        create_recording_dispatcher,
+    )
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="uploading",
+        requested_language="en",
+    )
+    session = ImageLifecycleSession([scan, 1, None])
+    request = Request({"type": "http"})
+    request.state.correlation_id = "test-correlation"
+    settings = Settings(
+        environment="test",
+        job_dispatcher=JobDispatcherType.QSTASH,
+        qstash_token="test-token",
+        qstash_current_signing_key="current",
+        qstash_next_signing_key="next",
+        qstash_destination_url="https://api.example.test/internal/jobs/qstash",
+    )
+
+    first = await request_analysis(
+        scan.id,
+        request,
+        session,  # type: ignore[arg-type]
+        user,
+        settings,
+        "repeat-analysis",
+    )
+    operation = next(value for value in session.added if isinstance(value, AnalysisJobOperation))
+    session.responses.extend([scan, 1, operation])
+    repeated = await request_analysis(
+        scan.id,
+        request,
+        session,  # type: ignore[arg-type]
+        user,
+        settings,
+        "repeat-analysis",
+    )
+
+    assert first == repeated
+    assert first.operation_key == "repeat-analysis"
+    assert len(dispatcher.messages) == 1
+    assert session.commit_count == 2
 
 
 @pytest.mark.asyncio
