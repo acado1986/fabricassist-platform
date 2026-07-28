@@ -80,7 +80,10 @@ async def test_qstash_publishes_versioned_identifier_only_message() -> None:
     job = message()
     await dispatcher.dispatch_analysis(job, correlation_id="correlation")
     assert received["json"] == job.model_dump(mode="json")
-    assert "qstash.upstash.io/v2/publish/https%3A%2F%2Fapi.example.test" in str(received["url"])
+    assert (
+        str(received["url"])
+        == "https://qstash.upstash.io/v2/publish/https://api.example.test/internal/jobs/qstash"
+    )
     headers = received["headers"]
     assert isinstance(headers, dict) and headers[
         "upstash-deduplication-id"
@@ -177,7 +180,7 @@ def test_internal_route_marks_signed_permanent_payload_non_retryable() -> None:
     app.dependency_overrides[internal_jobs.get_session] = unused_session
     with TestClient(app) as client:
         response = client.post(
-            f"/api/v1/internal/jobs/scans/{uuid4()}/execute-stage",
+            "/internal/jobs/qstash",
             content=body,
             headers={"Upstash-Signature": signed_delivery(body)},
         )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from hashlib import sha256
-from urllib.parse import quote
 
 import httpx
 
@@ -43,7 +42,6 @@ class QStashJobDispatcher:
 
     async def dispatch_analysis(self, message: AnalysisJobMessage, *, correlation_id: str) -> None:
         payload = message.model_dump(mode="json")
-        destination = quote(self._destination_url, safe="")
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
@@ -56,7 +54,9 @@ class QStashJobDispatcher:
                 timeout=self._timeout, transport=self._transport
             ) as client:
                 response = await client.post(
-                    f"{self._PUBLISH_BASE_URL}{destination}", json=payload, headers=headers
+                    f"{self._PUBLISH_BASE_URL}{self._destination_url}",
+                    json=payload,
+                    headers=headers,
                 )
         except httpx.TimeoutException as error:
             raise RetryableJobDispatchError("QStash publication timed out") from error

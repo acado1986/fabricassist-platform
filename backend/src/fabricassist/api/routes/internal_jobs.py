@@ -18,7 +18,7 @@ from fabricassist.application.qstash import (
 )
 from fabricassist.settings import Settings
 
-router = APIRouter(prefix="/api/v1/internal/jobs", include_in_schema=False)
+router = APIRouter(prefix="/internal/jobs", include_in_schema=False)
 
 
 async def get_session() -> AsyncSession:
@@ -29,9 +29,8 @@ async def get_settings() -> Settings:
     raise RuntimeError("Settings dependency was not configured.")
 
 
-@router.post("/scans/{scan_id}/execute-stage", status_code=204)
+@router.post("/qstash", status_code=204)
 async def execute_stage(
-    scan_id: str,
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -41,8 +40,6 @@ async def execute_stage(
     try:
         verify_qstash_signature(raw_body=raw_body, signature=signature, settings=settings)
         message = parse_delivery(raw_body)
-        if str(message.scan_id) != scan_id:
-            raise PermanentDeliveryError("message scan does not match path")
         await execute_checkpoint(session=session, message=message, settings=settings)
     except DeliveryVerificationError:
         return Response(status_code=401)
