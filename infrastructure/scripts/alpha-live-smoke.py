@@ -89,8 +89,8 @@ def upload(upload_url: str, upload_headers: dict[str, str], image_path: Path) ->
 
 
 def fixture_png() -> bytes:
-    """Create a high-variance 256px PNG so image-quality validation can proceed."""
-    width = height = 256
+    """Create a high-variance PNG above the backend normalization minimum."""
+    width = height = 384
     rows = []
     for y in range(height):
         row = bytearray([0])
@@ -212,9 +212,13 @@ def main() -> int:
             if detail.get("status") in {
                 "completed",
                 "needs_review",
-                "needs_better_image",
             }:
                 break
+            if detail.get("status") == "needs_better_image":
+                raise RuntimeError(
+                    "synthetic smoke image was rejected "
+                    f"(code={detail.get('error_code', 'unknown')})"
+                )
             if detail.get("status") in {"failed", "deleted"}:
                 raise RuntimeError(f"analysis ended with {detail.get('status')}")
             time.sleep(3)

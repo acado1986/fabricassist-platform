@@ -13,7 +13,12 @@ The `deploy-alpha.yml` final job and `make alpha-live-smoke` check:
 5. QStash-dispatched analysis until a terminal safe status, then result reload.
 6. Scan deletion through the existing deletion lifecycle.
 
-The generated fixture is intentionally synthetic. With the mock provider, `completed`, `needs_review`, or `needs_better_image` is an expected safe terminal state; a mock result is not proof of a customer-approved care plan. The smoke script does not print credentials or presigned URLs.
+The generated fixture is intentionally synthetic and exceeds the backend's
+minimum image dimensions. With the mock provider, `completed` or `needs_review`
+is an expected safe terminal state with a persisted result; `needs_better_image`
+fails this controlled smoke because it indicates fixture, upload, or image
+normalization drift. A mock result is not proof of a customer-approved care
+plan. The smoke script does not print credentials or presigned URLs.
 
 ## Manual end-to-end acceptance
 

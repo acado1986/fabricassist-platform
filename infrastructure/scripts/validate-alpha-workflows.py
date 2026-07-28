@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import runpy
+import struct
 from pathlib import Path
 
 import yaml
@@ -10,6 +12,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
+SCRIPTS = ROOT / "infrastructure" / "scripts"
 
 
 def load(name: str) -> str:
@@ -77,6 +80,10 @@ def main() -> None:
     smoke = load("alpha-live-smoke.yml")
     for marker in ("workflow_dispatch:", "base_url:", "make alpha-live-smoke"):
         require(smoke, marker, "alpha-live-smoke.yml")
+    fixture_png = runpy.run_path(str(SCRIPTS / "alpha-live-smoke.py"))["fixture_png"]()
+    width, height = struct.unpack(">II", fixture_png[16:24])
+    if width < 320 or height < 320:
+        raise SystemExit("alpha smoke fixture must satisfy backend image dimensions")
     print("Alpha CI, deployment, and live-smoke workflow checks passed.")
 
 
