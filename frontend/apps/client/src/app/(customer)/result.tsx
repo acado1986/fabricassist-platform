@@ -70,14 +70,21 @@ export default function Result(): ReactNode {
   const [stage, setStage] = useState<string>();
   const [garmentId, setGarmentId] = useState<string>();
   const [lifecycleMessage, setLifecycleMessage] = useState<string>();
-  const [identityCandidates, setIdentityCandidates] = useState<IdentityCandidate[]>([]);
-  const confirmIdentityCandidate = async (candidateId: string): Promise<void> => {
+  const [identityCandidates, setIdentityCandidates] = useState<
+    IdentityCandidate[]
+  >([]);
+  const confirmIdentityCandidate = async (
+    candidateId: string,
+  ): Promise<void> => {
     if (!scanId || !token) return;
     const response = await fetch(
       `${getApiBaseUrl()}/api/v1/garments/identity-candidates/${scanId}/confirm`,
       {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ candidate_id: candidateId }),
       },
     );
@@ -149,7 +156,9 @@ export default function Result(): ReactNode {
           { headers },
         );
         if (candidates.ok && !cancelled) {
-          setIdentityCandidates((await candidates.json()) as IdentityCandidate[]);
+          setIdentityCandidates(
+            (await candidates.json()) as IdentityCandidate[],
+          );
         }
         if (status.status === 'failed') {
           setFailed(true);

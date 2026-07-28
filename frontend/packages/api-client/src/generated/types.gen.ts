@@ -315,6 +315,10 @@ export type IdentityCandidateResponse = {
      * Status
      */
     status: string;
+    /**
+     * Thumbnail Url
+     */
+    thumbnail_url?: string | null;
 };
 
 /**

@@ -504,6 +504,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           }
         },
         "required": [

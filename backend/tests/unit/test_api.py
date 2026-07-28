@@ -338,6 +338,7 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
             Request({"type": "http"}),
             session,  # type: ignore[arg-type]
             user,
+            Settings(environment="test"),
         )
 
     assert error.value.status_code == 409

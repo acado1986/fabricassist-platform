@@ -127,7 +127,8 @@ export const en = {
     sameModelAnalysedBefore:
       'A garment with this verified product identifier was analysed before.',
     confirmSameGarment: 'This is the same physical garment',
-    identityCandidateConfirmed: 'This scan is now linked to the confirmed garment.',
+    identityCandidateConfirmed:
+      'This scan is now linked to the confirmed garment.',
     identityCandidateThumbnail: 'Previously analysed garment photo',
     chatTitle: 'Follow-up questions',
     chatPlaceholder: 'Ask about this garment',

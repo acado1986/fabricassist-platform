@@ -39,6 +39,9 @@ def settings() -> Settings:
         api_public_url="https://api.example.test",
         cors_allowed_origins="https://app.example.test",
         database_url="postgresql://alpha:password@db.example.test/fabricassist?sslmode=require",
+        database_migration_url=(
+            "postgresql://alpha:password@db.example.test/fabricassist?sslmode=require"
+        ),
         s3_endpoint_url="https://account.r2.cloudflarestorage.com",
         s3_public_endpoint_url="https://account.r2.cloudflarestorage.com",
         s3_bucket="fabricassist-alpha",
