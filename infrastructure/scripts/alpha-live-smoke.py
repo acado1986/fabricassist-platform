@@ -52,7 +52,21 @@ def request(
     except URLError as error:
         raise RuntimeError(f"request failed for {path}: {error.reason}") from error
     if status not in expected:
-        raise RuntimeError(f"unexpected HTTP {status} for {method} {path}")
+        error_code = "unknown"
+        correlation_id = response_headers.get("X-Correlation-ID", "unknown")
+        try:
+            decoded = json.loads(response_body)
+            if isinstance(decoded, dict):
+                error = decoded.get("error")
+                if isinstance(error, dict):
+                    error_code = str(error.get("code", error_code))
+                    correlation_id = str(error.get("correlation_id", correlation_id))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            pass
+        raise RuntimeError(
+            f"unexpected HTTP {status} for {method} {path} "
+            f"(code={error_code}, correlation_id={correlation_id})"
+        )
     return (json.loads(response_body) if response_body else {}, response_headers)
 
 

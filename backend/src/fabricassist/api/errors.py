@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import Request
@@ -9,6 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger("fabricassist.api.errors")
 
 
 class ErrorBody(BaseModel):
@@ -84,7 +87,16 @@ async def http_error_handler(request: Request, exc: StarletteHTTPException) -> J
     )
 
 
-async def unexpected_error_handler(request: Request, _exc: Exception) -> JSONResponse:
+async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error(
+        "Unexpected API error",
+        extra={
+            "http_method": request.method,
+            "http_path": request.url.path,
+            "http_status": 500,
+            "error_type": type(exc).__name__,
+        },
+    )
     return error_response(
         request,
         status_code=500,

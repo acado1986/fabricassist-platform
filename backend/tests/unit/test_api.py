@@ -8,7 +8,9 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.requests import Request
 
+from fabricassist.api.errors import unexpected_error_handler
 from fabricassist.api.main import create_app
 from fabricassist.api.routes.scans import CreateScanRequest, ImageRequest
 from fabricassist.settings import Settings
@@ -69,6 +71,48 @@ def test_correlation_id_is_propagated() -> None:
         response = client.get("/api/v1/health/live", headers={"X-Correlation-ID": correlation_id})
 
     assert response.headers["X-Correlation-ID"] == correlation_id
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_is_logged_without_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged: list[tuple[str, dict[str, object]]] = []
+
+    def capture(message: str, *, extra: dict[str, object]) -> None:
+        logged.append((message, extra))
+
+    monkeypatch.setattr("fabricassist.api.errors.logger.error", capture)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/scans/example/images",
+            "headers": [],
+            "query_string": b"",
+            "server": ("testserver", 80),
+            "client": ("testclient", 123),
+            "scheme": "http",
+        }
+    )
+    request.state.correlation_id = "safe-correlation-id"
+
+    response = await unexpected_error_handler(
+        request, RuntimeError("https://secret-presigned-url.invalid")
+    )
+
+    assert response.status_code == 500
+    assert logged == [
+        (
+            "Unexpected API error",
+            {
+                "http_method": "POST",
+                "http_path": "/api/v1/scans/example/images",
+                "http_status": 500,
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
 
 
 def test_cors_preflight_accepts_analysis_idempotency_header() -> None:

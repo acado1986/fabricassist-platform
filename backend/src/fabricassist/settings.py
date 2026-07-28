@@ -204,6 +204,15 @@ class Settings(BaseSettings):
                 raise ValueError("FABRICASSIST_S3_ENDPOINT_URL must use HTTPS in alpha")
             if urlparse(self.s3_public_endpoint_url).scheme != "https":
                 raise ValueError("FABRICASSIST_S3_PUBLIC_ENDPOINT_URL must use HTTPS in alpha")
+            if not self.s3_access_key or not self.s3_secret_key:
+                raise ValueError(
+                    "FABRICASSIST_S3_ACCESS_KEY and FABRICASSIST_S3_SECRET_KEY "
+                    "are required in alpha"
+                )
+            if self.s3_region != "auto":
+                raise ValueError("FABRICASSIST_S3_REGION must be auto in alpha")
+            if self.s3_force_path_style:
+                raise ValueError("FABRICASSIST_S3_FORCE_PATH_STYLE must be false in alpha")
             if self.max_images_per_scan > 3:
                 raise ValueError("FABRICASSIST_MAX_IMAGES_PER_SCAN must not exceed 3 in alpha")
         if self.environment == "production" and (

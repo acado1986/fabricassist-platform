@@ -38,14 +38,21 @@ FABRICASSIST_DATABASE_URL
 FABRICASSIST_DATABASE_MIGRATION_URL
 FABRICASSIST_S3_ENDPOINT_URL
 FABRICASSIST_S3_PUBLIC_ENDPOINT_URL
+FABRICASSIST_S3_REGION
 FABRICASSIST_S3_BUCKET
 FABRICASSIST_S3_ACCESS_KEY
 FABRICASSIST_S3_SECRET_KEY
+FABRICASSIST_S3_FORCE_PATH_STYLE
 FABRICASSIST_QSTASH_TOKEN
 FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY
 FABRICASSIST_QSTASH_NEXT_SIGNING_KEY
 FABRICASSIST_QSTASH_DESTINATION_URL
 ```
+
+For the R2-backed alpha, set `FABRICASSIST_S3_REGION=auto` and
+`FABRICASSIST_S3_FORCE_PATH_STYLE=false`. The API now rejects an alpha
+configuration that omits either R2 credential instead of starting successfully
+and failing later while preparing an upload.
 
 Use a randomly generated access-token secret of at least 32 characters. Set the database runtime secret to the **pooled** TLS URL, and the migration secret to the **direct** TLS URL. Set the QStash destination only after the final Render API origin is known:
 
