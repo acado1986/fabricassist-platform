@@ -25,9 +25,9 @@ runtime composition change is made in this phase.
 
 `FABRICASSIST_DATABASE_MIGRATION_URL` is required in alpha and is selected by
 Alembic for direct administrative migration connections; see
-[`neon-database.md`](neon-database.md). Koyeb builds only the existing API
-container and references these values as Koyeb secrets; see
-[`koyeb-api.md`](koyeb-api.md). `FABRICASSIST_S3_REGION`,
+[`neon-database.md`](neon-database.md). Render builds only the existing API
+container and obtains these values from Render environment settings; see
+[`render-api.md`](render-api.md). `FABRICASSIST_S3_REGION`,
 `FABRICASSIST_VISION_MAX_CONCURRENCY`, `FABRICASSIST_JOB_STAGE_BUDGET_SECONDS`,
 and `FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` are typed for the relevant
 deployment profiles without changing local defaults.

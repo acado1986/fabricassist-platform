@@ -5,6 +5,9 @@
 !.env.example
 !.env.alpha.example
 
+# Never retain provider dashboard exports or copied credentials in alpha docs.
+docs/alpha/credentials/
+
 # Python (Phase 2 and later)
 __pycache__/
 *.py[cod]

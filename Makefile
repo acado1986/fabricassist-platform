@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-koyeb-config check-alpha-workflows alpha-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-render-config check-alpha-workflows alpha-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -108,8 +108,8 @@ check-alpha-config: ## Validate typed alpha settings and safe alpha example conf
 	cd backend && uv run pytest tests/unit/test_settings.py -k alpha
 	@! grep -Eq '^EXPO_PUBLIC_.*(TOKEN|KEY|SECRET|DATABASE|S3|QSTASH)' .env.alpha.example
 
-check-koyeb-config: ## Validate the Koyeb alpha API workflow and container contract.
-	@./infrastructure/scripts/validate-koyeb-api-workflow.sh
+check-render-config: ## Validate the Render alpha API workflow and container contract.
+	@./infrastructure/scripts/validate-render-api-workflow.sh
 
 check-alpha-workflows: ## Validate Alpha CI, deployment, and live-smoke workflow contracts.
 	python3 infrastructure/scripts/validate-alpha-workflows.py

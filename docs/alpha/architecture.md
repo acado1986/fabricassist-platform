@@ -4,7 +4,7 @@ The alpha is the existing FabricAssist modular monolith, not a hosted fork. The 
 
 ```text
 Cloudflare Pages (Expo static app)
-  -> Koyeb FabricAssist API
+  -> Render FabricAssist API
      -> private R2 presigned image objects
      -> Neon PostgreSQL (authoritative scans/checkpoints/results)
      -> QStash signed, identifier-only continuation messages
@@ -26,5 +26,5 @@ QStash payloads contain a schema version plus identifiers only. The internal end
 
 - Do not expose the internal QStash endpoint through the generated customer API client.
 - Browser clients use only short-lived scoped R2 presigned URLs, never R2 credentials or bucket listing permissions.
-- Koyeb starts one Uvicorn worker, not Celery or Alembic. Migrations run before API deployment using the selected ref's direct Neon URL.
+- Render starts one Uvicorn worker, not Celery or Alembic. Migrations run before API deployment using the selected ref's direct Neon URL.
 - Build-time web variables are only `EXPO_PUBLIC_FABRICASSIST_API_URL` and `EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT`.

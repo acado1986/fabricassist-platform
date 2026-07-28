@@ -1,6 +1,6 @@
 # FabricAssist alpha deployment runbook
 
-This procedure deploys one immutable selected SHA to Koyeb and Cloudflare Pages. Do not create provider resources from CI and do not run migrations at API startup.
+This procedure deploys one immutable selected SHA to Render and Cloudflare Pages. Do not create provider resources from CI and do not run migrations at API startup.
 
 ## One-time setup and required values
 
@@ -8,8 +8,8 @@ This procedure deploys one immutable selected SHA to Koyeb and Cloudflare Pages.
 2. Apply the existing Alembic head through the direct URL and seed the alpha tenant/administrator. Record the migration head.
 3. Create private R2 bucket `fabricassist-alpha`, an application-only R2 key, exact Pages CORS origin, and a `private/` lifecycle rule of at least seven days. Use `S3_REGION=auto` and virtual-host addressing.
 4. Create QStash credentials; retain both current and next signing keys.
-5. Create the Koyeb `fabricassist-alpha` application in `fra`, set the Koyeb secret names in [secrets.md](secrets.md), and configure the API public URL.
-6. Deploy Koyeb with the release workflow; then set its final HTTPS internal QStash destination and verify a signed synthetic delivery.
+5. Create the Render `fabricassist-alpha` Docker web service in Frankfurt, set the Render runtime variables in [secrets.md](secrets.md), disable auto-deploy, and configure the API public URL.
+6. Add the Render deploy-hook URL as the protected GitHub `RENDER_DEPLOY_HOOK_URL` secret. Deploy Render with the release workflow; then set its final HTTPS internal QStash destination and verify a signed synthetic delivery.
 7. Create Pages project `fabricassist-alpha`, deploy the static Expo output, and add the exact final Pages origin (no wildcard, no trailing slash) to both API `FABRICASSIST_CORS_ALLOWED_ORIGINS` and R2 CORS.
 
 The concrete R2 values and lifecycle contract are in [r2-storage.md](r2-storage.md); Neon values are in [neon-database.md](neon-database.md). Do not replace these with generic provider tutorials.

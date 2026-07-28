@@ -59,7 +59,9 @@ def main() -> None:
         "needs: quality",
         "needs: [quality, migrate]",
         "needs: [deploy-api, deploy-web]",
-        "git-sha: ${{ needs.quality.outputs.git_sha }}",
+        "RENDER_DEPLOY_HOOK_URL",
+        '--data-urlencode "ref=${SELECTED_SHA}"',
+        "Wait for API liveness and readiness",
         "uses: cloudflare/wrangler-action@v3",
         "apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}",
         "accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
@@ -68,6 +70,9 @@ def main() -> None:
         "uv run --project backend alembic -c backend/alembic.ini upgrade head",
     ):
         require(deploy, marker, "deploy-alpha.yml")
+    for forbidden in ("KOYEB_API_TOKEN", "koyeb-community/", "koyeb/action-"):
+        if forbidden in deploy:
+            raise SystemExit(f"deploy-alpha.yml must not use Koyeb: {forbidden}")
 
     smoke = load("alpha-live-smoke.yml")
     for marker in ("workflow_dispatch:", "base_url:", "make alpha-live-smoke"):

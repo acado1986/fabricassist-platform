@@ -72,55 +72,27 @@ jobs:
     timeout-minutes: 25
     environment: alpha
     steps:
-      - name: Install and configure Koyeb CLI
-        uses: koyeb-community/koyeb-actions@v2
-        with:
-          api_token: ${{ secrets.KOYEB_API_TOKEN }}
-      - name: Deploy API to Koyeb
-        uses: koyeb/action-git-deploy@v1
-        with:
-          app-name: fabricassist-alpha
-          service-name: api
-          service-type: web
-          service-instance-type: free
-          service-regions: fra
-          git-builder: docker
-          git-branch: main
-          git-sha: ${{ needs.quality.outputs.git_sha }}
-          git-workdir: backend
-          git-docker-dockerfile: Dockerfile
-          service-ports: "8000:http"
-          service-routes: "/:8000"
-          service-checks: "8000:http:/api/v1/health/live"
-          service-env: >-
-            PORT=8000,
-            FABRICASSIST_ENVIRONMENT=alpha,
-            FABRICASSIST_DEPLOYMENT_PROFILE=alpha,
-            FABRICASSIST_JOB_DISPATCHER=qstash,
-            FABRICASSIST_VISION_PROVIDER=mock,
-            FABRICASSIST_ACCESS_TOKEN_SECRET=@FABRICASSIST_ACCESS_TOKEN_SECRET,
-            FABRICASSIST_APP_BASE_URL=@FABRICASSIST_APP_BASE_URL,
-            FABRICASSIST_API_PUBLIC_URL=@FABRICASSIST_API_PUBLIC_URL,
-            FABRICASSIST_CORS_ALLOWED_ORIGINS=@FABRICASSIST_CORS_ALLOWED_ORIGINS,
-            FABRICASSIST_DATABASE_URL=@FABRICASSIST_DATABASE_URL,
-            FABRICASSIST_DATABASE_MIGRATION_URL=@FABRICASSIST_DATABASE_MIGRATION_URL,
-            FABRICASSIST_S3_ENDPOINT_URL=@FABRICASSIST_S3_ENDPOINT_URL,
-            FABRICASSIST_S3_PUBLIC_ENDPOINT_URL=@FABRICASSIST_S3_PUBLIC_ENDPOINT_URL,
-            FABRICASSIST_S3_REGION=auto,
-            FABRICASSIST_S3_BUCKET=@FABRICASSIST_S3_BUCKET,
-            FABRICASSIST_S3_FORCE_PATH_STYLE=false,
-            FABRICASSIST_S3_ACCESS_KEY=@FABRICASSIST_S3_ACCESS_KEY,
-            FABRICASSIST_S3_SECRET_KEY=@FABRICASSIST_S3_SECRET_KEY,
-            FABRICASSIST_QSTASH_TOKEN=@FABRICASSIST_QSTASH_TOKEN,
-            FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY=@FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY,
-            FABRICASSIST_QSTASH_NEXT_SIGNING_KEY=@FABRICASSIST_QSTASH_NEXT_SIGNING_KEY,
-            FABRICASSIST_QSTASH_DESTINATION_URL=@FABRICASSIST_QSTASH_DESTINATION_URL
-      - name: Verify API liveness and readiness
+      - name: Deploy selected API revision to Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          SELECTED_SHA: ${{ needs.quality.outputs.git_sha }}
+        run: |
+          curl --fail --silent --show-error --get \
+            --data-urlencode "ref=${SELECTED_SHA}" \
+            "$RENDER_DEPLOY_HOOK_URL" > /dev/null
+      - name: Wait for API liveness and readiness
         env:
           FABRICASSIST_ALPHA_API_URL: ${{ vars.FABRICASSIST_API_URL }}
         run: |
-          curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/live" > /dev/null
-          curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/ready" > /dev/null
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/live" > /dev/null \
+              && curl --fail --silent --show-error "$FABRICASSIST_ALPHA_API_URL/api/v1/health/ready" > /dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Render API did not become ready within 10 minutes." >&2
+          exit 1
 
   deploy-web:
     needs: [quality, migrate]

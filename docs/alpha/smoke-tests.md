@@ -36,7 +36,7 @@ Before accepting a release, perform or schedule these controlled alpha drills:
 | Provider timeout | bounded retry/failure state, no permanent lock | scan can be retried/reviewed |
 | Temporary Neon failure | checkpoint is not falsely completed | readiness recovers and pending work reconciles |
 | Next-stage publish failure | committed checkpoint is recovered safely | no duplicate result after replay |
-| Koyeb/Neon cold start | readiness eventually passes within operational timeout | smoke rerun succeeds |
+| Render/Neon cold start | readiness eventually passes within operational timeout | smoke rerun succeeds |
 | R2 failure | upload/verification fails safely | no completed image reference without object |
 | Invalid signature | internal endpoint rejects it | no checkpoint/work created |
 | Permanent invalid message | explicit non-retry response | QStash does not redeliver indefinitely |

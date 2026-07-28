@@ -171,7 +171,7 @@ commit-SHA-pinned `actions/checkout` and `actions/upload-artifact` where used.
 They install `uv==0.11.2` and activate `pnpm@10.28.2` through Corepack. Existing
 CI validates `make check`; the scheduled/manual release smoke creates the local
 Compose stack and runs local drills. No alpha provider deployment workflow,
-Cloudflare action, Koyeb action, QStash action, or external-alpha credential is
+Cloudflare action, Render action, QStash action, or external-alpha credential is
 present.
 
 ## Tests and commands to reuse
@@ -183,7 +183,7 @@ present.
 | 3 — signed checkpointed execution | `backend/tests/unit/test_api.py`, `test_analysis.py`, `test_database.py`, and `test_production_hardening.py`; add focused delivery/concurrency/recovery tests |
 | 4 — R2 storage | `backend/tests/integration/test_migrations.py`, `backend/tests/unit/test_api.py`, and `test_production_hardening.py`; `make migration-test` exercises MinIO |
 | 5 — Neon | `backend/tests/integration/test_migrations.py`, `backend/tests/unit/test_database.py`, `test_settings.py`; `make migration-test` |
-| 6 — Koyeb | `.github/workflows/*.yml`, `backend/Dockerfile`, root `Makefile`; validate workflow/config syntax without deployment |
+| 6 — Render | `.github/workflows/*.yml`, `backend/Dockerfile`, root `Makefile`; validate workflow/config syntax without deployment |
 | 7 — Cloudflare Pages | `frontend/apps/client/app.config.ts`, `frontend/package.json`, existing frontend Jest/Playwright suites, and `pnpm --dir frontend build:web` |
 | 8 — CI/deployment/smoke/rollback | existing workflow conventions, `Makefile`, `infrastructure/scripts/smoke.sh`, and the deterministic commands introduced by Phases 1–7 |
 

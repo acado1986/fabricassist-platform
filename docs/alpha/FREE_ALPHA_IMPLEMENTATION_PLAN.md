@@ -4,7 +4,7 @@
 **Purpose:** Add a $0-oriented alpha deployment profile without forking or weakening the existing production-ready architecture  
 **Git branch:** `feat/free-alpha-deployment`  
 **Git worktree:** `../fabricassist-alpha`  
-**Target alpha stack:** Cloudflare Pages, Koyeb, Neon, Cloudflare R2, Upstash QStash  
+**Target alpha stack:** Cloudflare Pages, Render, Neon, Cloudflare R2, Upstash QStash
 **Local stack preserved:** Docker Compose, PostgreSQL, Valkey, MinIO, Celery  
 **Production path preserved:** AWS ECS/Fargate, RDS, ElastiCache/Valkey, S3
 
@@ -28,7 +28,7 @@ The alpha profile adds:
 - A QStash implementation of the existing job-dispatch boundary.
 - A signed internal HTTP delivery endpoint.
 - Configuration for Neon and Cloudflare R2.
-- A Koyeb API deployment.
+- A Render API deployment.
 - A Cloudflare Pages static web deployment.
 - Alpha-specific CI, smoke testing, release, and rollback procedures.
 
@@ -47,7 +47,7 @@ Same application and domain code
 │   ├── QStashJobDispatcher
 │   ├── Neon PostgreSQL
 │   ├── Cloudflare R2
-│   ├── Koyeb API
+│   ├── Render API
 │   └── Cloudflare Pages
 │
 └── Production
@@ -169,7 +169,7 @@ Do not copy production credentials into this worktree.
 | 3 | Add signed, checkpointed HTTP job execution | `feat(jobs): add checkpointed HTTP job execution` |
 | 4 | Validate the existing S3 adapter against R2 | `feat(storage): support Cloudflare R2 deployment` |
 | 5 | Add the Neon database profile | `feat(database): add Neon alpha configuration` |
-| 6 | Add the Koyeb API deployment | `feat(deployment): add Koyeb alpha API deployment` |
+| 6 | Add the Render API deployment | `feat(deployment): add Render alpha API deployment` |
 | 7 | Add the Cloudflare Pages web deployment | `feat(deployment): add Cloudflare Pages alpha web deployment` |
 | 8 | Add CI, release, smoke, and rollback workflows | `ci(alpha): add verified deployment workflows` |
 | 9 | Complete runbooks and acceptance testing | `docs(alpha): complete deployment and rollback runbooks` |
@@ -719,34 +719,23 @@ git diff --check
 
 ---
 
-# Phase 6 — Koyeb API deployment
+# Phase 6 — Render API deployment
 
 ## Objective
 
-Deploy one FastAPI web service using the existing backend Dockerfile and the Koyeb free instance type.
+Deploy one FastAPI web service using the existing backend Dockerfile and the
+operator-configured Render Docker web-service tier.
 
 ## Dockerfile inspection
 
 Phase 0 must determine the correct build context.
 
-Use one of these patterns, not both:
+The implementation inventory confirms that `backend/` is the Docker build root:
 
-### Backend directory is the Docker build context
-
-```yaml
-git-builder: docker
-git-workdir: backend
-git-docker-dockerfile: Dockerfile
+```text
+Root Directory: backend
+Dockerfile Path: Dockerfile
 ```
-
-### Repository root is the Docker build context
-
-```yaml
-git-builder: docker
-git-docker-dockerfile: backend/Dockerfile
-```
-
-The correct choice depends on the actual `COPY` instructions.
 
 ## Runtime
 
@@ -761,64 +750,43 @@ uvicorn fabricassist.api.main:app \
 
 Reuse the Dockerfile’s existing command when it already handles `${PORT}` correctly.
 
-## Required Koyeb action settings
+## Required Render deployment settings
 
 ```yaml
-- name: Install and configure Koyeb CLI
-  uses: koyeb-community/koyeb-actions@v2
-  with:
-    api_token: ${{ secrets.KOYEB_API_TOKEN }}
-
-- name: Deploy API to Koyeb
-  uses: koyeb/action-git-deploy@v1
-  with:
-    app-name: fabricassist-alpha
-    service-name: api
-    service-type: web
-    service-instance-type: free
-    service-regions: fra
-
-    git-builder: docker
-    git-branch: main
-    git-sha: ${{ github.sha }}
-
-    # Select these after inspecting the Docker build context:
-    # git-workdir: backend
-    # git-docker-dockerfile: Dockerfile
-    # OR:
-    # git-docker-dockerfile: backend/Dockerfile
-
-    service-ports: "8000:http"
-    service-routes: "/:8000"
-    service-checks: "8000:http:/api/v1/health/live"
+Root Directory: backend
+Dockerfile Path: Dockerfile
+Health Check Path: /api/v1/health/live
+Region: Frankfurt
+Auto-Deploy: Off
 ```
 
-The deployment action defaults must not be relied upon because its default instance and builder are not the required free/Docker choices.
+Use a protected `RENDER_DEPLOY_HOOK_URL` in GitHub Actions. The workflow passes
+the quality job's resolved SHA as the deploy hook `ref` and waits for liveness
+and readiness. Do not use a generic latest-branch deployment trigger.
 
 ## Environment strategy
 
-Create Koyeb secrets once in the Koyeb dashboard or through an explicit secret-provisioning workflow.
+Create Render runtime values once in the Render dashboard.
 
-Reference them from service environment configuration:
+Set them as service environment variables:
 
 ```yaml
-service-env: >-
-  PORT=8000,
-  FABRICASSIST_ENVIRONMENT=alpha,
-  FABRICASSIST_DEPLOYMENT_PROFILE=alpha,
-  FABRICASSIST_JOB_DISPATCHER=qstash,
-  FABRICASSIST_DATABASE_URL=@FABRICASSIST_DATABASE_URL,
-  FABRICASSIST_S3_ENDPOINT_URL=@FABRICASSIST_S3_ENDPOINT_URL,
-  FABRICASSIST_S3_ACCESS_KEY=@FABRICASSIST_S3_ACCESS_KEY,
-  FABRICASSIST_S3_SECRET_KEY=@FABRICASSIST_S3_SECRET_KEY,
-  FABRICASSIST_QSTASH_TOKEN=@FABRICASSIST_QSTASH_TOKEN,
-  FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY=@FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY,
-  FABRICASSIST_QSTASH_NEXT_SIGNING_KEY=@FABRICASSIST_QSTASH_NEXT_SIGNING_KEY
+FABRICASSIST_ENVIRONMENT=alpha
+FABRICASSIST_DEPLOYMENT_PROFILE=alpha
+FABRICASSIST_JOB_DISPATCHER=qstash
+FABRICASSIST_DATABASE_URL=<pooled Neon TLS URL>
+FABRICASSIST_DATABASE_MIGRATION_URL=<direct Neon TLS URL>
+FABRICASSIST_S3_ENDPOINT_URL=<private R2 endpoint>
+FABRICASSIST_S3_ACCESS_KEY=<R2 access key>
+FABRICASSIST_S3_SECRET_KEY=<R2 secret key>
+FABRICASSIST_QSTASH_TOKEN=<QStash publish token>
+FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY=<current signing key>
+FABRICASSIST_QSTASH_NEXT_SIGNING_KEY=<next signing key>
 ```
 
 Add all other existing required secure settings, including JWT and AI-provider credentials.
 
-Do not recreate unchanged Koyeb secrets on every deploy.
+Do not recreate unchanged Render values on every deploy.
 
 ## Startup rules
 
@@ -836,7 +804,7 @@ The hosted API must not:
 
 - Liveness.
 - Readiness.
-- Koyeb cold start.
+- Render cold start.
 - Neon reconnection.
 - R2 access.
 - QStash signature verification.
@@ -890,7 +858,7 @@ Confirm the actual package name and output path during Phase 0.
 ## Public variables
 
 ```env
-EXPO_PUBLIC_FABRICASSIST_API_URL=https://<alpha-api>.koyeb.app
+EXPO_PUBLIC_FABRICASSIST_API_URL=https://<alpha-api>.onrender.com
 EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT=alpha
 ```
 
@@ -983,7 +951,7 @@ on:
       - main
 ```
 
-It must not use Neon, R2, QStash, Koyeb, Cloudflare, or AI-provider credentials.
+It must not use Neon, R2, QStash, Render, Cloudflare, or AI-provider credentials.
 
 Run:
 
@@ -1159,7 +1127,7 @@ docs/
 
 infrastructure/
 └── alpha/
-    ├── koyeb/
+    ├── render/
     ├── cloudflare-pages/
     ├── cloudflare-r2/
     ├── neon/
@@ -1175,8 +1143,8 @@ Do not duplicate provider documentation. Record only FabricAssist-specific setup
 3. Apply migrations and seed the alpha tenant.
 4. Create private R2 bucket, API credentials, CORS, and retention rules.
 5. Create QStash credentials and record current/next signing keys.
-6. Create Koyeb secrets.
-7. Deploy Koyeb API.
+6. Create Render runtime variables and protected deploy hook.
+7. Deploy Render API.
 8. Configure the final QStash destination URL.
 9. Send and verify a signed synthetic delivery.
 10. Create Cloudflare Pages project.
@@ -1214,7 +1182,7 @@ Also verify:
 - Provider timeout.
 - Temporary database failure.
 - Next-stage publication failure.
-- Koyeb cold start.
+- Render cold start.
 - Neon cold start.
 - R2 failure.
 - Invalid QStash signature.
@@ -1241,14 +1209,14 @@ Also verify:
 - [ ] PostgreSQL remains authoritative.
 - [ ] The existing S3 adapter supports MinIO, R2, and AWS S3.
 - [ ] Neon migrations pass from empty and previous supported schema.
-- [ ] Koyeb explicitly uses the `free` instance and Docker builder.
+- [ ] Render uses the backend Docker build root, one Uvicorn worker, disabled auto-deploy, and an exact-SHA deploy hook.
 - [ ] Cloudflare uses `cloudflare/wrangler-action@v3`.
 - [ ] The Expo web bundle contains no secrets.
 - [ ] Routine CI consumes no external alpha quotas.
 - [ ] Deployment smoke runs after API and frontend deployment.
 - [ ] Rollback deploys a selected old ref without moving published tags.
 - [ ] The local Celery/Valkey/MinIO flow still passes.
-- [ ] The hosted Pages → Koyeb → R2 → QStash → Neon flow passes.
+- [ ] The hosted Pages → Render → R2 → QStash → Neon flow passes.
 - [ ] The accepted release is tagged, for example `v0.1.0-alpha.1`.
 - [ ] The feature branch and worktree are removed after merge.
 - [ ] Deployment and rollback runbooks were executed at least once.
@@ -1318,7 +1286,7 @@ Never give Codex:
 - Neon passwords.
 - R2 access keys.
 - QStash tokens or signing keys.
-- Koyeb API tokens.
+- Render deploy-hook URLs or API tokens.
 - Cloudflare API tokens.
 - Gemini/OpenAI API keys.
 
@@ -1524,18 +1492,13 @@ and make check. Stop after Phase 5. Do not commit.
 ## 6.12 Phase 6 Codex prompt
 
 ```text
-Implement only Phase 6, Koyeb API deployment.
+Implement only Phase 6, Render API deployment.
 
 Inspect the real backend Dockerfile and determine its required build context.
-Create the deployment workflow/configuration using:
-- koyeb-community/koyeb-actions@v2;
-- koyeb/action-git-deploy@v1;
-- service-instance-type: free;
-- service-regions: fra;
-- git-builder: docker;
-- git-sha pinned to the selected workflow commit/ref;
-- explicit health check;
-- Koyeb secret references.
+Create the deployment workflow/configuration using a protected Render deploy
+hook that deploys the exact SHA resolved by the workflow's quality job. Keep
+Render auto-deploy disabled, use the backend Docker build root, and wait for
+the documented liveness/readiness endpoints.
 
 Do not put real secrets in GitHub workflow YAML.
 Do not run migrations automatically at API startup.
@@ -1569,7 +1532,7 @@ Implement only Phase 8, alpha CI, deployment, live smoke, and rollback.
 
 Keep routine CI free of external alpha credentials and quota consumption.
 Support tag-triggered and manually selected-ref deployment.
-Ensure the selected checkout ref is also the Koyeb git SHA and frontend source.
+Ensure the selected checkout ref is also the Render deploy-hook ref and frontend source.
 Order jobs as quality -> migration -> API/web deployment -> post-deploy live
 smoke.
 
@@ -1600,7 +1563,7 @@ Run all deterministic local checks:
 - make build-alpha-web;
 - git diff --check.
 
-Do not attempt to create real Neon, R2, QStash, Koyeb, or Cloudflare resources
+Do not attempt to create real Neon, R2, QStash, Render, or Cloudflare resources
 and do not request credentials. Clearly list the remaining manual account setup
 and live smoke steps. Stop after Phase 9. Do not commit.
 ```

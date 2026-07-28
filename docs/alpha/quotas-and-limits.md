@@ -15,8 +15,8 @@ Provider plan limits change independently of this repository. Check the active p
 
 ## Provider budget controls
 
-- Configure dashboard spend/usage alerts for Neon, R2, QStash, Koyeb, and Cloudflare Pages at a low alpha threshold chosen by the operator.
-- Monitor Koyeb cold starts/health, Neon active connections, R2 object/storage growth and failed requests, QStash deliveries/retries, and Pages deployment failures.
+- Configure dashboard spend/usage alerts for Neon, R2, QStash, Render, and Cloudflare Pages at a low alpha threshold chosen by the operator.
+- Monitor Render cold starts/health, Neon active connections, R2 object/storage growth and failed requests, QStash deliveries/retries, and Pages deployment failures.
 - Keep routine CI credential-free. Run live smoke only after deployment, recovery, or planned diagnostics; use mock vision by default and real model smoke separately and sparingly.
 
 ## Exhaustion response

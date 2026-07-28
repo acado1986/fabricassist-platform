@@ -5,7 +5,7 @@ to `feat/free-alpha-deployment` and `main`. It runs only local deterministic
 checks: `make check`, alpha configuration, synthetic QStash tests, and static
 Expo export/secret scanning. It also runs the local PostgreSQL migration and
 MinIO storage contracts plus OpenAPI/client drift checks. It does not receive
-provider credentials or call Neon, R2, QStash, Koyeb, Cloudflare, or an AI
+provider credentials or call Neon, R2, QStash, Render, Cloudflare, or an AI
 provider.
 
 `deploy-alpha.yml` runs for `v*-alpha*` tags or a manual `ref` input. It checks

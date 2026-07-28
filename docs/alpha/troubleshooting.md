@@ -5,7 +5,7 @@ Start with the release SHA, timestamp, affected scan ID, and redacted workflow j
 | Symptom | Inspect | Safe recovery |
 | --- | --- | --- |
 | Alpha config check fails | `.env.alpha.example`, `Settings` validation, profile/dispatcher values | Correct placeholders or required HTTPS/TLS values; rerun `make check-alpha-config` without provider contact |
-| API is live but not ready | Koyeb logs, Neon TLS URL, R2/QStash secret names | Correct secret/configuration; redeploy selected approved ref; do not start Celery in API |
+| API is live but not ready | Render logs, Neon TLS URL, R2/QStash variable names | Correct secret/configuration; redeploy selected approved ref; do not start Celery in API |
 | Browser upload CORS failure | Exact Pages origin in API and R2 CORS; no trailing slash | Add only exact HTTPS origin and retry a fresh presigned instruction; never use `*` |
 | Upload completion fails | R2 private object metadata, MIME/size/image validation | Re-upload a valid synthetic image; do not mark a missing object complete |
 | Analysis does not advance | scan durable stage/checkpoint, QStash delivery result, exact destination | Verify key overlap/raw-signature destination; replay only through the signed path and let durable recovery reconcile |
