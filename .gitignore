@@ -3,6 +3,7 @@
 .env.*
 .env-*
 !.env.example
+!.env.alpha.example
 
 # Python (Phase 2 and later)
 __pycache__/
