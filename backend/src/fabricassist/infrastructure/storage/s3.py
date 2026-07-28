@@ -41,6 +41,7 @@ class S3Storage:
         self._client: Any = client_factory(
             "s3",
             endpoint_url=settings.s3_endpoint_url,
+            region_name=settings.s3_region,
             **credentials,
             config=Config(
                 s3={"addressing_style": "path" if settings.s3_force_path_style else "virtual"}
@@ -49,6 +50,7 @@ class S3Storage:
         self._presign_client: Any = client_factory(
             "s3",
             endpoint_url=settings.s3_public_endpoint_url,
+            region_name=settings.s3_region,
             **credentials,
             config=Config(
                 s3={"addressing_style": "path" if settings.s3_force_path_style else "virtual"}

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test lint openapi frontend-build check check-alpha-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-object-storage test-object-storage-r2 test lint openapi frontend-build check check-alpha-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -49,6 +49,17 @@ migration-test: ## Run Alembic/storage integration tests against isolated Compos
 	until [ "$$(docker inspect -f '{{.State.Status}}' $$container_id)" = "exited" ]; do sleep 1; done; \
 	test "$$(docker inspect -f '{{.State.ExitCode}}' $$container_id)" = "0"
 	cd backend && FABRICASSIST_TEST_DATABASE_URL=postgresql://fabricassist_test:change-me-local-postgres-test@localhost:$${FABRICASSIST_POSTGRES_TEST_PORT:-5433}/fabricassist_test uv run pytest tests/integration
+
+test-object-storage: ## Run the S3 storage contract against the local private MinIO service.
+	docker compose --profile test up -d fabricassist-minio-test fabricassist-minio-test-init
+	@container_id=$$(docker compose ps -aq fabricassist-minio-test-init); \
+	until [ "$$(docker inspect -f '{{.State.Status}}' $$container_id)" = "exited" ]; do sleep 1; done; \
+	test "$$(docker inspect -f '{{.State.ExitCode}}' $$container_id)" = "0"
+	cd backend && FABRICASSIST_OBJECT_STORAGE_CONTRACT=1 FABRICASSIST_OBJECT_STORAGE_ENDPOINT_URL=http://localhost:$${FABRICASSIST_MINIO_TEST_PORT:-9002} FABRICASSIST_OBJECT_STORAGE_REGION=us-east-1 FABRICASSIST_OBJECT_STORAGE_BUCKET=fabricassist-test FABRICASSIST_OBJECT_STORAGE_ACCESS_KEY=fabricassist-test FABRICASSIST_OBJECT_STORAGE_SECRET_KEY=change-me-local-minio-test FABRICASSIST_OBJECT_STORAGE_FORCE_PATH_STYLE=true uv run pytest tests/integration/test_object_storage.py
+
+test-object-storage-r2: ## Run opt-in live R2 smoke using externally supplied dedicated test-prefix credentials.
+	@test "$${FABRICASSIST_R2_SMOKE:-}" = "1" || { echo "Set FABRICASSIST_R2_SMOKE=1 to enable the live R2 smoke." >&2; exit 2; }
+	cd backend && FABRICASSIST_OBJECT_STORAGE_CONTRACT=1 FABRICASSIST_OBJECT_STORAGE_PROVIDER=r2 FABRICASSIST_OBJECT_STORAGE_ENDPOINT_URL="$${FABRICASSIST_R2_ENDPOINT_URL:?missing FABRICASSIST_R2_ENDPOINT_URL}" FABRICASSIST_OBJECT_STORAGE_REGION="$${FABRICASSIST_R2_REGION:-auto}" FABRICASSIST_OBJECT_STORAGE_BUCKET="$${FABRICASSIST_R2_BUCKET:?missing FABRICASSIST_R2_BUCKET}" FABRICASSIST_OBJECT_STORAGE_ACCESS_KEY="$${FABRICASSIST_R2_ACCESS_KEY:?missing FABRICASSIST_R2_ACCESS_KEY}" FABRICASSIST_OBJECT_STORAGE_SECRET_KEY="$${FABRICASSIST_R2_SECRET_KEY:?missing FABRICASSIST_R2_SECRET_KEY}" FABRICASSIST_OBJECT_STORAGE_FORCE_PATH_STYLE=false FABRICASSIST_OBJECT_STORAGE_TEST_PREFIX="$${FABRICASSIST_R2_TEST_PREFIX:?missing FABRICASSIST_R2_TEST_PREFIX}" uv run pytest tests/integration/test_object_storage.py
 
 test: ## Run foundation checks plus backend and frontend unit tests.
 	@./infrastructure/scripts/validate-foundation.sh

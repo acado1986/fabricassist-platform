@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -99,6 +100,41 @@ def test_production_storage_can_use_workload_identity(monkeypatch: pytest.Monkey
     assert len(client_calls) == 2
     assert all("aws_access_key_id" not in call for call in client_calls)
     assert all("aws_secret_access_key" not in call for call in client_calls)
+
+
+def test_s3_storage_uses_r2_region_and_virtual_addressing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_calls: list[dict[str, object]] = []
+
+    def client_factory(_service: str, **kwargs: object) -> object:
+        client_calls.append(kwargs)
+        return object()
+
+    monkeypatch.setattr("fabricassist.infrastructure.storage.s3.boto3.client", client_factory)
+    S3Storage(
+        Settings(
+            environment="test",
+            s3_endpoint_url="https://account-id.r2.cloudflarestorage.com",
+            s3_public_endpoint_url="https://account-id.r2.cloudflarestorage.com",
+            s3_region="auto",
+            s3_bucket="fabricassist-alpha",
+            s3_access_key="synthetic-r2-key",
+            s3_secret_key="synthetic-r2-secret",
+            s3_force_path_style=False,
+        )
+    )
+
+    assert len(client_calls) == 2
+    assert all(call["region_name"] == "auto" for call in client_calls)
+    assert all(
+        call["endpoint_url"] == "https://account-id.r2.cloudflarestorage.com"
+        for call in client_calls
+    )
+    assert all(
+        cast(dict[str, str], cast(Any, call["config"]).s3)["addressing_style"] == "virtual"
+        for call in client_calls
+    )
 
 
 def test_api_applies_security_headers_and_supports_actual_cors_methods() -> None:
