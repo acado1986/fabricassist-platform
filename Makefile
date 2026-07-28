@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi frontend-build check check-alpha-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi frontend-build check check-alpha-config check-koyeb-config test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -96,6 +96,9 @@ check: bootstrap lint test ## Run the complete default Phase 5 local quality gat
 check-alpha-config: ## Validate typed alpha settings and safe alpha example configuration.
 	cd backend && uv run pytest tests/unit/test_settings.py -k alpha
 	@! grep -Eq '^EXPO_PUBLIC_.*(TOKEN|KEY|SECRET|DATABASE|S3|QSTASH)' .env.alpha.example
+
+check-koyeb-config: ## Validate the Koyeb alpha API workflow and container contract.
+	@./infrastructure/scripts/validate-koyeb-api-workflow.sh
 
 test-qstash: ## Run synthetic QStash dispatcher adapter tests without network access.
 	cd backend && uv run pytest tests/unit/test_qstash.py

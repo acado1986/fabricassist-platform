@@ -17,4 +17,4 @@ RUN uv sync --frozen --no-dev
 RUN useradd --create-home --uid 10001 fabricassist
 USER fabricassist
 EXPOSE 8000
-CMD ["uvicorn", "fabricassist.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "exec uvicorn fabricassist.api.main:app --host 0.0.0.0 --port \"${PORT:-8000}\" --workers 1"]
