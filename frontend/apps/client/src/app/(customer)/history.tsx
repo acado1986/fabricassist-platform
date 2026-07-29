@@ -1,5 +1,12 @@
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -14,7 +21,7 @@ import { useTranslation } from '../../i18n/TranslationProvider';
 
 export default function CustomerHistory(): ReactNode {
   const { apiClient, token } = useSession();
-  const { translate } = useTranslation();
+  const { locale, translate } = useTranslation();
   const {
     data: garments,
     isError,
@@ -53,13 +60,28 @@ export default function CustomerHistory(): ReactNode {
                 pressed && styles.pressed,
               ]}
             >
+              {garment.thumbnail_url ? (
+                <Image
+                  accessibilityLabel={translate('garmentThumbnail')}
+                  source={{ uri: garment.thumbnail_url }}
+                  style={styles.thumbnail}
+                />
+              ) : (
+                <View style={styles.thumbnailPlaceholder}>
+                  <Feather color={colors.muted} name="shopping-bag" size={24} />
+                </View>
+              )}
               <View style={styles.garmentCopy}>
                 <Text numberOfLines={1} style={styles.identifier}>
                   {identifier}
                 </Text>
                 <Text style={styles.detail}>
                   {translate('lastAnalysis')}:{' '}
-                  {garment.last_analysis_at ?? translate('notAvailable')}
+                  {formatTimestamp(
+                    garment.last_analysis_at,
+                    locale,
+                    translate('notAvailable'),
+                  )}
                 </Text>
                 <Text style={styles.detail}>
                   {translate('analysedBefore')}:{' '}
@@ -77,6 +99,20 @@ export default function CustomerHistory(): ReactNode {
   );
 }
 
+function formatTimestamp(
+  value: string | null | undefined,
+  locale: 'en' | 'es',
+  fallback: string,
+): string {
+  if (!value) return fallback;
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return fallback;
+  return new Intl.DateTimeFormat(locale === 'es' ? 'es-ES' : 'en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(timestamp);
+}
+
 const styles = StyleSheet.create({
   content: { gap: spacing.medium },
   garment: {
@@ -91,6 +127,15 @@ const styles = StyleSheet.create({
     padding: spacing.medium,
   },
   garmentCopy: { flex: 1, gap: spacing.xsmall },
+  thumbnail: { borderRadius: radii.small, height: 72, width: 72 },
+  thumbnailPlaceholder: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.small,
+    height: 72,
+    justifyContent: 'center',
+    width: 72,
+  },
   identifier: { color: colors.text, fontSize: 15, fontWeight: '700' },
   detail: { color: colors.muted, fontSize: 13, lineHeight: 18 },
   pressed: { opacity: 0.72 },

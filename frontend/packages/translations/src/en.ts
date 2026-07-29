@@ -152,6 +152,7 @@ export const en = {
     garmentHistoryTitle: 'Garment history',
     garmentHistoryDescription:
       'Identity and confirmed service history for this physical garment.',
+    garmentThumbnail: 'Garment photo',
     analysedBefore: 'Analysed before',
     cleanedBefore: 'Cleaned before',
     garmentIdentifiers: 'FabricAssist identifier',

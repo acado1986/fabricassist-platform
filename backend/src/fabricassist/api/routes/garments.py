@@ -49,6 +49,7 @@ class GarmentResponse(BaseModel):
     cleaned_before: bool
     identifiers: list[str] = Field(default_factory=list)
     last_analysis_at: str | None = None
+    thumbnail_url: str | None = None
     service_events: list[ServiceEventResponse]
 
 
@@ -102,7 +103,9 @@ async def owned_garment(session: AsyncSession, user: User, garment_id: UUID) -> 
     return garment
 
 
-async def response_for(session: AsyncSession, garment: Garment) -> GarmentResponse:
+async def response_for(
+    session: AsyncSession, garment: Garment, storage: ObjectStorage
+) -> GarmentResponse:
     events = list(
         (
             await session.scalars(
@@ -126,6 +129,18 @@ async def response_for(session: AsyncSession, garment: Garment) -> GarmentRespon
     revision = None
     if garment.active_analysis_revision_id is not None:
         revision = await session.get(AnalysisRevision, garment.active_analysis_revision_id)
+    image = await session.scalar(
+        select(ScanImage)
+        .join(Scan, Scan.id == ScanImage.scan_id)
+        .where(
+            Scan.tenant_id == garment.tenant_id,
+            Scan.user_id == garment.user_id,
+            Scan.garment_id == garment.id,
+            ScanImage.deleted_at.is_(None),
+        )
+        .order_by(ScanImage.created_at.desc())
+        .limit(1)
+    )
     return GarmentResponse(
         id=garment.id,
         analysed_before=garment.active_analysis_revision_id is not None,
@@ -134,6 +149,7 @@ async def response_for(session: AsyncSession, garment: Garment) -> GarmentRespon
         last_analysis_at=revision.created_at.isoformat()
         if revision and revision.created_at
         else None,
+        thumbnail_url=storage.presign_get(key=image.object_key).url if image else None,
         service_events=[ServiceEventResponse(id=e.id, kind=e.kind, note=e.note) for e in events],
     )
 
@@ -142,6 +158,7 @@ async def response_for(session: AsyncSession, garment: Garment) -> GarmentRespon
 async def list_garments(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> list[GarmentResponse]:
     garments = list(
         (
@@ -152,7 +169,7 @@ async def list_garments(
             )
         ).all()
     )
-    return [await response_for(session, garment) for garment in garments]
+    return [await response_for(session, garment, storage) for garment in garments]
 
 
 @router.get("/{garment_id}", response_model=GarmentResponse)
@@ -160,8 +177,9 @@ async def get_garment(
     garment_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> GarmentResponse:
-    return await response_for(session, await owned_garment(session, user, garment_id))
+    return await response_for(session, await owned_garment(session, user, garment_id), storage)
 
 
 @router.post("/{garment_id}/service-events", response_model=ServiceEventResponse, status_code=201)
@@ -191,6 +209,7 @@ async def garment_history(
     garment_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> HistoryResponse:
     garment = await owned_garment(session, user, garment_id)
     observations = list(
@@ -205,7 +224,7 @@ async def garment_history(
             )
         ).all()
     )
-    events = (await response_for(session, garment)).service_events
+    events = (await response_for(session, garment, storage)).service_events
     return HistoryResponse(
         garment_id=garment.id,
         observations=[
@@ -332,6 +351,7 @@ async def confirm_identity_candidate(
     request: ConfirmCandidateRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> GarmentResponse:
     scan = await session.scalar(
         select(Scan).where(
@@ -377,4 +397,4 @@ async def confirm_identity_candidate(
         )
     )
     await session.commit()
-    return await response_for(session, garment)
+    return await response_for(session, garment, storage)

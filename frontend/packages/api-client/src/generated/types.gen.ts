@@ -257,6 +257,10 @@ export type GarmentResponse = {
      * Service Events
      */
     service_events: Array<ServiceEventResponse>;
+    /**
+     * Thumbnail Url
+     */
+    thumbnail_url?: string | null;
 };
 
 /**

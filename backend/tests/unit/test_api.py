@@ -199,6 +199,72 @@ class PresigningStorage:
         )
 
 
+class GarmentThumbnailSession:
+    def __init__(self, image: object) -> None:
+        self.image = image
+        self.scalar_calls = 0
+
+    async def scalars(self, statement: object):
+        class Result:
+            def all(self) -> list[object]:
+                return []
+
+        return Result()
+
+    async def get(self, model: object, identifier: object) -> None:
+        return None
+
+    async def scalar(self, statement: object) -> object | None:
+        self.scalar_calls += 1
+        return self.image
+
+
+class DownloadStorage:
+    def presign_get(self, *, key: str):
+        from fabricassist.application.object_storage import PresignedDownload
+
+        return PresignedDownload(
+            url=f"https://storage.invalid/private/{key}",
+            expires_at=datetime.now(UTC),
+        )
+
+
+@pytest.mark.asyncio
+async def test_garment_response_exposes_only_presigned_thumbnail_url() -> None:
+    from fabricassist.api.routes.garments import response_for
+    from fabricassist.infrastructure.persistence.models import Garment, ScanImage
+
+    tenant_id = uuid4()
+    garment = Garment(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=uuid4(),
+        active_analysis_revision_id=None,
+        active_result_id=None,
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=uuid4(),
+        role="garment_overview",
+        display_order=0,
+        object_key="private/tenant/garment/image.jpg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+
+    response = await response_for(
+        GarmentThumbnailSession(image),  # type: ignore[arg-type]
+        garment,
+        DownloadStorage(),  # type: ignore[arg-type]
+    )
+
+    assert (
+        response.thumbnail_url == "https://storage.invalid/private/private/tenant/garment/image.jpg"
+    )
+    assert "object_key" not in response.model_dump()
+
+
 @pytest.mark.asyncio
 async def test_duplicate_image_request_reuses_image_without_persisting_a_url() -> None:
     from fabricassist.api.routes.scans import ImageRequest, add_image

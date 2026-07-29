@@ -161,6 +161,7 @@ export const es: TranslationCatalog = {
     garmentHistoryTitle: 'Historial de la prenda',
     garmentHistoryDescription:
       'Identidad e historial de servicios confirmados de esta prenda física.',
+    garmentThumbnail: 'Foto de la prenda',
     analysedBefore: 'Analizada anteriormente',
     cleanedBefore: 'Limpiada anteriormente',
     garmentIdentifiers: 'Identificador de FabricAssist',
