@@ -11,6 +11,7 @@ from uuid import UUID
 import zxingcpp
 from PIL import Image
 
+from fabricassist.application.provider import ProviderDescriptor
 from fabricassist.domain.evidence import GarmentEvidenceDelta, ImageRole
 
 EVIDENCE_PROMPT_VERSION = "garment-evidence-v1"
@@ -73,6 +74,9 @@ class VisionProviderError(Exception):
 
 
 class VisionEvidenceProvider(Protocol):
+    @property
+    def descriptor(self) -> ProviderDescriptor: ...
+
     async def extract_evidence(
         self, images: tuple[NormalizedImage, ...], prior_dossier: object | None = None
     ) -> EvidenceProviderResult: ...

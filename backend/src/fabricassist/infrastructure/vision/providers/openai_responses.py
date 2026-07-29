@@ -10,9 +10,11 @@ from typing import cast
 
 import httpx
 
-from fabricassist.application.model_provider import (
-    ConversationProviderResult,
-    ModelProviderPrompts,
+from fabricassist.application.conversation_provider import ConversationProviderResult
+from fabricassist.application.planning import CarePlanningProviderResult
+from fabricassist.application.provider import ProviderDescriptor
+from fabricassist.application.provider_prompts import (
+    ProviderPrompts,
 )
 from fabricassist.application.vision import (
     BarcodeCandidate,
@@ -20,8 +22,9 @@ from fabricassist.application.vision import (
     NormalizedImage,
     VisionProviderError,
 )
+from fabricassist.domain.care import ProposedCarePlan
 from fabricassist.domain.conversations import AssistantMessageProposal, ConversationContext
-from fabricassist.domain.evidence import GarmentEvidenceDelta
+from fabricassist.domain.evidence import GarmentEvidenceDelta, GarmentEvidenceDossier
 from fabricassist.infrastructure.vision.providers.common import (
     optional_int,
     validate_sources,
@@ -41,7 +44,7 @@ class OpenAIResponsesAdapterConfig:
     timeout_seconds: int
     extra_headers: dict[str, str] = field(repr=False)
     max_output_tokens: int
-    prompts: ModelProviderPrompts = field(default_factory=ModelProviderPrompts)
+    prompts: ProviderPrompts = field(default_factory=ProviderPrompts)
 
 
 def _strict_schema(schema: object) -> object:
@@ -81,6 +84,10 @@ class _OpenAIResponsesVisionCapability:
         self._max_output_tokens = config.max_output_tokens
         self._prompts = config.prompts
         self._transport = transport
+
+    @property
+    def descriptor(self) -> ProviderDescriptor:
+        return ProviderDescriptor(provider="openai_responses", model=self._model)
 
     async def extract_evidence(
         self, images: tuple[NormalizedImage, ...], prior_dossier: object | None = None
@@ -201,7 +208,12 @@ def _response_output_text(response: dict[str, object]) -> str:
 class _OpenAIResponsesConversationCapability:
     """Responses adapter for server-owned, schema-validated follow-up answers."""
 
-    def __init__(self, config: OpenAIResponsesAdapterConfig) -> None:
+    def __init__(
+        self,
+        config: OpenAIResponsesAdapterConfig,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._base_url = config.base_url.rstrip("/")
         self._api_key = config.api_key
         self._model = config.model
@@ -209,6 +221,11 @@ class _OpenAIResponsesConversationCapability:
         self._extra_headers = config.extra_headers
         self._max_output_tokens = config.max_output_tokens
         self._prompts = config.prompts
+        self._transport = transport
+
+    @property
+    def descriptor(self) -> ProviderDescriptor:
+        return ProviderDescriptor(provider="openai_responses", model=self._model)
 
     async def answer(
         self, context: ConversationContext, user_text: str
@@ -235,7 +252,10 @@ class _OpenAIResponsesConversationCapability:
         }
         headers = {"Authorization": f"Bearer {self._api_key}", **self._extra_headers}
         try:
-            async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout_seconds,
+                transport=self._transport,
+            ) as client:
                 response = await client.post(
                     f"{self._base_url}/responses", headers=headers, json=payload
                 )
@@ -272,6 +292,72 @@ class _OpenAIResponsesConversationCapability:
         )
 
 
+class _OpenAIResponsesPlanningCapability(_OpenAIResponsesConversationCapability):
+    async def propose_plan(
+        self,
+        dossier: GarmentEvidenceDossier,
+        violations: tuple[str, ...] = (),
+    ) -> CarePlanningProviderResult:
+        started = perf_counter()
+        prompt = (
+            f"{self._prompts.planning_system}\n\n"
+            f"DOSSIER:\n{json.dumps(dossier.model_dump(mode='json'), sort_keys=True)}\n\n"
+            f"VALIDATION VIOLATIONS:\n{json.dumps(violations)}"
+        )
+        payload: dict[str, object] = {
+            "model": self._model,
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+            "max_output_tokens": self._max_output_tokens,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "proposed_care_plan",
+                    "strict": True,
+                    "schema": _strict_schema(ProposedCarePlan.model_json_schema()),
+                }
+            },
+            "store": False,
+        }
+        headers = {"Authorization": f"Bearer {self._api_key}", **self._extra_headers}
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout_seconds,
+                transport=self._transport,
+            ) as client:
+                response = await client.post(
+                    f"{self._base_url}/responses", headers=headers, json=payload
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as error:
+            raise VisionProviderError("PROVIDER_TIMEOUT", "Planning provider timed out") from error
+        except httpx.HTTPStatusError as error:
+            raise VisionProviderError(
+                "PROVIDER_REJECTED", "Planning provider rejected request"
+            ) from error
+        except httpx.HTTPError as error:
+            raise VisionProviderError(
+                "PROVIDER_NETWORK_ERROR", "Planning provider request failed"
+            ) from error
+        try:
+            body = cast(dict[str, object], cast(object, response.json()))
+            proposal = ProposedCarePlan.model_validate_json(_response_output_text(body))
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            raise VisionProviderError(
+                "PROVIDER_INVALID_RESPONSE",
+                "Planning provider returned invalid structured output",
+            ) from error
+        usage = body.get("usage")
+        usage_data = cast(dict[str, object], usage) if isinstance(usage, dict) else {}
+        return CarePlanningProviderResult(
+            proposal=proposal,
+            provider="openai_responses",
+            model=self._model,
+            latency_ms=round((perf_counter() - started) * 1000),
+            input_tokens=optional_int(usage_data.get("input_tokens")),
+            output_tokens=optional_int(usage_data.get("output_tokens")),
+        )
+
+
 class OpenAIResponsesProviderAdapter:
     """Responses HTTP adapter implementing the complete model-provider interface."""
 
@@ -282,7 +368,12 @@ class OpenAIResponsesProviderAdapter:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._vision = _OpenAIResponsesVisionCapability(config, transport=transport)
-        self._conversation = _OpenAIResponsesConversationCapability(config)
+        self._planning = _OpenAIResponsesPlanningCapability(config, transport=transport)
+        self._conversation = _OpenAIResponsesConversationCapability(config, transport=transport)
+
+    @property
+    def descriptor(self) -> ProviderDescriptor:
+        return self._vision.descriptor
 
     async def extract_evidence(
         self, images: tuple[NormalizedImage, ...], prior_dossier: object | None = None
@@ -298,3 +389,10 @@ class OpenAIResponsesProviderAdapter:
         self, context: ConversationContext, user_text: str
     ) -> ConversationProviderResult:
         return await self._conversation.answer(context, user_text)
+
+    async def propose_plan(
+        self,
+        dossier: GarmentEvidenceDossier,
+        violations: tuple[str, ...] = (),
+    ) -> CarePlanningProviderResult:
+        return await self._planning.propose_plan(dossier, violations)

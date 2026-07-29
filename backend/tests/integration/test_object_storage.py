@@ -8,10 +8,11 @@ from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
-from botocore.exceptions import ClientError
 from PIL import Image
 
-from fabricassist.infrastructure.storage.s3 import S3Storage
+from fabricassist.application.object_storage import ObjectNotFoundError
+from fabricassist.infrastructure.storage.factory import create_object_storage
+from fabricassist.infrastructure.storage.s3 import S3ObjectStorageAdapter
 from fabricassist.settings import Settings
 
 pytestmark = pytest.mark.integration
@@ -35,8 +36,10 @@ def contract_settings() -> Settings:
 
 
 @pytest.fixture
-def storage() -> S3Storage:
-    return S3Storage(contract_settings())
+def storage() -> S3ObjectStorageAdapter:
+    value = create_object_storage(contract_settings())
+    assert isinstance(value, S3ObjectStorageAdapter)
+    return value
 
 
 @pytest.fixture
@@ -51,7 +54,9 @@ def jpeg_bytes() -> bytes:
     return image.getvalue()
 
 
-def test_private_object_lifecycle_contract(storage: S3Storage, object_prefix: str) -> None:
+def test_private_object_lifecycle_contract(
+    storage: S3ObjectStorageAdapter, object_prefix: str
+) -> None:
     """Exercise upload verification, private reads, derivatives, previews, and deletion."""
     source_key = f"{object_prefix}/tenant-a/source.jpg"
     derivative_key = f"{object_prefix}/tenant-a/derivatives/normalized.jpg"
@@ -59,7 +64,7 @@ def test_private_object_lifecycle_contract(storage: S3Storage, object_prefix: st
     raw = jpeg_bytes()
 
     storage._client.put_object(  # pyright: ignore[reportPrivateUsage]
-        Bucket=storage._settings.s3_bucket,  # pyright: ignore[reportPrivateUsage]
+        Bucket=storage._config.bucket,  # pyright: ignore[reportPrivateUsage]
         Key=source_key,
         Body=raw,
         ContentType="image/jpeg",
@@ -69,30 +74,32 @@ def test_private_object_lifecycle_contract(storage: S3Storage, object_prefix: st
     assert storage.read_object(source_key) == raw
 
     storage._client.put_object(  # pyright: ignore[reportPrivateUsage]
-        Bucket=storage._settings.s3_bucket,  # pyright: ignore[reportPrivateUsage]
+        Bucket=storage._config.bucket,  # pyright: ignore[reportPrivateUsage]
         Key=derivative_key,
         Body=raw,
         ContentType="image/jpeg",
     )
     storage._client.put_object(  # pyright: ignore[reportPrivateUsage]
-        Bucket=storage._settings.s3_bucket,  # pyright: ignore[reportPrivateUsage]
+        Bucket=storage._config.bucket,  # pyright: ignore[reportPrivateUsage]
         Key=other_tenant_key,
         Body=raw,
         ContentType="image/jpeg",
     )
-    preview, _expires_at = storage.presign_get(key=source_key)
-    upload, headers, _upload_expires_at = storage.presign_put(
+    preview_result = storage.presign_get(key=source_key)
+    upload_result = storage.presign_put(
         key=f"{object_prefix}/tenant-a/future.jpg", content_type="image/jpeg"
     )
+    preview = preview_result.url
+    upload = upload_result.url
     assert source_key in preview
     assert {"X-Amz-Expires", "Expires"} & set(parse_qs(urlparse(preview).query))
-    assert headers == {"Content-Type": "image/jpeg"}
+    assert upload_result.headers == {"Content-Type": "image/jpeg"}
     assert {"X-Amz-Expires", "Expires"} & set(parse_qs(urlparse(upload).query))
 
     visible_keys = {
         item["Key"]
         for item in storage._client.list_objects_v2(  # pyright: ignore[reportPrivateUsage]
-            Bucket=storage._settings.s3_bucket,  # pyright: ignore[reportPrivateUsage]
+            Bucket=storage._config.bucket,  # pyright: ignore[reportPrivateUsage]
             Prefix=f"{object_prefix}/tenant-a/",
         ).get("Contents", [])
     }
@@ -102,12 +109,12 @@ def test_private_object_lifecycle_contract(storage: S3Storage, object_prefix: st
     storage.delete_object(source_key)
     storage.delete_object(derivative_key)
     storage.delete_object(other_tenant_key)
-    with pytest.raises(ClientError):
+    with pytest.raises(ObjectNotFoundError):
         storage.verify_image(source_key, "image/jpeg")
 
 
 def test_invalid_key_is_not_treated_as_an_uploaded_image(
-    storage: S3Storage, object_prefix: str
+    storage: S3ObjectStorageAdapter, object_prefix: str
 ) -> None:
-    with pytest.raises(ClientError):
+    with pytest.raises(ObjectNotFoundError):
         storage.verify_image(f"{object_prefix}/missing.jpg", "image/jpeg")

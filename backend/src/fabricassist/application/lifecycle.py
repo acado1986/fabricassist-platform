@@ -10,13 +10,18 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from time import perf_counter
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.application.planning import MockCarePlanningProvider
+from fabricassist.application.object_storage import (
+    ObjectNotFoundError,
+    ObjectStorage,
+    PermanentObjectStorageError,
+    RetryableObjectStorageError,
+)
+from fabricassist.application.planning import CarePlanningProvider
 from fabricassist.domain.care import validate_care_plan
 from fabricassist.domain.evidence import GarmentEvidenceDossier
 from fabricassist.infrastructure.persistence.models import (
@@ -38,7 +43,6 @@ from fabricassist.infrastructure.persistence.models import (
     Tenant,
     ValidationReport,
 )
-from fabricassist.infrastructure.storage.s3 import S3Storage
 
 
 def audit(
@@ -100,6 +104,7 @@ async def apply_human_correction(
     actor_id: UUID,
     dossier: GarmentEvidenceDossier,
     reason: str,
+    care_planning_provider: CarePlanningProvider,
 ) -> CareResult:
     """Create successor artifacts; never mutate the provider's original evidence."""
     # Import here: analysis creates review cases, while corrections reuse its renderer.
@@ -147,24 +152,26 @@ async def apply_human_correction(
         payload=dossier.model_dump(mode="json"),
     )
     session.add(evidence)
-    started = perf_counter()
-    proposal = await MockCarePlanningProvider().propose_plan(dossier)
+    planning_result = await care_planning_provider.propose_plan(dossier)
+    proposal = planning_result.proposal
     session.add(
         ModelRun(
             id=uuid4(),
             tenant_id=review.tenant_id,
             scan_id=scan.id,
             operation="human_correction_planning",
-            provider="mock",
-            model="deterministic-review-safe",
+            provider=planning_result.provider,
+            model=planning_result.model,
             prompt_version="care-planning-v1",
             schema_version="proposed-care-plan-v1",
             request_fingerprint=hashlib.sha256(
                 json.dumps(dossier.model_dump(mode="json"), sort_keys=True).encode()
             ).hexdigest(),
             status="completed",
-            latency_ms=round((perf_counter() - started) * 1000),
-            estimated_cost_usd=0,
+            latency_ms=planning_result.latency_ms,
+            input_tokens=planning_result.input_tokens,
+            output_tokens=planning_result.output_tokens,
+            estimated_cost_usd=0 if planning_result.provider == "mock" else None,
         )
     )
     report = validate_care_plan(dossier, proposal)
@@ -324,15 +331,30 @@ async def retention_candidates(session: AsyncSession) -> list[ScanImage]:
 
 
 async def process_object_deletions(
-    session: AsyncSession, storage: S3Storage, *, limit: int = 100
+    session: AsyncSession,
+    storage: ObjectStorage,
+    *,
+    limit: int = 100,
+    max_attempts: int = 5,
 ) -> int:
+    """Claim and execute a bounded batch of durable object-deletion intents."""
     jobs = list(
         (
             await session.scalars(
                 select(ObjectDeletionOutbox)
-                .where(ObjectDeletionOutbox.status.in_(("pending", "failed")))
+                .where(
+                    or_(
+                        ObjectDeletionOutbox.status == "pending",
+                        and_(
+                            ObjectDeletionOutbox.status == "failed",
+                            ObjectDeletionOutbox.last_error_code == "OBJECT_DELETE_FAILED",
+                            ObjectDeletionOutbox.attempts < max_attempts,
+                        ),
+                    )
+                )
                 .order_by(ObjectDeletionOutbox.created_at)
                 .limit(limit)
+                .with_for_update(skip_locked=True)
             )
         ).all()
     )
@@ -342,9 +364,15 @@ async def process_object_deletions(
         job.attempts += 1
         try:
             storage.delete_object(job.object_key)
-        except OSError:
+        except ObjectNotFoundError:
+            pass
+        except RetryableObjectStorageError:
             job.status = "failed"
             job.last_error_code = "OBJECT_DELETE_FAILED"
+            continue
+        except PermanentObjectStorageError:
+            job.status = "failed"
+            job.last_error_code = "OBJECT_DELETE_REJECTED"
             continue
         job.status = "completed"
         job.deleted_at = datetime.now(UTC)
@@ -358,16 +386,25 @@ async def process_object_deletions(
     for request_id in requests:
         request = await session.get(DeletionRequest, request_id)
         if request is not None:
-            outstanding = await session.scalar(
-                select(ObjectDeletionOutbox.id)
-                .where(
-                    ObjectDeletionOutbox.deletion_request_id == request.id,
-                    ObjectDeletionOutbox.status != "completed",
-                )
-                .limit(1)
+            request_jobs = list(
+                (
+                    await session.scalars(
+                        select(ObjectDeletionOutbox).where(
+                            ObjectDeletionOutbox.deletion_request_id == request.id
+                        )
+                    )
+                ).all()
             )
-            if outstanding is None:
+            if all(job.status == "completed" for job in request_jobs):
                 request.status = "completed"
                 request.completed_at = datetime.now(UTC)
+            elif any(
+                job.last_error_code == "OBJECT_DELETE_REJECTED"
+                or (job.last_error_code == "OBJECT_DELETE_FAILED" and job.attempts >= max_attempts)
+                for job in request_jobs
+            ):
+                request.status = "failed"
+            else:
+                request.status = "queued"
     await session.commit()
     return completed

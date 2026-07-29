@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,8 @@ from starlette.requests import Request
 from fabricassist.api.errors import unexpected_error_handler
 from fabricassist.api.main import create_app
 from fabricassist.api.routes.scans import CreateScanRequest, ImageRequest
+from fabricassist.application.jobs import JobDispatcher
+from fabricassist.application.policies import UploadPolicy
 from fabricassist.settings import Settings
 
 
@@ -186,8 +189,14 @@ class ImageLifecycleSession:
 
 
 class PresigningStorage:
-    def presign_put(self, *, key: str, content_type: str) -> tuple[str, dict[str, str], datetime]:
-        return "https://storage.invalid/upload", {"Content-Type": content_type}, datetime.now(UTC)
+    def presign_put(self, *, key: str, content_type: str):
+        from fabricassist.application.object_storage import PresignedUpload
+
+        return PresignedUpload(
+            "https://storage.invalid/upload",
+            {"Content-Type": content_type},
+            datetime.now(UTC),
+        )
 
 
 @pytest.mark.asyncio
@@ -240,7 +249,7 @@ async def test_duplicate_image_request_reuses_image_without_persisting_a_url() -
         session,  # type: ignore[arg-type]
         user,
         PresigningStorage(),  # type: ignore[arg-type]
-        Settings(environment="test"),
+        UploadPolicy(max_images_per_scan=8),
         "repeat",
     )
 
@@ -274,7 +283,7 @@ async def test_image_creation_uses_configured_limit_and_persists_one_photo() -> 
         session,  # type: ignore[arg-type]
         user,
         PresigningStorage(),  # type: ignore[arg-type]
-        Settings(environment="test", max_images_per_scan=1),
+        UploadPolicy(max_images_per_scan=1),
         None,
     )
 
@@ -292,13 +301,13 @@ async def test_image_creation_uses_configured_limit_and_persists_one_photo() -> 
             full_session,  # type: ignore[arg-type]
             user,
             PresigningStorage(),  # type: ignore[arg-type]
-            Settings(environment="test", max_images_per_scan=1),
+            UploadPolicy(max_images_per_scan=1),
             None,
         )
 
 
 @pytest.mark.asyncio
-async def test_image_removal_keeps_database_reference_when_object_deletion_fails() -> None:
+async def test_image_removal_commits_deletion_intent_before_object_io() -> None:
     from fabricassist.api.routes.scans import remove_image
     from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
 
@@ -327,19 +336,18 @@ async def test_image_removal_keeps_database_reference_when_object_deletion_fails
         upload_token=uuid4(),
         upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
     )
-    session = ImageLifecycleSession([scan, image])
+    session = ImageLifecycleSession([scan, image, None])
 
-    with pytest.raises(OSError, match="storage unavailable"):
-        await remove_image(
-            scan.id,
-            image.id,
-            session,  # type: ignore[arg-type]
-            user,
-            FailingStorage(),  # type: ignore[arg-type]
-        )
+    await remove_image(
+        scan.id,
+        image.id,
+        session,  # type: ignore[arg-type]
+        user,
+        FailingStorage(),  # type: ignore[arg-type]
+    )
 
-    assert session.added == []
-    assert not session.committed
+    assert image.deletion_requested_at is not None
+    assert session.committed
 
 
 @pytest.mark.asyncio
@@ -364,7 +372,17 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
     from starlette.requests import Request
 
     from fabricassist.api.routes.scans import request_analysis
+    from fabricassist.application.jobs import AnalysisJobMessage
     from fabricassist.infrastructure.persistence.models import Scan, User
+
+    class UnusedDispatcher:
+        async def dispatch_analysis(
+            self,
+            message: AnalysisJobMessage,
+            *,
+            correlation_id: str,
+        ) -> None:
+            del message, correlation_id
 
     tenant_id = uuid4()
     user = User(
@@ -385,7 +403,7 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
             Request({"type": "http"}),
             session,  # type: ignore[arg-type]
             user,
-            Settings(environment="test"),
+            cast(JobDispatcher, UnusedDispatcher()),
         )
 
     assert error.value.status_code == 409
@@ -393,15 +411,12 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repeated_qstash_analysis_request_reuses_durable_operation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_repeated_qstash_analysis_request_reuses_durable_operation() -> None:
     from starlette.requests import Request
 
     from fabricassist.api.routes.scans import request_analysis
     from fabricassist.application.jobs import AnalysisJobMessage
     from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan, User
-    from fabricassist.settings import JobDispatcherType
 
     class RecordingDispatcher:
         def __init__(self) -> None:
@@ -415,13 +430,6 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation(
 
     dispatcher = RecordingDispatcher()
 
-    def create_recording_dispatcher(_settings: Settings) -> RecordingDispatcher:
-        return dispatcher
-
-    monkeypatch.setattr(
-        "fabricassist.infrastructure.jobs.factory.create_job_dispatcher",
-        create_recording_dispatcher,
-    )
     tenant_id = uuid4()
     user = User(
         id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
@@ -436,21 +444,12 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation(
     session = ImageLifecycleSession([scan, 1, None])
     request = Request({"type": "http"})
     request.state.correlation_id = "test-correlation"
-    settings = Settings(
-        environment="test",
-        job_dispatcher=JobDispatcherType.QSTASH,
-        qstash_token="test-token",
-        qstash_current_signing_key="current",
-        qstash_next_signing_key="next",
-        qstash_destination_url="https://api.example.test/internal/jobs/qstash",
-    )
-
     first = await request_analysis(
         scan.id,
         request,
         session,  # type: ignore[arg-type]
         user,
-        settings,
+        cast(JobDispatcher, dispatcher),
         "repeat-analysis",
     )
     operation = next(value for value in session.added if isinstance(value, AnalysisJobOperation))
@@ -460,7 +459,7 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation(
         request,
         session,  # type: ignore[arg-type]
         user,
-        settings,
+        cast(JobDispatcher, dispatcher),
         "repeat-analysis",
     )
 
@@ -504,7 +503,7 @@ async def test_completed_image_can_be_removed_with_private_object_cleanup() -> N
         upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
         completed_at=datetime.now(UTC),
     )
-    session = ImageLifecycleSession([scan, image])
+    session = ImageLifecycleSession([scan, image, None])
     storage = DeletingStorage()
 
     response = await remove_image(
@@ -516,6 +515,7 @@ async def test_completed_image_can_be_removed_with_private_object_cleanup() -> N
     )
 
     assert response.status_code == 204
-    assert storage.keys == [image.object_key]
-    assert session.added == [image]
+    assert storage.keys == []
+    assert image.deletion_requested_at is not None
+    assert any(value.__class__.__name__ == "ObjectDeletionOutbox" for value in session.added)
     assert session.committed

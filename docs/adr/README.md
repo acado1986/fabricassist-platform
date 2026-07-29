@@ -9,3 +9,6 @@ through ADR-008 as summaries of the original architecture. ADR-009 supersedes
 ADR-005's model-authority decision; ADR-010 through ADR-012 record physical
 garment identity/history, sourced product enrichment, and server-owned
 contextual conversation.
+
+ADR-013 records hosted alpha API placement. ADR-014 records capability-level
+adapter selection and the PostgreSQL transactional job outbox.

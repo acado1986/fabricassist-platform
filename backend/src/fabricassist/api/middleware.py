@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse, Response
 
 from fabricassist.api.logging import correlation_id_context
-from fabricassist.infrastructure.limits import LimitBackendUnavailable, ValkeyRateLimiter
+from fabricassist.application.limits import LimitBackendUnavailable, RateLimiter
 from fabricassist.infrastructure.telemetry import (
     HTTP_DURATION,
     HTTP_REQUESTS,
@@ -102,11 +102,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self,
         app: object,
         settings: Settings,
-        limiter: ValkeyRateLimiter | None = None,
+        limiter: RateLimiter,
     ) -> None:
         super().__init__(app)  # type: ignore[arg-type]
         self._settings = settings
-        self._limiter = limiter or ValkeyRateLimiter(settings.valkey_url)
+        self._limiter = limiter
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if (
@@ -123,7 +123,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         try:
             for policy, limit in policies:
                 bucket = "global" if policy == "global" else f"{policy}:{subject}"
-                if not await self._limiter.allowed(bucket, limit):
+                if not await self._limiter.allowed(bucket, limit, window_seconds=60):
                     RATE_LIMITED.labels(policy=policy).inc()
                     return self._error(request, 429, "RATE_LIMITED", "Request limit exceeded.")
         except LimitBackendUnavailable:

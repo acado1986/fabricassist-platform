@@ -7,7 +7,9 @@ model subprocessor, persist typed evidence/proposals/validation/model-run
 metadata, and expose validated results. Product and conversation providers are
 separate subprocessors/data sources.
 
-Valkey contains transient broker, hot-cache, rate-limit, and concurrency state.
+Valkey may contain transient hot-cache, rate-limit, and concurrency state.
+Celery broker data uses the independently configured broker URL and may use the
+same Valkey service or a separate Redis-compatible/RabbitMQ broker.
 It is never the sole business record. OTLP/log/metric exports exclude image
 bytes, label/chat text, credentials, full URLs, and high-cardinality personal
 identifiers. Deletion intent persists before object removal.

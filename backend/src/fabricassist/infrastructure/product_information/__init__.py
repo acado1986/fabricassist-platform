@@ -1,0 +1,1 @@
+"""Concrete product-information adapters."""

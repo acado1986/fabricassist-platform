@@ -7,29 +7,29 @@ from uuid import uuid4
 import pytest
 from google.genai import types
 
-from fabricassist.application.model_provider import (
+from fabricassist.application.provider_prompts import (
     DEFAULT_EVIDENCE_SYSTEM_PROMPT,
-    ModelProviderPrompts,
+    ProviderPrompts,
 )
 from fabricassist.application.vision import NormalizedImage, VisionProviderError
 from fabricassist.domain.conversations import ConversationContext
-from fabricassist.domain.evidence import ImageRole
+from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
 from fabricassist.infrastructure.vision.providers import (
     GeminiAdapterConfig,
     GeminiProviderAdapter,
-    build_model_provider,
+    create_evidence_provider,
 )
 from fabricassist.infrastructure.vision.providers.gemini import GEMINI_PROVIDER_PROMPTS
-from fabricassist.settings import Settings
+from fabricassist.settings import ModelCapabilityProvider, Settings
 
 
-def _config(*, prompts: ModelProviderPrompts | None = None) -> GeminiAdapterConfig:
+def _config(*, prompts: ProviderPrompts | None = None) -> GeminiAdapterConfig:
     return GeminiAdapterConfig(
         api_key="synthetic-test-key",
         model="gemini-2.5-flash",
         timeout_seconds=120,
         max_output_tokens=16_000,
-        prompts=prompts or ModelProviderPrompts(),
+        prompts=prompts or ProviderPrompts(),
     )
 
 
@@ -203,15 +203,45 @@ async def test_gemini_conversation_returns_typed_proposal() -> None:
     assert result.output_tokens == 10
 
 
+@pytest.mark.asyncio
+async def test_gemini_planning_returns_typed_proposal() -> None:
+    async def generate(
+        model: str, contents: object, config: types.GenerateContentConfig
+    ) -> types.GenerateContentResponse:
+        _ = (model, contents, config)
+        return _response(
+            {
+                "classification": "provisional",
+                "cleaning": {
+                    "method": "unknown",
+                    "maximum_temperature_c": None,
+                },
+                "uncertainties": ["care_label_facts_unknown"],
+                "follow_up_questions": ["Please add a clear care-label photo."],
+            },
+            input_tokens=22,
+            output_tokens=11,
+        )
+
+    provider = GeminiProviderAdapter(_config(), generate_content=generate)
+    result = await provider.propose_plan(GarmentEvidenceDossier())
+
+    assert result.provider == "gemini"
+    assert result.model == "gemini-2.5-flash"
+    assert result.proposal.cleaning.method == "unknown"
+    assert result.input_tokens == 22
+    assert result.output_tokens == 11
+
+
 def test_factory_selects_one_complete_credential_owning_adapter() -> None:
     settings = Settings(
         environment="test",
-        vision_provider="gemini",
+        evidence_provider=ModelCapabilityProvider.GEMINI,
         gemini_api_key="synthetic-test-key",
         gemini_model="gemini-2.5-flash",
     )
 
-    adapter = build_model_provider(settings)
+    adapter = create_evidence_provider(settings)
 
     assert isinstance(adapter, GeminiProviderAdapter)
     assert callable(adapter.extract_evidence)
@@ -220,7 +250,7 @@ def test_factory_selects_one_complete_credential_owning_adapter() -> None:
 
 
 def test_provider_prompts_have_safe_defaults_and_gemini_specialization() -> None:
-    assert ModelProviderPrompts().evidence_system == DEFAULT_EVIDENCE_SYSTEM_PROMPT
+    assert ProviderPrompts().evidence_system == DEFAULT_EVIDENCE_SYSTEM_PROMPT
     assert GEMINI_PROVIDER_PROMPTS.evidence_system.startswith(DEFAULT_EVIDENCE_SYSTEM_PROMPT)
     assert "Analyze the complete image set" in GEMINI_PROVIDER_PROMPTS.evidence_system
     assert "Gemini" not in GEMINI_PROVIDER_PROMPTS.evidence_system

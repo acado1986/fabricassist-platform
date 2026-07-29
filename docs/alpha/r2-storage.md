@@ -1,6 +1,6 @@
 # Cloudflare R2 storage profile
 
-Phase 4 uses the existing `S3Storage` boto3-compatible adapter. Cloudflare R2
+Phase 4 uses the existing `S3ObjectStorageAdapter` boto3-compatible adapter. Cloudflare R2
 is selected entirely through FabricAssist S3 settings; there is no R2-specific
 domain port or storage adapter. MinIO remains path-style for local Compose and
 AWS S3 remains supported through the same configuration.

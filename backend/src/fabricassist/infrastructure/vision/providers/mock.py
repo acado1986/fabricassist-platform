@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from uuid import NAMESPACE_URL, uuid5
 
-from fabricassist.application.model_provider import ConversationProviderResult
+from fabricassist.application.conversation_provider import ConversationProviderResult
+from fabricassist.application.planning import (
+    CarePlanningProviderResult,
+    MockCarePlanningProvider,
+)
+from fabricassist.application.provider import ProviderDescriptor
 from fabricassist.application.vision import (
     BarcodeCandidate,
     EvidenceProviderResult,
@@ -14,7 +19,7 @@ from fabricassist.domain.conversations import AssistantMessageProposal, Conversa
 from fabricassist.domain.evidence import EvidenceSource, GarmentEvidenceDelta, Observation
 
 
-class MockModelProviderAdapter:
+class MockModelCapabilityAdapter:
     """Review-safe adapter implementing the same port as every live provider."""
 
     async def extract_evidence(
@@ -62,3 +67,19 @@ class MockModelProviderAdapter:
             input_tokens=None,
             output_tokens=None,
         )
+
+    async def propose_plan(
+        self,
+        dossier: object,
+        violations: tuple[str, ...] = (),
+    ) -> CarePlanningProviderResult:
+        from fabricassist.domain.evidence import GarmentEvidenceDossier
+
+        return await MockCarePlanningProvider().propose_plan(
+            GarmentEvidenceDossier.model_validate(dossier),
+            violations,
+        )
+
+    @property
+    def descriptor(self) -> ProviderDescriptor:
+        return ProviderDescriptor(provider="mock", model="deterministic-review-safe")

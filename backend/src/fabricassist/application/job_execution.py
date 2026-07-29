@@ -1,46 +1,54 @@
-"""Signed QStash delivery verification and durable checkpoint execution."""
+"""Transport-neutral durable analysis checkpoint execution."""
 # pyright: reportUnknownMemberType=false
 
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import cast
 from uuid import uuid4
 
-import jwt
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.analysis import analyse_scan
+from fabricassist.application.cache import HotCache
 from fabricassist.application.jobs import (
     ANALYSIS_STAGES,
     AnalysisJobMessage,
     AnalysisStage,
+    ConversationJobMessage,
     JobDispatcher,
+    PermanentJobDispatchError,
+    RetryableJobDispatchError,
 )
+from fabricassist.application.limits import (
+    ConcurrencyGate,
+    ConcurrencyLimitExceeded,
+    LimitBackendUnavailable,
+)
+from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.application.planning import CarePlanningProvider
+from fabricassist.application.policies import AnalysisExecutionPolicy, JobExecutionPolicy
+from fabricassist.application.product_information import ProductInformationProvider
+from fabricassist.application.vision import VisionEvidenceProvider
 from fabricassist.infrastructure.database import Database
-from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan, ScanImage
-from fabricassist.infrastructure.storage.s3 import S3Storage
-from fabricassist.infrastructure.vision.providers import build_model_provider
-from fabricassist.settings import Settings
+from fabricassist.infrastructure.persistence.models import (
+    AnalysisJobOperation,
+    ConversationMessage,
+    Scan,
+    ScanImage,
+)
 
 
-class DeliveryVerificationError(Exception):
-    """A request which must not be allowed to enter the job executor."""
-
-
-class PermanentDeliveryError(Exception):
-    """A signed but malformed message which QStash must not retry."""
+class PermanentJobMessageError(Exception):
+    """An invalid or unknown message that a transport must not retry."""
 
 
 class TemporaryJobError(Exception):
-    """A dependency failure which should be retried by QStash."""
+    """A dependency failure which the selected transport should retry."""
 
 
 class StageResult(str, Enum):
@@ -70,57 +78,25 @@ def _message(operation: AnalysisJobOperation) -> AnalysisJobMessage:
     )
 
 
-def verify_qstash_signature(*, raw_body: bytes, signature: str | None, settings: Settings) -> None:
-    """Verify a QStash JWT against raw bytes and the configured destination.
-
-    QStash signs a SHA-256 body digest in ``body`` and the exact destination in
-    ``sub``.  Trying current then next supports rotation without accepting an
-    unsigned payload.  Claim failures are intentionally indistinguishable to
-    callers.
-    """
-    if not signature:
-        raise DeliveryVerificationError("missing signature")
-    digest = base64.urlsafe_b64encode(hashlib.sha256(raw_body).digest()).decode().rstrip("=")
-    for key in (settings.qstash_current_signing_key, settings.qstash_next_signing_key):
-        if not key:
-            continue
-        try:
-            claims = jwt.decode(
-                signature,
-                key,
-                algorithms=["HS256"],
-                issuer="Upstash",
-                options={"require": ["iss", "sub", "exp", "nbf", "body"]},
-            )
-        except jwt.PyJWTError:
-            continue
-        body_claim = str(claims.get("body", "")).rstrip("=")
-        if claims.get("sub") != settings.qstash_destination_url or body_claim != digest:
-            continue
-        return
-    raise DeliveryVerificationError("invalid signature")
-
-
-def parse_delivery(raw_body: bytes) -> AnalysisJobMessage:
-    try:
-        return AnalysisJobMessage.model_validate_json(raw_body)
-    except ValidationError as error:
-        raise PermanentDeliveryError("permanently invalid job message") from error
-
-
 async def execute_checkpoint(
     *,
     session: AsyncSession,
     message: AnalysisJobMessage,
-    settings: Settings,
+    execution_policy: JobExecutionPolicy,
+    analysis_policy: AnalysisExecutionPolicy | None = None,
     database: Database | None = None,
-    storage: S3Storage | None = None,
+    storage: ObjectStorage | None = None,
+    evidence_provider: VisionEvidenceProvider | None = None,
+    care_planning_provider: CarePlanningProvider | None = None,
+    product_information_provider: ProductInformationProvider | None = None,
+    hot_cache: HotCache | None = None,
+    concurrency_gate: ConcurrencyGate | None = None,
 ) -> CheckpointResult:
     """Claim one durable stage and return its unpublished continuation.
 
-    Celery and QStash both invoke ``analyse_scan``.  QStash adds a short upload
-    validation checkpoint before invoking that shared application use case, so
-    transport selection never forks the care-analysis business rules.
+    Celery and QStash both traverse the same upload-validation checkpoint before
+    invoking the shared analysis use case, so transport selection never forks
+    care-analysis business rules.
     """
     operation = await session.scalar(
         select(AnalysisJobOperation)
@@ -133,7 +109,7 @@ async def execute_checkpoint(
         .with_for_update()
     )
     if operation is None:
-        raise PermanentDeliveryError("unknown job operation")
+        raise PermanentJobMessageError("unknown job operation")
     if operation.status == "completed":
         next_stage = _next_stage(message.stage)
         if next_stage is None:
@@ -158,13 +134,13 @@ async def execute_checkpoint(
         await session.commit()
         return CheckpointResult(StageResult.NOOP)
     if operation.stage != message.stage:
-        raise PermanentDeliveryError("message stage does not match operation")
+        raise PermanentJobMessageError("message stage does not match operation")
     now = datetime.now(UTC)
     if operation.lease_expires_at is not None and operation.lease_expires_at > now:
         # A concurrent delivery has already claimed the row.  A 503 lets QStash
         # retry after the short DB lease, rather than double-processing.
         raise TemporaryJobError("job operation is leased")
-    operation.lease_expires_at = now + timedelta(seconds=settings.job_stage_budget_seconds)
+    operation.lease_expires_at = now + timedelta(seconds=execution_policy.stage_budget_seconds)
     if message.stage == "validate_uploaded_images":
         image_count = await session.scalar(
             select(ScanImage.id)
@@ -182,13 +158,14 @@ async def execute_checkpoint(
             return CheckpointResult(StageResult.NEEDS_BETTER_IMAGE)
         next_stage = _next_stage(message.stage)
         if next_stage is None:  # pragma: no cover - guarded by the stage contract
-            raise PermanentDeliveryError("analysis stage has no continuation")
+            raise PermanentJobMessageError("analysis stage has no continuation")
         continuation = AnalysisJobOperation(
             id=uuid4(),
             scan_id=scan.id,
             revision_id=message.revision_id,
             operation_key=message.operation_key,
             stage=next_stage,
+            correlation_id=operation.correlation_id,
         )
         session.add(continuation)
         scan.analysis_stage = next_stage
@@ -200,23 +177,41 @@ async def execute_checkpoint(
         await session.commit()
         return CheckpointResult(StageResult.COMPLETE, _message(continuation))
 
-    if database is None or storage is None:
+    if (
+        database is None
+        or storage is None
+        or evidence_provider is None
+        or care_planning_provider is None
+        or product_information_provider is None
+        or hot_cache is None
+        or concurrency_gate is None
+        or analysis_policy is None
+    ):
         raise TemporaryJobError("analysis runtime dependencies are unavailable")
     operation.status = "processing"
     scan.analysis_stage = message.stage
     scan.status = "processing"
     await session.commit()
     try:
-        async with asyncio.timeout(max(1, settings.job_stage_budget_seconds - 5)):
-            await analyse_scan(
-                database=database,
-                storage=storage,
-                settings=settings,
-                scan_id=message.scan_id,
-                model_provider=build_model_provider(settings),
-            )
+        async with asyncio.timeout(max(1, execution_policy.stage_budget_seconds - 5)):
+            async with concurrency_gate.slot(
+                tenant_id=str(scan.tenant_id),
+                operation="analysis",
+            ):
+                await analyse_scan(
+                    database=database,
+                    storage=storage,
+                    scan_id=message.scan_id,
+                    evidence_provider=evidence_provider,
+                    care_planning_provider=care_planning_provider,
+                    product_information_provider=product_information_provider,
+                    hot_cache=hot_cache,
+                    policy=analysis_policy,
+                )
     except TimeoutError as error:
         raise TemporaryJobError("analysis stage exceeded its execution budget") from error
+    except (ConcurrencyLimitExceeded, LimitBackendUnavailable) as error:
+        raise TemporaryJobError("analysis concurrency is temporarily unavailable") from error
     operation.status = "completed"
     operation.completed_at = datetime.now(UTC)
     operation.lease_expires_at = None
@@ -225,7 +220,11 @@ async def execute_checkpoint(
 
 
 async def reconcile_unpublished_operations(
-    *, session: AsyncSession, dispatcher: JobDispatcher, correlation_id: str
+    *,
+    session: AsyncSession,
+    dispatcher: JobDispatcher,
+    correlation_id: str,
+    limit: int = 100,
 ) -> int:
     """Publish durable, unacknowledged operations after a post-commit failure.
 
@@ -240,6 +239,8 @@ async def reconcile_unpublished_operations(
                     AnalysisJobOperation.status == "queued",
                     AnalysisJobOperation.published_at.is_(None),
                 )
+                .order_by(AnalysisJobOperation.created_at, AnalysisJobOperation.id)
+                .limit(limit)
                 .with_for_update(skip_locked=True)
             )
         ).all()
@@ -252,8 +253,63 @@ async def reconcile_unpublished_operations(
             revision_id=operation.revision_id,
             stage=cast(AnalysisStage, operation.stage),
         )
-        await dispatcher.dispatch_analysis(message, correlation_id=correlation_id)
+        try:
+            await dispatcher.dispatch_analysis(
+                message,
+                correlation_id=operation.correlation_id or correlation_id,
+            )
+        except RetryableJobDispatchError:
+            continue
+        except PermanentJobDispatchError:
+            operation.status = "failed"
+            scan = await session.get(Scan, operation.scan_id)
+            if scan is not None and scan.status not in {"completed", "deleted"}:
+                scan.status = "failed"
+                scan.analysis_stage = "failed"
+                scan.analysis_error_code = "JOB_DISPATCH_PERMANENT"
+            continue
         operation.published_at = datetime.now(UTC)
+        published += 1
+    await session.commit()
+    return published
+
+
+async def reconcile_unpublished_conversations(
+    *,
+    session: AsyncSession,
+    dispatcher: JobDispatcher,
+    limit: int = 100,
+) -> int:
+    """Republish committed conversation intents without duplicating messages."""
+    messages = list(
+        (
+            await session.scalars(
+                select(ConversationMessage)
+                .where(
+                    ConversationMessage.role == "user",
+                    ConversationMessage.status == "queued",
+                    ConversationMessage.dispatch_published_at.is_(None),
+                )
+                .order_by(ConversationMessage.created_at, ConversationMessage.id)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+    )
+    published = 0
+    for message in messages:
+        try:
+            await dispatcher.dispatch_conversation(
+                ConversationJobMessage(conversation_message_id=message.id),
+                correlation_id=message.dispatch_correlation_id,
+            )
+        except RetryableJobDispatchError:
+            continue
+        except PermanentJobDispatchError:
+            message.status = "failed"
+            message.error_code = "JOB_DISPATCH_PERMANENT"
+            continue
+        message.dispatch_published_at = datetime.now(UTC)
         published += 1
     await session.commit()
     return published

@@ -107,6 +107,20 @@ check: bootstrap lint test ## Run the complete default Phase 5 local quality gat
 check-alpha-config: ## Validate typed alpha settings and safe alpha example configuration.
 	cd backend && uv run pytest tests/unit/test_settings.py -k alpha
 	@! grep -Eq '^EXPO_PUBLIC_.*(TOKEN|KEY|SECRET|DATABASE|S3|QSTASH)' .env.alpha.example
+	@for expected in \
+		FABRICASSIST_JOB_DISPATCHER \
+		FABRICASSIST_EVIDENCE_PROVIDER \
+		FABRICASSIST_CARE_PLANNER_PROVIDER \
+		FABRICASSIST_CHAT_PROVIDER \
+		FABRICASSIST_OBJECT_STORAGE_BACKEND \
+		FABRICASSIST_PRODUCT_INFORMATION_PROVIDER \
+		FABRICASSIST_PUBLICATION_RECOVERY_INTERVAL_SECONDS \
+		FABRICASSIST_PUBLICATION_RECOVERY_BATCH_SIZE \
+		FABRICASSIST_DELETION_MAX_ATTEMPTS; do \
+		grep -Eq "^$${expected}=" .env.alpha.example || { \
+			echo "missing alpha capability setting $${expected}" >&2; exit 1; \
+		}; \
+	done
 
 check-render-config: ## Validate the Render alpha API workflow and container contract.
 	@./infrastructure/scripts/validate-render-api-workflow.sh

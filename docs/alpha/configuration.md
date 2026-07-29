@@ -19,9 +19,23 @@ current signing key, next signing key, and an HTTPS destination URL. Alpha also
 requires explicit HTTPS CORS origins, a non-local PostgreSQL URL, an HTTPS
 non-MinIO S3 endpoint, and at most three images per scan.
 
-`FABRICASSIST_VALKEY_URL` is not required by alpha settings when QStash is
-selected. The current API composition still uses Valkey for rate limiting; no
-runtime composition change is made in this phase.
+Alpha explicitly selects its bounded optional adapters:
+
+```text
+FABRICASSIST_HOT_CACHE_BACKEND=noop
+FABRICASSIST_RATE_LIMITER_BACKEND=noop
+FABRICASSIST_CONCURRENCY_GATE_BACKEND=noop
+FABRICASSIST_EVIDENCE_PROVIDER=mock
+FABRICASSIST_CARE_PLANNER_PROVIDER=mock
+FABRICASSIST_CHAT_PROVIDER=mock
+FABRICASSIST_OBJECT_STORAGE_BACKEND=s3
+FABRICASSIST_PRODUCT_INFORMATION_PROVIDER=mock
+```
+
+`FABRICASSIST_VALKEY_URL` is not required when every Valkey-backed capability is
+disabled. `FABRICASSIST_CELERY_BROKER_URL` is unused when QStash is selected.
+These no-op choices are for the documented hosted-alpha quotas; production
+startup rejects no-op rate limiting and concurrency.
 
 `FABRICASSIST_DATABASE_MIGRATION_URL` is required in alpha and is selected by
 Alembic for direct administrative migration connections; see
@@ -32,11 +46,24 @@ container and obtains these values from Render environment settings; see
 and `FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` are typed for the relevant
 deployment profiles without changing local defaults.
 
+The API process runs the PostgreSQL-authoritative recovery loop used by both
+QStash and Celery deployments:
+
+```text
+FABRICASSIST_PUBLICATION_RECOVERY_INTERVAL_SECONDS=30
+FABRICASSIST_PUBLICATION_RECOVERY_BATCH_SIZE=100
+FABRICASSIST_DELETION_MAX_ATTEMPTS=5
+```
+
+It republishes committed analysis/conversation intents and retries transient
+object deletions without requiring a paid scheduler or a repeated customer
+request.
+
 ## Local and production compatibility
 
 Existing defaults remain `environment=development`,
-`deployment_profile=local`, and `job_dispatcher=celery`. Production validation
-is unchanged. Existing `make check` remains the local quality gate.
+`deployment_profile=local`, `job_dispatcher=celery`, and Valkey capability
+adapters. Existing `make check` remains the local quality gate.
 
 Run alpha configuration checks without contacting a provider:
 

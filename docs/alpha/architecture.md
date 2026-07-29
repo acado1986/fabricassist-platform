@@ -16,7 +16,7 @@ Cloudflare Pages (Expo static app)
 | --- | --- | --- |
 | Dispatcher | `qstash`; signed `/internal/jobs/qstash` delivery | Celery dispatcher and worker stay supported |
 | Database | Neon pooled runtime URL; direct Alembic URL | Existing SQLAlchemy/PostgreSQL path |
-| Object storage | R2 through existing `S3Storage` | MinIO path-style and AWS S3 remain supported |
+| Object storage | R2 through existing `S3ObjectStorageAdapter` | MinIO path-style and AWS S3 remain supported |
 | Web | Expo static export on Pages | Existing shared Expo app |
 | AI smoke | deterministic `mock` provider | Live providers remain opt-in |
 

@@ -7,7 +7,8 @@ import httpx
 import pytest
 
 from fabricassist.application.vision import NormalizedImage, VisionProviderError
-from fabricassist.domain.evidence import ImageRole
+from fabricassist.domain.conversations import ConversationContext
+from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
 from fabricassist.infrastructure.vision.providers import (
     OpenAIResponsesAdapterConfig,
     OpenAIResponsesProviderAdapter,
@@ -120,3 +121,65 @@ async def test_responses_provider_categorizes_provider_rejection() -> None:
         await provider.extract_evidence(())
 
     assert error.value.code == "PROVIDER_REJECTED"
+
+
+@pytest.mark.asyncio
+async def test_responses_provider_satisfies_planning_and_conversation_contracts() -> None:
+    requested_schemas: list[str] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        schema_name = payload["text"]["format"]["name"]
+        requested_schemas.append(schema_name)
+        if schema_name == "proposed_care_plan":
+            output = {
+                "classification": "provisional",
+                "cleaning": {
+                    "method": "unknown",
+                    "maximum_temperature_c": None,
+                },
+                "uncertainties": ["care_label_facts_unknown"],
+                "follow_up_questions": ["Please add a clear care-label photo."],
+            }
+        else:
+            output = {
+                "text": "Please add a clear care-label photo.",
+                "actionable_claims": [],
+                "evidence_ids": [],
+                "uncertainties": ["care_label_missing"],
+                "follow_up_questions": ["Can you add the care label?"],
+            }
+        return httpx.Response(
+            200,
+            json={
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": json.dumps(output)}],
+                    }
+                ],
+                "usage": {"input_tokens": 20, "output_tokens": 10},
+            },
+        )
+
+    provider = OpenAIResponsesProviderAdapter(_config(), transport=httpx.MockTransport(responder))
+    planning = await provider.propose_plan(GarmentEvidenceDossier())
+    conversation = await provider.answer(
+        ConversationContext(
+            garment_id=uuid4(),
+            analysis_revision_id=uuid4(),
+            dossier={},
+            validated_plan={},
+            validation={},
+        ),
+        "Can I wash this?",
+    )
+
+    assert planning.provider == "openai_responses"
+    assert planning.proposal.cleaning.method == "unknown"
+    assert conversation.provider == "openai_responses"
+    assert conversation.proposal.actionable_claims == []
+    assert requested_schemas == [
+        "proposed_care_plan",
+        "assistant_message_proposal",
+    ]

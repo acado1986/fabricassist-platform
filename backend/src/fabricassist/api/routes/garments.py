@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import enqueue_deletion
+from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.domain.identity import IdentityClassification
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
@@ -26,7 +27,6 @@ from fabricassist.infrastructure.persistence.models import (
     ScanImage,
     User,
 )
-from fabricassist.infrastructure.storage.s3 import S3Storage
 
 router = APIRouter(prefix="/api/v1/garments", tags=["garments"])
 
@@ -85,7 +85,7 @@ async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
 
 
-async def get_storage() -> S3Storage:
+async def get_storage() -> ObjectStorage:
     raise RuntimeError("Storage dependency was not configured.")
 
 
@@ -282,7 +282,7 @@ async def identity_candidates(
     scan_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[S3Storage, Depends(get_storage)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> list[IdentityCandidateResponse]:
     run_ids = select(GarmentIdentityMatchRun.id).where(
         GarmentIdentityMatchRun.tenant_id == user.tenant_id,
@@ -312,7 +312,7 @@ async def identity_candidates(
             .order_by(ScanImage.created_at.desc())
             .limit(1)
         )
-        thumbnail_url = storage.presign_get(key=image.object_key)[0] if image else None
+        thumbnail_url = storage.presign_get(key=image.object_key).url if image else None
         responses.append(
             IdentityCandidateResponse(
                 id=candidate.id,

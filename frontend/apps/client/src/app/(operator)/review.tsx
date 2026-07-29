@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -9,60 +9,57 @@ import {
   View,
 } from 'react-native';
 import { spacing } from '@fabricassist/design-tokens';
+import {
+  approveReviewApiV1ReviewsReviewIdApprovePost,
+  assignReviewApiV1ReviewsReviewIdAssignPost,
+  confirmServiceEventApiV1ReviewsReviewIdServiceEventsPost,
+  correctReviewApiV1ReviewsReviewIdCorrectionsPost,
+  listReviewsApiV1ReviewsGet,
+  reviewDetailApiV1ReviewsReviewIdGet,
+  type GarmentEvidenceDossier,
+  type ReviewDetail,
+  type ReviewResponse,
+} from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
-import { getApiBaseUrl } from '../../config/environment';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
-type Review = { id: string; status: string };
-type ReviewDetail = Review & {
-  dossier: Record<string, unknown>;
-  proposal: Record<string, unknown>;
-  validation: Record<string, unknown>;
-};
-
 export default function ReviewQueue(): ReactNode {
-  const { token } = useSession();
+  const { apiClient, token } = useSession();
   const { translate } = useTranslation();
-  const [items, setItems] = useState<Review[]>([]);
+  const [items, setItems] = useState<ReviewResponse[]>([]);
   const [selected, setSelected] = useState<ReviewDetail>();
   const [reason, setReason] = useState('');
   const [dossier, setDossier] = useState('');
   const [failed, setFailed] = useState(false);
-  const headers = useMemo(
-    () => ({
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    }),
-    [token],
-  );
   const load = useCallback(async (): Promise<void> => {
     if (!token) return;
-    const response = await fetch(`${getApiBaseUrl()}/api/v1/reviews`, {
-      headers,
+    const response = await listReviewsApiV1ReviewsGet({
+      client: apiClient,
     });
-    if (!response.ok) {
+    if (!response.data) {
       setFailed(true);
       return;
     }
-    setItems((await response.json()) as Review[]);
-  }, [headers, token]);
+    setItems(response.data);
+  }, [apiClient, token]);
   useEffect(() => {
     void load();
   }, [load]);
   const selectCase = async (id: string): Promise<void> => {
-    const claim = await fetch(
-      `${getApiBaseUrl()}/api/v1/reviews/${id}/assign`,
-      { method: 'POST', headers },
-    );
-    const detail = await fetch(`${getApiBaseUrl()}/api/v1/reviews/${id}`, {
-      headers,
+    const claim = await assignReviewApiV1ReviewsReviewIdAssignPost({
+      client: apiClient,
+      path: { review_id: id },
     });
-    if (!claim.ok || !detail.ok) {
+    const detail = await reviewDetailApiV1ReviewsReviewIdGet({
+      client: apiClient,
+      path: { review_id: id },
+    });
+    if (!claim.data || !detail.data) {
       setFailed(true);
       return;
     }
-    const value = (await detail.json()) as ReviewDetail;
+    const value = detail.data;
     setSelected(value);
     setDossier(JSON.stringify(value.dossier, null, 2));
     setReason('');
@@ -70,16 +67,13 @@ export default function ReviewQueue(): ReactNode {
   const correct = async (): Promise<void> => {
     if (!selected) return;
     try {
-      const corrected = JSON.parse(dossier) as Record<string, unknown>;
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/v1/reviews/${selected.id}/corrections`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ dossier: corrected, reason }),
-        },
-      );
-      if (!response.ok) throw new Error();
+      const corrected = JSON.parse(dossier) as GarmentEvidenceDossier;
+      const response = await correctReviewApiV1ReviewsReviewIdCorrectionsPost({
+        client: apiClient,
+        path: { review_id: selected.id },
+        body: { dossier: corrected, reason },
+      });
+      if (!response.data) throw new Error();
       await load();
     } catch {
       setFailed(true);
@@ -87,11 +81,12 @@ export default function ReviewQueue(): ReactNode {
   };
   const approve = async (): Promise<void> => {
     if (!selected) return;
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/v1/reviews/${selected.id}/approve`,
-      { method: 'POST', headers, body: '{}' },
-    );
-    if (!response.ok) {
+    const response = await approveReviewApiV1ReviewsReviewIdApprovePost({
+      client: apiClient,
+      path: { review_id: selected.id },
+      body: {},
+    });
+    if (!response.data) {
       setFailed(true);
       return;
     }
@@ -99,11 +94,13 @@ export default function ReviewQueue(): ReactNode {
   };
   const confirmCompleted = async (): Promise<void> => {
     if (!selected) return;
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/v1/reviews/${selected.id}/service-events`,
-      { method: 'POST', headers, body: JSON.stringify({ kind: 'completed' }) },
-    );
-    if (!response.ok) setFailed(true);
+    const response =
+      await confirmServiceEventApiV1ReviewsReviewIdServiceEventsPost({
+        client: apiClient,
+        path: { review_id: selected.id },
+        body: { kind: 'completed' },
+      });
+    if (!response.data) setFailed(true);
   };
   return (
     <FoundationShell

@@ -11,11 +11,13 @@ import httpx
 from google import genai
 from google.genai import errors, types
 
-from fabricassist.application.model_provider import (
+from fabricassist.application.conversation_provider import ConversationProviderResult
+from fabricassist.application.planning import CarePlanningProviderResult
+from fabricassist.application.provider import ProviderDescriptor
+from fabricassist.application.provider_prompts import (
     DEFAULT_CONVERSATION_SYSTEM_PROMPT,
     DEFAULT_EVIDENCE_SYSTEM_PROMPT,
-    ConversationProviderResult,
-    ModelProviderPrompts,
+    ProviderPrompts,
 )
 from fabricassist.application.vision import (
     BarcodeCandidate,
@@ -23,8 +25,9 @@ from fabricassist.application.vision import (
     NormalizedImage,
     VisionProviderError,
 )
+from fabricassist.domain.care import ProposedCarePlan
 from fabricassist.domain.conversations import AssistantMessageProposal, ConversationContext
-from fabricassist.domain.evidence import GarmentEvidenceDelta
+from fabricassist.domain.evidence import GarmentEvidenceDelta, GarmentEvidenceDossier
 from fabricassist.infrastructure.vision.providers.common import validate_sources
 
 GeminiGenerateContent = Callable[
@@ -32,7 +35,7 @@ GeminiGenerateContent = Callable[
     Awaitable[types.GenerateContentResponse],
 ]
 
-GEMINI_PROVIDER_PROMPTS = ModelProviderPrompts(
+GEMINI_PROVIDER_PROMPTS = ProviderPrompts(
     evidence_system=(
         DEFAULT_EVIDENCE_SYSTEM_PROMPT
         + "\nAnalyze the complete image set before producing the response. Emit each "
@@ -56,7 +59,7 @@ class GeminiAdapterConfig:
     model: str
     timeout_seconds: int
     max_output_tokens: int
-    prompts: ModelProviderPrompts = field(default_factory=ModelProviderPrompts)
+    prompts: ProviderPrompts = field(default_factory=ProviderPrompts)
 
 
 class _GeminiAdapter:
@@ -111,6 +114,10 @@ class _GeminiAdapter:
             raise VisionProviderError(
                 "PROVIDER_NETWORK_ERROR", "Gemini provider request failed"
             ) from error
+
+    @property
+    def descriptor(self) -> ProviderDescriptor:
+        return ProviderDescriptor(provider="gemini", model=self._model)
 
 
 class _GeminiVisionCapability(_GeminiAdapter):
@@ -213,5 +220,49 @@ class _GeminiConversationCapability(_GeminiAdapter):
         )
 
 
-class GeminiProviderAdapter(_GeminiVisionCapability, _GeminiConversationCapability):
-    """Google SDK adapter implementing the complete model-provider interface."""
+class _GeminiPlanningCapability(_GeminiAdapter):
+    async def propose_plan(
+        self,
+        dossier: GarmentEvidenceDossier,
+        violations: tuple[str, ...] = (),
+    ) -> CarePlanningProviderResult:
+        started = perf_counter()
+        response = await self._generate(
+            (
+                f"DOSSIER:\n{json.dumps(dossier.model_dump(mode='json'), sort_keys=True)}\n\n"
+                f"VALIDATION VIOLATIONS:\n{json.dumps(violations)}"
+            ),
+            types.GenerateContentConfig(
+                system_instruction=self._prompts.planning_system,
+                response_mime_type="application/json",
+                response_json_schema=ProposedCarePlan.model_json_schema(),
+                max_output_tokens=self._max_output_tokens,
+                temperature=0,
+            ),
+        )
+        try:
+            if response.text is None:
+                raise ValueError("Gemini response has no text")
+            proposal = ProposedCarePlan.model_validate_json(response.text)
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            raise VisionProviderError(
+                "PROVIDER_INVALID_RESPONSE",
+                "Gemini planning provider returned invalid structured output",
+            ) from error
+        usage = response.usage_metadata
+        return CarePlanningProviderResult(
+            proposal=proposal,
+            provider="gemini",
+            model=self._model,
+            latency_ms=round((perf_counter() - started) * 1000),
+            input_tokens=usage.prompt_token_count if usage is not None else None,
+            output_tokens=usage.candidates_token_count if usage is not None else None,
+        )
+
+
+class GeminiProviderAdapter(
+    _GeminiVisionCapability,
+    _GeminiPlanningCapability,
+    _GeminiConversationCapability,
+):
+    """Google SDK adapter implementing independent capability ports."""

@@ -11,7 +11,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.application.model_provider import ModelProvider
+from fabricassist.application.conversation_provider import ConversationProvider
+from fabricassist.application.policies import ConversationPolicy
 from fabricassist.domain.care import validate_care_plan
 from fabricassist.domain.conversations import ConversationContext
 from fabricassist.domain.evidence import GarmentEvidenceDossier
@@ -26,7 +27,6 @@ from fabricassist.infrastructure.persistence.models import (
     RevisionImage,
     ScanImage,
 )
-from fabricassist.settings import Settings
 
 
 def select_relevant_image_ids(images: Sequence[ScanImage], user_text: str) -> list[UUID]:
@@ -42,7 +42,11 @@ def select_relevant_image_ids(images: Sequence[ScanImage], user_text: str) -> li
     return selected[:8]
 
 
-async def build_context(session: AsyncSession, message: ConversationMessage) -> ConversationContext:
+async def build_context(
+    session: AsyncSession,
+    message: ConversationMessage,
+    policy: ConversationPolicy,
+) -> ConversationContext:
     result = await session.get(CareResult, message.care_result_id)
     dossier = (
         await session.scalar(select(EvidenceDossier).where(EvidenceDossier.id == result.dossier_id))
@@ -73,7 +77,7 @@ async def build_context(session: AsyncSession, message: ConversationMessage) -> 
                     ConversationMessage.id != message.id,
                 )
                 .order_by(ConversationMessage.created_at.desc())
-                .limit(12)
+                .limit(policy.recent_message_limit)
             )
         ).all()
     )
@@ -98,32 +102,32 @@ async def build_context(session: AsyncSession, message: ConversationMessage) -> 
         service_history=[{"kind": item.kind, "note": item.note} for item in history],
         summary=summary.payload if summary else None,
         recent_messages=[{"role": item.role, "text": item.text} for item in reversed(recent)],
-        relevant_image_ids=select_relevant_image_ids(images, message.text),
+        relevant_image_ids=select_relevant_image_ids(images, message.text)[
+            : policy.relevant_image_limit
+        ],
     )
 
 
 async def answer_message(
     session: AsyncSession,
     message_id: object,
-    settings: Settings,
-    model_provider: ModelProvider,
+    conversation_provider: ConversationProvider,
+    policy: ConversationPolicy,
 ) -> None:
-    message = await session.get(ConversationMessage, message_id)
+    message = await session.scalar(
+        select(ConversationMessage).where(ConversationMessage.id == message_id).with_for_update()
+    )
     if message is None or message.role != "user" or message.status == "completed":
         return
     message.status = "processing"
-    context = await build_context(session, message)
+    context = await build_context(session, message, policy)
     model_run = ModelRun(
         id=uuid4(),
         tenant_id=message.tenant_id,
         scan_id=message.scan_id,
         operation="conversation",
-        provider="mock" if settings.vision_provider == "mock" else settings.vision_provider,
-        model=(
-            "deterministic-conversation"
-            if settings.vision_provider == "mock"
-            else settings.active_vision_model
-        ),
+        provider=conversation_provider.descriptor.provider,
+        model=conversation_provider.descriptor.model,
         prompt_version="conversation-v1",
         schema_version="conversation-v1",
         request_fingerprint=sha256(
@@ -133,7 +137,7 @@ async def answer_message(
     )
     session.add(model_run)
     await session.flush()
-    result = await model_provider.answer(context, message.text)
+    result = await conversation_provider.answer(context, message.text)
     proposal = result.proposal
     model_run.provider = result.provider
     model_run.model = result.model
@@ -203,8 +207,13 @@ async def answer_message(
 async def answer_message_by_id(
     database: Database,
     message_id: object,
-    settings: Settings,
-    model_provider: ModelProvider,
+    conversation_provider: ConversationProvider,
+    policy: ConversationPolicy,
 ) -> None:
     async with database.session_factory() as session:
-        await answer_message(session, message_id, settings, model_provider)
+        await answer_message(
+            session,
+            message_id,
+            conversation_provider,
+            policy,
+        )

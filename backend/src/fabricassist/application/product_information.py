@@ -1,29 +1,25 @@
-"""Provider-neutral trusted product-information lookup port and no-network mock."""
+"""Product-information port, DTOs, and durable application orchestration."""
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 
 from __future__ import annotations
 
 import hashlib
-import ipaddress
-import socket
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Protocol
 from uuid import uuid4
 
-import httpx
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.domain.products import ProductLookupError, ProductMatchStatus
+from fabricassist.domain.products import ProductMatchStatus
 from fabricassist.infrastructure.persistence.models import (
     ProductIdentifier,
     ProductLookupRun,
     ProductProfile,
     Scan,
 )
-from fabricassist.settings import Settings
 
 
 @dataclass(frozen=True)
@@ -49,78 +45,22 @@ class CatalogProduct(BaseModel):
     )
 
 
-class HttpCatalogResponse(BaseModel):
-    """Strict response contract for an approved JSON catalog endpoint."""
-
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    status: ProductMatchStatus = ProductMatchStatus.NOT_FOUND
-    source_name: Annotated[str, StringConstraints(max_length=255)] | None = None
-    source_reference: Annotated[str, StringConstraints(max_length=2_048)] | None = None
-    license_name: Annotated[str, StringConstraints(max_length=255)] | None = None
-    product: CatalogProduct | None = None
-
-
 class ProductInformationProvider(Protocol):
     async def lookup(self, barcode: str) -> ProductLookupResult: ...
 
 
-class HttpProductInformationProvider:
-    """JSON catalog adapter with allow-list and private-network denial."""
+class ProductInformationError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
-    def __init__(
-        self, base_url: str, allowed_hosts: str, api_key: str, timeout: int, max_bytes: int
-    ) -> None:
-        self.base_url, self.allowed, self.api_key = (
-            base_url.rstrip("/"),
-            {h.strip().lower() for h in allowed_hosts.split(",")},
-            api_key,
-        )
-        self.timeout, self.max_bytes = timeout, max_bytes
 
-    async def lookup(self, barcode: str) -> ProductLookupResult:
-        url = f"{self.base_url}/{barcode}"
-        parsed = httpx.URL(url)
-        if parsed.scheme != "https" or not parsed.host or parsed.host.lower() not in self.allowed:
-            raise ProductLookupError("PRODUCT_URL_NOT_ALLOWED")
-        for info in socket.getaddrinfo(parsed.host, None):
-            address = ipaddress.ip_address(info[4][0])
-            if not address.is_global:
-                raise ProductLookupError("PRODUCT_URL_PRIVATE_ADDRESS")
-        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-            try:
-                async with client.stream("GET", url, headers=headers) as response:
-                    if response.status_code == 404:
-                        return ProductLookupResult(ProductMatchStatus.NOT_FOUND, "http_json")
-                    if 300 <= response.status_code < 400:
-                        raise ProductLookupError("PRODUCT_REDIRECT_REJECTED")
-                    response.raise_for_status()
-                    if "application/json" not in response.headers.get("content-type", ""):
-                        raise ProductLookupError("PRODUCT_RESPONSE_REJECTED")
-                    chunks: list[bytes] = []
-                    total = 0
-                    async for chunk in response.aiter_bytes():
-                        total += len(chunk)
-                        if total > self.max_bytes:
-                            raise ProductLookupError("PRODUCT_RESPONSE_TOO_LARGE")
-                        chunks.append(chunk)
-            except httpx.TimeoutException as error:
-                raise ProductLookupError("PRODUCT_PROVIDER_TIMEOUT") from error
-            except httpx.HTTPError as error:
-                raise ProductLookupError("PRODUCT_PROVIDER_UNAVAILABLE") from error
-        try:
-            data = HttpCatalogResponse.model_validate_json(b"".join(chunks))
-        except ValidationError as error:
-            raise ProductLookupError("PRODUCT_RESPONSE_REJECTED") from error
-        return ProductLookupResult(
-            data.status,
-            "http_json",
-            data.source_name or "Catalog",
-            data.source_reference,
-            data.license_name,
-            data.product.model_dump(mode="json") if data.product else None,
-        )
+class RetryableProductInformationError(ProductInformationError):
+    """A temporary enrichment failure; photographed analysis may continue."""
+
+
+class PermanentProductInformationError(ProductInformationError):
+    """A rejected or invalid enrichment request that must not be blind-retried."""
 
 
 @dataclass(frozen=True)
@@ -267,44 +207,3 @@ async def invalidate_product_lookup(
     run.invalidated_at = datetime.now(UTC)
     run.invalidation_reason = reason
     return product_lookup_from_run(run)
-
-
-class MockProductInformationProvider:
-    async def lookup(self, barcode: str) -> ProductLookupResult:
-        if barcode == "4006381333931":
-            return ProductLookupResult(
-                ProductMatchStatus.EXACT,
-                "mock",
-                "Mock catalog",
-                "mock:4006381333931",
-                "test-data",
-                {
-                    "brand": "FabricAssist fixture",
-                    "name": "Cotton shirt",
-                    "variant": "blue",
-                    "materials": ["cotton"],
-                },
-            )
-        if barcode == "036000291452":
-            return ProductLookupResult(
-                ProductMatchStatus.MULTIPLE_CANDIDATES,
-                "mock",
-                "Mock catalog",
-                "mock:036000291452",
-                "test-data",
-            )
-        return ProductLookupResult(
-            ProductMatchStatus.NOT_FOUND, "mock", "Mock catalog", f"mock:{barcode}", "test-data"
-        )
-
-
-def get_product_provider(settings: Settings) -> ProductInformationProvider:
-    if settings.product_provider == "http_json":
-        return HttpProductInformationProvider(
-            settings.product_base_url,
-            settings.product_allowed_hosts,
-            settings.product_api_key,
-            settings.product_timeout_seconds,
-            settings.product_max_response_bytes,
-        )
-    return MockProductInformationProvider()

@@ -49,14 +49,36 @@ Write **FabricAssist** in user-facing text. Use lowercase `fabricassist` for pac
 - Alembic for migrations.
 - PostgreSQL as the primary database.
 - pgvector as a PostgreSQL extension for optional semantic candidate retrieval.
-- Valkey for cache, distributed locks, rate limits, and job broker/result coordination.
-- Celery as the initial durable worker framework, using Valkey through the Redis-compatible protocol.
+- Valkey adapters for hot cache, distributed concurrency, and rate limiting.
+- Celery as the initial worker framework, with an independently configured
+  Redis-compatible or AMQP broker URL.
 - `boto3`-compatible object-storage adapter for S3 and local S3-compatible storage.
 - Pillow and OpenCV-compatible tooling for image normalization and quality checks.
 - `httpx` for model-provider HTTP clients.
 - `uv` for Python dependency and virtual-environment management.
 
 Celery must be isolated behind an application job-dispatch interface. If Valkey broker behaviour becomes operationally unsuitable, the broker can move to RabbitMQ without changing domain services.
+
+### 2.1.1 Capability adapter composition
+
+Infrastructure replacement happens by capability, never through one generic
+infrastructure or Redis provider:
+
+| Capability port | Registered adapters | Selection setting |
+|---|---|---|
+| `JobDispatcher` | Celery, QStash | `FABRICASSIST_JOB_DISPATCHER` |
+| `HotCache` | Valkey, no-op | `FABRICASSIST_HOT_CACHE_BACKEND` |
+| `RateLimiter` | Valkey, no-op | `FABRICASSIST_RATE_LIMITER_BACKEND` |
+| `ConcurrencyGate` | Valkey, no-op | `FABRICASSIST_CONCURRENCY_GATE_BACKEND` |
+| `VisionEvidenceProvider` | mock, Gemini, OpenAI Responses | `FABRICASSIST_EVIDENCE_PROVIDER` |
+| `CarePlanningProvider` | mock, Gemini, OpenAI Responses | `FABRICASSIST_CARE_PLANNER_PROVIDER` |
+| `ConversationProvider` | mock, Gemini, OpenAI Responses | `FABRICASSIST_CHAT_PROVIDER` |
+| `ObjectStorage` | S3-compatible | `FABRICASSIST_OBJECT_STORAGE_BACKEND` |
+| `ProductInformationProvider` | mock, allow-listed HTTP JSON | `FABRICASSIST_PRODUCT_INFORMATION_PROVIDER` |
+
+Infrastructure factories translate global typed settings into adapter-specific
+configuration and inject ports at composition roots. No-op adapters are
+explicit; production rejects no-op request limiting and concurrency.
 
 ### 2.2 Frontend
 
@@ -718,12 +740,13 @@ class ConversationProvider(Protocol):
         ...
 ```
 
-The current composition exposes these capabilities through one application-level
-`ModelProvider` port. Each concrete infrastructure adapter implements the
-complete port. Only the provider composition root translates typed settings into
-adapter-owned configuration; application services never receive provider API
-keys, SDK clients, HTTP headers, or endpoint-specific DTOs. Credential fields
-must be excluded from configuration representations and logs.
+Evidence extraction, care planning, and conversation are independently selected
+and injected application ports. One concrete adapter may implement multiple
+ports, but each capability factory selects only its own strategy. Application
+services receive non-secret `ProviderDescriptor` values for cache identity and
+never receive provider API keys, SDK clients, HTTP headers, endpoints, or the
+global settings object. Invocation results remain authoritative for recorded
+provider/model/latency/token metadata.
 
 Adapters may include:
 
@@ -930,7 +953,8 @@ sequenceDiagram
     API->>DB: Mark supplied uploads complete
     Client->>API: POST /scans/{id}/analyse
     API->>DB: Transition to queued
-    API->>Queue: Enqueue idempotent job
+    API->>DB: Commit versioned job intent/outbox row
+    API->>Queue: Publish idempotent identifier-only message
     API-->>Client: 202 Accepted
     Queue->>Worker: Deliver job
     Worker->>Obj: Fetch selected image(s)
@@ -966,7 +990,25 @@ sequenceDiagram
 
 ## 14. Job design and idempotency
 
-Each task receives `scan_id` and a unique operation key. It must acquire a short distributed lock and then verify database state.
+Each adapter receives the same strict `AnalysisJobMessage` containing only the
+schema version, scan/revision identifiers, operation key, and stage. The API
+commits an `analysis_job_operations` intent/outbox row before calling Celery or
+QStash. Publication acknowledgement is persisted only after transport success.
+An identical client retry or reconciler republishes committed-but-unpublished
+work with stable transport deduplication; database checkpoint claims make
+duplicate delivery safe.
+
+Each execution verifies database state and acquires the configured
+`ConcurrencyGate`. Correlation ID is durable outbox metadata and propagates
+through either transport.
+
+A bounded API-lifespan recovery loop is active in both Celery and hosted-QStash
+topologies. It claims unpublished analysis operations and queued unpublished
+conversation rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, preserves their
+persisted correlation IDs, and republishes through the same `JobDispatcher`.
+The same loop claims durable object-deletion rows, translates storage failures,
+and bounds transient retries. PostgreSQL publication/checkpoint/deletion state
+remains authoritative if any process stops between commit and external I/O.
 
 Suggested stages:
 
@@ -1040,6 +1082,13 @@ CI and local commands must:
 2. Verify the committed/generated frontend client is current.
 3. Generate TypeScript request/response types and API functions.
 4. Fail when uncommitted drift exists.
+
+The frontend composition root decorates the generated client once with API base
+URL, access-token injection, refresh-once behavior, correlation IDs, and error
+envelope conversion. Screens must use generated operations and TanStack Query
+where server state benefits from query caching. Presigned object bytes are not
+FabricAssist API traffic and remain
+behind the platform-specific `BinaryUpload` adapter.
 
 ### 15.4 Resource shape
 
@@ -1232,6 +1281,10 @@ FABRICASSIST_DATABASE_URL
 FABRICASSIST_VALKEY_URL
 FABRICASSIST_CELERY_BROKER_URL
 FABRICASSIST_CELERY_RESULT_BACKEND
+FABRICASSIST_JOB_DISPATCHER
+FABRICASSIST_HOT_CACHE_BACKEND
+FABRICASSIST_RATE_LIMITER_BACKEND
+FABRICASSIST_CONCURRENCY_GATE_BACKEND
 
 FABRICASSIST_S3_ENDPOINT_URL
 FABRICASSIST_S3_REGION
@@ -1240,35 +1293,38 @@ FABRICASSIST_S3_ACCESS_KEY
 FABRICASSIST_S3_SECRET_KEY
 FABRICASSIST_S3_FORCE_PATH_STYLE
 
-FABRICASSIST_VISION_PROVIDER
-FABRICASSIST_VISION_MODEL
-FABRICASSIST_VISION_API_BASE
-FABRICASSIST_VISION_API_KEY
+FABRICASSIST_EVIDENCE_PROVIDER
+FABRICASSIST_CARE_PLANNER_PROVIDER
+FABRICASSIST_CHAT_PROVIDER
+FABRICASSIST_OBJECT_STORAGE_BACKEND
+FABRICASSIST_PRODUCT_INFORMATION_PROVIDER
+FABRICASSIST_OPENAI_RESPONSES_BASE_URL
+FABRICASSIST_OPENAI_RESPONSES_MODEL
+FABRICASSIST_OPENAI_RESPONSES_API_KEY
+FABRICASSIST_OPENAI_RESPONSES_EXTRA_HEADERS_JSON
 FABRICASSIST_VISION_TIMEOUT_SECONDS
 FABRICASSIST_VISION_MAX_CONCURRENCY
 FABRICASSIST_GEMINI_API_KEY
 FABRICASSIST_GEMINI_MODEL
 
-FABRICASSIST_CARE_PLANNER_PROVIDER
-FABRICASSIST_CARE_PLANNER_MODEL
-FABRICASSIST_CHAT_PROVIDER
-FABRICASSIST_CHAT_MODEL
-FABRICASSIST_CHAT_MAX_CONTEXT_TOKENS
-FABRICASSIST_CHAT_RECENT_MESSAGE_LIMIT
+FABRICASSIST_CONVERSATION_RECENT_MESSAGE_LIMIT
+FABRICASSIST_CONVERSATION_RELEVANT_IMAGE_LIMIT
 
-FABRICASSIST_PRODUCT_INFORMATION_PROVIDER
-FABRICASSIST_PRODUCT_INFORMATION_BASE_URL
-FABRICASSIST_PRODUCT_INFORMATION_API_KEY
-FABRICASSIST_PRODUCT_INFORMATION_TIMEOUT_SECONDS
-FABRICASSIST_PRODUCT_INFORMATION_ALLOWED_HOSTS
+FABRICASSIST_PRODUCT_HTTP_JSON_BASE_URL
+FABRICASSIST_PRODUCT_HTTP_JSON_API_KEY
+FABRICASSIST_PRODUCT_HTTP_JSON_TIMEOUT_SECONDS
+FABRICASSIST_PRODUCT_HTTP_JSON_ALLOWED_HOSTS
 
-FABRICASSIST_JWT_SIGNING_KEY
-FABRICASSIST_ACCESS_TOKEN_TTL_SECONDS
-FABRICASSIST_REFRESH_TOKEN_TTL_DAYS
+FABRICASSIST_ACCESS_TOKEN_SECRET
+FABRICASSIST_ACCESS_TOKEN_MINUTES
+FABRICASSIST_REFRESH_TOKEN_DAYS
 
 FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS
-FABRICASSIST_MAX_UPLOAD_BYTES
+FABRICASSIST_UPLOAD_MAX_BYTES
 FABRICASSIST_MAX_IMAGES_PER_SCAN
+FABRICASSIST_PUBLICATION_RECOVERY_INTERVAL_SECONDS
+FABRICASSIST_PUBLICATION_RECOVERY_BATCH_SIZE
+FABRICASSIST_DELETION_MAX_ATTEMPTS
 
 FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT
 FABRICASSIST_LOG_LEVEL

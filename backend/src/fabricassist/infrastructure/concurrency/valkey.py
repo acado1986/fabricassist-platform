@@ -1,4 +1,4 @@
-"""Valkey-backed distributed rate and worker concurrency limits."""
+"""Valkey lease implementation of the concurrency-gate port."""
 # pyright: reportArgumentType=false, reportGeneralTypeIssues=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 
 from __future__ import annotations
@@ -11,44 +11,15 @@ from uuid import uuid4
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from fabricassist.application.limits import (
+    ConcurrencyLimitExceeded,
+    LimitBackendUnavailable,
+)
 from fabricassist.infrastructure.telemetry import WORKER_CONCURRENCY
-from fabricassist.settings import Settings
+from fabricassist.infrastructure.valkey_url import redis_compatible_url
 
 
-def redis_url(url: str) -> str:
-    """Translate the product-facing Valkey scheme for the Redis-compatible client."""
-    return url.replace("valkey://", "redis://", 1)
-
-
-class LimitBackendUnavailable(RuntimeError):
-    """The configured distributed limit backend could not make a decision."""
-
-
-class ConcurrencyLimitExceeded(RuntimeError):
-    """No provider-facing worker slot was available."""
-
-
-class ValkeyRateLimiter:
-    """A fixed-window limiter shared by every API replica."""
-
-    def __init__(self, url: str) -> None:
-        self._client: Redis = Redis.from_url(redis_url(url), decode_responses=True)
-
-    async def allowed(self, bucket: str, limit: int, window_seconds: int = 60) -> bool:
-        key = f"fabricassist:limits:v1:rate:{bucket}"
-        try:
-            count = await self._client.incr(key)
-            if count == 1:
-                await self._client.expire(key, window_seconds)
-        except RedisError as error:
-            raise LimitBackendUnavailable from error
-        return int(count) <= limit
-
-    async def close(self) -> None:
-        await self._client.aclose()
-
-
-class DistributedConcurrencyGate:
+class ValkeyConcurrencyGateAdapter:
     """Lease-based global and tenant slots that recover after worker death."""
 
     _ACQUIRE_SCRIPT = """
@@ -68,9 +39,18 @@ class DistributedConcurrencyGate:
     return 1
     """
 
-    def __init__(self, settings: Settings) -> None:
-        self._settings = settings
-        self._client: Redis = Redis.from_url(redis_url(settings.valkey_url), decode_responses=True)
+    def __init__(
+        self,
+        *,
+        url: str,
+        global_limit: int,
+        tenant_limit: int,
+        lease_seconds: int,
+    ) -> None:
+        self._global_limit = global_limit
+        self._tenant_limit = tenant_limit
+        self._lease_seconds = lease_seconds
+        self._client: Redis = Redis.from_url(redis_compatible_url(url), decode_responses=True)
 
     @asynccontextmanager
     async def slot(self, *, tenant_id: str, operation: str) -> AsyncGenerator[None, None]:
@@ -79,7 +59,7 @@ class DistributedConcurrencyGate:
         global_key = f"{prefix}:global"
         tenant_key = f"{prefix}:tenant:{tenant_id}"
         now = int(time())
-        expires = now + self._settings.worker_concurrency_lease_seconds
+        expires = now + self._lease_seconds
         acquired = False
         try:
             decision = await self._client.eval(
@@ -90,8 +70,8 @@ class DistributedConcurrencyGate:
                 now,
                 expires,
                 token,
-                self._settings.worker_global_concurrency,
-                self._settings.worker_tenant_concurrency,
+                self._global_limit,
+                self._tenant_limit,
             )
             if decision != 1:
                 raise ConcurrencyLimitExceeded(operation)

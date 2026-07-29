@@ -13,7 +13,10 @@ This directory is the operator guide for the FabricAssist free alpha. It describ
 
 ## Scope and guardrails
 
-- Alpha is configuration-selected with `FABRICASSIST_DEPLOYMENT_PROFILE=alpha` and `FABRICASSIST_JOB_DISPATCHER=qstash`; local defaults remain Celery, Valkey, PostgreSQL, and MinIO.
+- Alpha is configuration-selected with `FABRICASSIST_DEPLOYMENT_PROFILE=alpha`,
+  `FABRICASSIST_JOB_DISPATCHER=qstash`, and explicit no-op hot-cache,
+  rate-limiter, and concurrency adapters; local defaults remain Celery, Valkey,
+  PostgreSQL, and MinIO.
 - PostgreSQL/Neon is the durable authority. R2 stores private image objects; QStash only dispatches identifier-only messages.
 - The release workflow uses the mock vision provider. It may finish in `needs_review` or `needs_better_image`; do not claim an approved care plan from its synthetic label.
 - Keep all provider credentials in protected GitHub and Render settings. No runtime URL, key, token, presigned URL, password, or refresh token belongs in this directory, a commit, workflow output, or `EXPO_PUBLIC_*` variable.

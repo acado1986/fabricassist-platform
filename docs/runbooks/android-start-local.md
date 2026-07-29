@@ -90,7 +90,7 @@ Do not use these HTTP LAN values outside local development.
 From the repository root, use the Makefile as the stable local interface:
 
 ```bash
-FABRICASSIST_VISION_PROVIDER=mock make up
+FABRICASSIST_EVIDENCE_PROVIDER=mock make up
 make migrate
 make seed
 ```

@@ -15,13 +15,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.analysis import TEMPLATE_VERSION, render_rich_result
-from fabricassist.application.jobs import AnalysisJobMessage
+from fabricassist.application.job_orchestration import enqueue_analysis
+from fabricassist.application.jobs import JobDispatcher
 from fabricassist.application.lifecycle import enqueue_deletion, ensure_review_case
+from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.application.policies import UploadPolicy
 from fabricassist.domain.care import CareValidationReport, ProposedCarePlan
 from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
 from fabricassist.domain.identity import GarmentIdentifierType, normalize_instance_identifier
 from fabricassist.infrastructure.persistence.models import (
-    AnalysisJobOperation,
     CareResult,
     CustomerFeedback,
     Garment,
@@ -32,8 +34,6 @@ from fabricassist.infrastructure.persistence.models import (
     ScanImage,
     User,
 )
-from fabricassist.infrastructure.storage.s3 import S3Storage
-from fabricassist.settings import JobDispatcherType, Settings
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
 Mime = Literal["image/jpeg", "image/png", "image/webp"]
@@ -120,12 +120,16 @@ async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
 
 
-async def get_storage() -> S3Storage:
+async def get_storage() -> ObjectStorage:
     raise RuntimeError("Storage dependency was not configured.")
 
 
-async def get_settings() -> Settings:
-    raise RuntimeError("Settings dependency was not configured.")
+async def get_upload_policy() -> UploadPolicy:
+    raise RuntimeError("Upload policy dependency was not configured.")
+
+
+async def get_job_dispatcher() -> JobDispatcher:
+    raise RuntimeError("Job dispatcher dependency was not configured.")
 
 
 async def owned_scan(
@@ -189,8 +193,8 @@ async def add_image(
     request: ImageRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[S3Storage, Depends(get_storage)],
-    settings: Annotated[Settings, Depends(get_settings)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+    upload_policy: Annotated[UploadPolicy, Depends(get_upload_policy)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> UploadInstruction:
     scan = await owned_scan(session, user, scan_id)
@@ -221,15 +225,13 @@ async def add_image(
             )
             if image is None:
                 raise HTTPException(409, "Idempotency record no longer has an active image.")
-            url, headers, expires = storage.presign_put(
-                key=image.object_key, content_type=request.content_type
-            )
+            upload = storage.presign_put(key=image.object_key, content_type=request.content_type)
             return UploadInstruction(
                 image_id=image.id,
                 role=ImageRole(image.role),
-                url=url,
-                headers=headers,
-                expires_at=expires,
+                url=upload.url,
+                headers=upload.headers,
+                expires_at=upload.expires_at,
             )
     completed = (
         await session.scalar(
@@ -247,7 +249,7 @@ async def add_image(
         )
         or 0
     )
-    if completed + pending >= settings.max_images_per_scan:
+    if completed + pending >= upload_policy.max_images_per_scan:
         raise HTTPException(422, "Maximum image count reached.")
     image_id = uuid4()
     key = f"private/{user.tenant_id}/{scan.id}/{image_id}/original"
@@ -262,8 +264,8 @@ async def add_image(
         upload_expires_at=datetime.now(UTC),
     )
     session.add(image)
-    url, headers, expires = storage.presign_put(key=key, content_type=request.content_type)
-    image.upload_expires_at = expires
+    upload = storage.presign_put(key=key, content_type=request.content_type)
+    image.upload_expires_at = upload.expires_at
     if idempotency_key:
         session.add(
             IdempotencyRecord(
@@ -275,13 +277,17 @@ async def add_image(
                 request_fingerprint=fingerprint,
                 response_status=201,
                 response_body={"image_id": str(image.id)},
-                expires_at=expires,
+                expires_at=upload.expires_at,
             )
         )
     scan.status = "uploading"
     await session.commit()
     return UploadInstruction(
-        image_id=image.id, role=request.role, url=url, headers=headers, expires_at=expires
+        image_id=image.id,
+        role=request.role,
+        url=upload.url,
+        headers=upload.headers,
+        expires_at=upload.expires_at,
     )
 
 
@@ -296,7 +302,7 @@ async def remove_image(
     image_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[S3Storage, Depends(get_storage)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> Response:
     await owned_scan(session, user, scan_id)
     image = await session.scalar(
@@ -308,8 +314,14 @@ async def remove_image(
     )
     if image is None:
         raise HTTPException(404, "Image was not found.")
-    storage.delete_object(image.object_key)
-    await session.delete(image)
+    await enqueue_deletion(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        resource_type="image",
+        resource_id=image.id,
+        images=[image],
+    )
     await session.commit()
     return Response(status_code=204)
 
@@ -327,7 +339,7 @@ async def complete_upload(
     request: CompleteUploadRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[S3Storage, Depends(get_storage)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> ScanResponse:
     scan = await owned_scan(session, user, scan_id)
     image = await session.scalar(
@@ -352,15 +364,10 @@ async def request_analysis(
     http_request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    settings: Annotated[Settings, Depends(get_settings)],
+    dispatcher: Annotated[JobDispatcher, Depends(get_job_dispatcher)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnalysisResponse:
-    scan = await owned_scan(
-        session,
-        user,
-        scan_id,
-        for_update=settings.job_dispatcher == JobDispatcherType.QSTASH,
-    )
+    scan = await owned_scan(session, user, scan_id, for_update=True)
     count = (
         await session.scalar(
             select(func.count())
@@ -372,60 +379,18 @@ async def request_analysis(
     if not count:
         raise HTTPException(409, "Complete at least one image before analysis.")
     key = idempotency_key or f"scan:{scan.id}"
-    if settings.job_dispatcher == JobDispatcherType.QSTASH:
-        existing_operation = await session.scalar(
-            select(AnalysisJobOperation).where(
-                AnalysisJobOperation.scan_id == scan.id,
-                AnalysisJobOperation.operation_key == key,
-                AnalysisJobOperation.stage == "validate_uploaded_images",
-            )
-        )
-        if existing_operation is not None:
-            return AnalysisResponse(
-                scan_id=scan.id,
-                status=scan.status,
-                operation_key=existing_operation.operation_key,
-            )
-    scan.analysis_operation_key = key
-    scan.status = "queued"
-    scan.analysis_stage = "queued"
-    if settings.job_dispatcher == JobDispatcherType.QSTASH:
-        # This durable row is the redispatch record: if publication fails after
-        # this commit, the reconciler can safely publish the same message.
-        revision_id = uuid4()
-        operation = AnalysisJobOperation(
-            id=uuid4(),
-            scan_id=scan.id,
-            revision_id=revision_id,
-            operation_key=key,
-            stage="validate_uploaded_images",
-        )
-        session.add(operation)
-        await session.commit()
-        from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
-
-        dispatcher = create_job_dispatcher(settings)
-        await dispatcher.dispatch_analysis(
-            AnalysisJobMessage(
-                scan_id=scan.id,
-                operation_key=key,
-                revision_id=revision_id,
-                stage="validate_uploaded_images",
-            ),
-            correlation_id=str(http_request.state.correlation_id),
-        )
-        operation.published_at = datetime.now(UTC)
-        await session.commit()
-    else:
-        await session.commit()
-        from fabricassist.worker.celery_app import celery_app
-
-        celery_app.send_task(
-            "fabricassist.analyse_scan",
-            args=[str(scan.id)],
-            headers={"correlation_id": str(http_request.state.correlation_id)},
-        )
-    return AnalysisResponse(scan_id=scan.id, status=scan.status, operation_key=key)
+    operation = await enqueue_analysis(
+        session=session,
+        scan=scan,
+        operation_key=key,
+        correlation_id=str(http_request.state.correlation_id),
+        dispatcher=dispatcher,
+    )
+    return AnalysisResponse(
+        scan_id=scan.id,
+        status=scan.status,
+        operation_key=operation.operation_key,
+    )
 
 
 @router.get("/{scan_id}", response_model=ScanResponse)
@@ -532,7 +497,7 @@ async def image_preview(
     image_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[S3Storage, Depends(get_storage)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> ImagePreviewResponse:
     scan = await owned_scan(session, user, scan_id)
     image = await session.scalar(
@@ -545,8 +510,12 @@ async def image_preview(
     )
     if image is None:
         raise HTTPException(404, "Image was not found.")
-    url, expires_at = storage.presign_get(key=image.object_key)
-    return ImagePreviewResponse(image_id=image.id, url=url, expires_at=expires_at)
+    download = storage.presign_get(key=image.object_key)
+    return ImagePreviewResponse(
+        image_id=image.id,
+        url=download.url,
+        expires_at=download.expires_at,
+    )
 
 
 @router.delete("/{scan_id}", response_model=DeletionResponse, status_code=202)

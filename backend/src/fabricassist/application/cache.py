@@ -10,10 +10,11 @@ import hashlib
 import json
 from collections.abc import Iterable
 from io import BytesIO
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from PIL import Image
 
+from fabricassist.application.provider import ProviderDescriptor
 from fabricassist.application.vision import (
     EVIDENCE_PROMPT_VERSION,
     EVIDENCE_SCHEMA_VERSION,
@@ -23,6 +24,20 @@ from fabricassist.domain.care import CareValidationReport, ProposedCarePlan
 from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
 
 NORMALIZATION_VERSION = "normalized-jpeg-v1"
+
+
+class HotCache(Protocol):
+    """Best-effort transient JSON cache; PostgreSQL remains authoritative."""
+
+    async def get_json(self, key: str) -> dict[str, object] | None: ...
+
+    async def set_json(
+        self,
+        key: str,
+        value: dict[str, object],
+        *,
+        ttl_seconds: int,
+    ) -> None: ...
 
 
 def perceptual_hash(image: NormalizedImage) -> str:
@@ -41,11 +56,19 @@ def perceptual_hash(image: NormalizedImage) -> str:
     return f"{int(bits, 2):016x}"
 
 
-def evidence_cache_key(image: NormalizedImage) -> str:
+def evidence_cache_key(
+    image: NormalizedImage,
+    *,
+    tenant_id: str,
+    descriptor: ProviderDescriptor,
+) -> str:
     return ":".join(
         (
             "fabricassist",
             "evidence",
+            tenant_id,
+            descriptor.provider,
+            descriptor.model,
             NORMALIZATION_VERSION,
             EVIDENCE_SCHEMA_VERSION,
             EVIDENCE_PROMPT_VERSION,

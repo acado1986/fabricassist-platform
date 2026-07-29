@@ -15,21 +15,36 @@ from pydantic import ValidationError
 
 from fabricassist.api.main import create_app
 from fabricassist.api.routes import internal_jobs
-from fabricassist.application.jobs import AnalysisJobMessage
-from fabricassist.application.qstash import (
-    DeliveryVerificationError,
+from fabricassist.application.job_execution import (
     StageResult,
     execute_checkpoint,
-    parse_delivery,
-    verify_qstash_signature,
 )
+from fabricassist.application.jobs import AnalysisJobMessage
+from fabricassist.application.policies import AnalysisExecutionPolicy, JobExecutionPolicy
+from fabricassist.infrastructure.cache.noop import NoOpHotCacheAdapter
+from fabricassist.infrastructure.concurrency.noop import NoOpConcurrencyGateAdapter
+from fabricassist.infrastructure.jobs.config import QStashJobDispatcherConfig, QStashVerifierConfig
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 from fabricassist.infrastructure.jobs.qstash import (
     PermanentJobDispatchError,
-    QStashJobDispatcher,
+    QStashJobDispatcherAdapter,
     RetryableJobDispatchError,
 )
-from fabricassist.settings import DeploymentProfile, JobDispatcherType, Settings
+from fabricassist.infrastructure.jobs.qstash_inbound import (
+    DeliveryVerificationError,
+    QStashDeliveryVerifier,
+)
+from fabricassist.settings import (
+    ConcurrencyGateBackend,
+    DeploymentProfile,
+    HotCacheBackend,
+    JobDispatcherType,
+    RateLimiterBackend,
+    Settings,
+)
+
+CURRENT_SIGNING_KEY = "current-signing-key-for-tests-0001"
+NEXT_SIGNING_KEY = "next-signing-key-for-tests-000002"
 
 
 def settings() -> Settings:
@@ -37,6 +52,9 @@ def settings() -> Settings:
         environment="alpha",
         deployment_profile=DeploymentProfile.ALPHA,
         job_dispatcher=JobDispatcherType.QSTASH,
+        hot_cache_backend=HotCacheBackend.NOOP,
+        rate_limiter_backend=RateLimiterBackend.NOOP,
+        concurrency_gate_backend=ConcurrencyGateBackend.NOOP,
         access_token_secret="x" * 32,
         app_base_url="https://app.example.test",
         api_public_url="https://api.example.test",
@@ -53,10 +71,37 @@ def settings() -> Settings:
         s3_bucket="fabricassist-alpha",
         s3_force_path_style=False,
         qstash_token="test-token-never-log",
-        qstash_current_signing_key="current",
-        qstash_next_signing_key="next",
+        qstash_current_signing_key=CURRENT_SIGNING_KEY,
+        qstash_next_signing_key=NEXT_SIGNING_KEY,
         qstash_destination_url="https://api.example.test/internal/jobs/qstash",
         valkey_url="valkey://localhost:6379/15",
+    )
+
+
+def qstash_dispatcher(
+    configured: Settings,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> QStashJobDispatcherAdapter:
+    return QStashJobDispatcherAdapter(
+        QStashJobDispatcherConfig(
+            token=configured.qstash_token,
+            destination_url=configured.qstash_destination_url,
+            request_timeout_seconds=30,
+            delivery_timeout_seconds=configured.job_stage_budget_seconds,
+        ),
+        transport=transport,
+    )
+
+
+def qstash_verifier() -> QStashDeliveryVerifier:
+    configured = settings()
+    return QStashDeliveryVerifier(
+        QStashVerifierConfig(
+            current_signing_key=configured.qstash_current_signing_key,
+            next_signing_key=configured.qstash_next_signing_key,
+            destination_url=configured.qstash_destination_url,
+        )
     )
 
 
@@ -112,7 +157,7 @@ async def test_checkpoint_persists_and_recovers_unpublished_continuation() -> No
     first = await execute_checkpoint(
         session=session,  # type: ignore[arg-type]
         message=job,
-        settings=settings(),
+        execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
     )
 
     continuation = next(value for value in session.added if isinstance(value, AnalysisJobOperation))
@@ -126,7 +171,7 @@ async def test_checkpoint_persists_and_recovers_unpublished_continuation() -> No
     recovered = await execute_checkpoint(
         session=session,  # type: ignore[arg-type]
         message=job,
-        settings=settings(),
+        execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
     )
     assert recovered.continuation == first.continuation
 
@@ -135,7 +180,7 @@ async def test_checkpoint_persists_and_recovers_unpublished_continuation() -> No
     duplicate = await execute_checkpoint(
         session=session,  # type: ignore[arg-type]
         message=job,
-        settings=settings(),
+        execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
     )
     assert duplicate.outcome is StageResult.COMPLETE
     assert duplicate.continuation is None
@@ -163,15 +208,24 @@ async def test_execute_analysis_stage_uses_shared_application_pipeline(
     async def record_analysis(**kwargs: object) -> None:
         calls.append(kwargs)
 
-    monkeypatch.setattr("fabricassist.application.qstash.analyse_scan", record_analysis)
+    monkeypatch.setattr("fabricassist.application.job_execution.analyse_scan", record_analysis)
     database = object()
     storage = object()
     result = await execute_checkpoint(
         session=session,  # type: ignore[arg-type]
         message=job,
-        settings=settings(),
+        execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
+        analysis_policy=AnalysisExecutionPolicy(
+            hot_cache_ttl_seconds=86_400,
+            product_cache_minutes=1_440,
+        ),
         database=database,  # type: ignore[arg-type]
         storage=storage,  # type: ignore[arg-type]
+        evidence_provider=object(),  # type: ignore[arg-type]
+        care_planning_provider=object(),  # type: ignore[arg-type]
+        product_information_provider=object(),  # type: ignore[arg-type]
+        hot_cache=NoOpHotCacheAdapter(),
+        concurrency_gate=NoOpConcurrencyGateAdapter(),
     )
 
     assert result.outcome is StageResult.COMPLETE
@@ -184,9 +238,7 @@ async def test_execute_analysis_stage_uses_shared_application_pipeline(
     assert "analysis_job_operations.stage =" in str(session.scalar_statements[0])
 
 
-def test_internal_route_retries_when_continuation_publication_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_internal_route_retries_when_continuation_publication_fails() -> None:
     from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
 
     job = message()
@@ -198,7 +250,15 @@ def test_internal_route_retries_when_continuation_publication_fails(
         operation_key=job.operation_key,
         stage=job.stage,
     )
-    session = CheckpointSession([operation, uuid4()], scan)
+    continuation = AnalysisJobOperation(
+        id=uuid4(),
+        scan_id=job.scan_id,
+        revision_id=job.revision_id,
+        operation_key=job.operation_key,
+        stage="execute_analysis",
+        correlation_id=str(uuid4()),
+    )
+    session = CheckpointSession([operation, uuid4(), continuation], scan)
 
     class FailingDispatcher:
         async def dispatch_analysis(
@@ -207,15 +267,12 @@ def test_internal_route_retries_when_continuation_publication_fails(
             assert correlation_id
             raise RetryableJobDispatchError("synthetic failure")
 
-    monkeypatch.setattr(
-        "fabricassist.api.routes.internal_jobs.create_job_dispatcher",
-        lambda _settings: FailingDispatcher(),
-    )
     body = job.model_dump_json().encode()
     app = create_app(settings())
     app.dependency_overrides[internal_jobs.get_session] = lambda: session
     app.dependency_overrides[internal_jobs.get_database] = lambda: object()
     app.dependency_overrides[internal_jobs.get_storage] = lambda: object()
+    app.dependency_overrides[internal_jobs.get_job_dispatcher] = lambda: FailingDispatcher()
 
     with TestClient(app) as client:
         response = client.post(
@@ -244,7 +301,7 @@ async def test_qstash_publishes_versioned_identifier_only_message() -> None:
         received["json"] = json.loads(request.content)
         return httpx.Response(200, json={"messageId": "synthetic"})
 
-    dispatcher = QStashJobDispatcher(settings(), transport=httpx.MockTransport(handler))
+    dispatcher = qstash_dispatcher(settings(), transport=httpx.MockTransport(handler))
     job = message()
     await dispatcher.dispatch_analysis(job, correlation_id="correlation")
     assert received["json"] == job.model_dump(mode="json")
@@ -264,7 +321,7 @@ async def test_qstash_errors_are_safe_and_classified() -> None:
         return httpx.Response(401)
 
     with pytest.raises(PermanentJobDispatchError, match="rejected") as permanent_error:
-        await QStashJobDispatcher(
+        await qstash_dispatcher(
             settings(), transport=httpx.MockTransport(unauthorized)
         ).dispatch_analysis(message(), correlation_id="c")
     assert "test-token-never-log" not in str(permanent_error.value)
@@ -273,7 +330,7 @@ async def test_qstash_errors_are_safe_and_classified() -> None:
         raise httpx.ReadTimeout("timeout")
 
     with pytest.raises(RetryableJobDispatchError, match="timed out"):
-        await QStashJobDispatcher(
+        await qstash_dispatcher(
             settings(), transport=httpx.MockTransport(timeout)
         ).dispatch_analysis(message(), correlation_id="c")
 
@@ -290,11 +347,18 @@ def test_message_is_strict_and_deduplication_is_stable() -> None:
             }
         )
     job = message()
-    assert QStashJobDispatcher.deduplication_id(job) == QStashJobDispatcher.deduplication_id(job)
-    assert isinstance(create_job_dispatcher(settings()), QStashJobDispatcher)
+    assert QStashJobDispatcherAdapter.deduplication_id(
+        job
+    ) == QStashJobDispatcherAdapter.deduplication_id(job)
+    assert isinstance(create_job_dispatcher(settings()), QStashJobDispatcherAdapter)
 
 
-def signed_delivery(body: bytes, *, key: str = "current", destination: str | None = None) -> str:
+def signed_delivery(
+    body: bytes,
+    *,
+    key: str = CURRENT_SIGNING_KEY,
+    destination: str | None = None,
+) -> str:
     return jwt.encode(
         {
             "iss": "Upstash",
@@ -308,12 +372,10 @@ def signed_delivery(body: bytes, *, key: str = "current", destination: str | Non
     )
 
 
-@pytest.mark.parametrize("key", ["current", "next"])
+@pytest.mark.parametrize("key", [CURRENT_SIGNING_KEY, NEXT_SIGNING_KEY])
 def test_qstash_verifies_current_and_next_keys_against_raw_body(key: str) -> None:
     body = message().model_dump_json().encode()
-    verify_qstash_signature(
-        raw_body=body, signature=signed_delivery(body, key=key), settings=settings()
-    )
+    qstash_verifier().verify(raw_body=body, signature=signed_delivery(body, key=key))
 
 
 @pytest.mark.parametrize(
@@ -329,7 +391,7 @@ def test_qstash_verifies_current_and_next_keys_against_raw_body(key: str) -> Non
                 "exp": datetime.now(UTC) + timedelta(minutes=1),
                 "nbf": datetime.now(UTC) - timedelta(seconds=1),
             },
-            "current",
+            CURRENT_SIGNING_KEY,
             algorithm="HS256",
         ),
     ],
@@ -338,12 +400,12 @@ def test_qstash_rejects_modified_destination_or_expired_signature(signature: obj
     body = message().model_dump_json().encode()
     assert callable(signature)
     with pytest.raises(DeliveryVerificationError):
-        verify_qstash_signature(raw_body=body, signature=signature(body), settings=settings())  # type: ignore[operator]
+        qstash_verifier().verify(raw_body=body, signature=signature(body))  # type: ignore[operator]
 
 
 def test_signed_invalid_message_is_non_retryable() -> None:
     with pytest.raises(Exception, match="permanently invalid"):
-        parse_delivery(b'{"message_schema_version": 2}')
+        qstash_verifier().parse(b'{"message_schema_version": 2}')
 
 
 def test_internal_route_marks_signed_permanent_payload_non_retryable() -> None:

@@ -12,9 +12,17 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
+import {
+  confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost,
+  deleteScanApiV1ScansScanIdDelete,
+  identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet,
+  scanDetailApiV1ScansScanIdGet,
+  scanResultApiV1ScansScanIdResultGet,
+  submitFeedbackApiV1ScansScanIdFeedbackPost,
+  type IdentityCandidateResponse,
+} from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
-import { getApiBaseUrl } from '../../config/environment';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
 type Source = {
@@ -53,17 +61,9 @@ type RichResult = {
     product: Record<string, unknown> | null;
   } | null;
 };
-type IdentityCandidate = {
-  id: string;
-  garment_id: string;
-  classification: string;
-  reasons: Record<string, unknown>;
-  status: string;
-  thumbnail_url: string | null;
-};
 export default function Result(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
-  const { token } = useSession();
+  const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
   const [result, setResult] = useState<RichResult>();
   const [failed, setFailed] = useState(false);
@@ -71,54 +71,45 @@ export default function Result(): ReactNode {
   const [garmentId, setGarmentId] = useState<string>();
   const [lifecycleMessage, setLifecycleMessage] = useState<string>();
   const [identityCandidates, setIdentityCandidates] = useState<
-    IdentityCandidate[]
+    IdentityCandidateResponse[]
   >([]);
   const confirmIdentityCandidate = async (
     candidateId: string,
   ): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/v1/garments/identity-candidates/${scanId}/confirm`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+    const response =
+      await confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost(
+        {
+          client: apiClient,
+          path: { scan_id: scanId },
+          body: { candidate_id: candidateId },
         },
-        body: JSON.stringify({ candidate_id: candidateId }),
-      },
-    );
-    if (response.ok) {
+      );
+    if (response.data) {
       setIdentityCandidates([]);
       setLifecycleMessage(translate('identityCandidateConfirmed'));
     }
   };
   const requestReview = async (): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/v1/scans/${scanId}/feedback`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ request_review: true }),
-      },
-    );
+    const response = await submitFeedbackApiV1ScansScanIdFeedbackPost({
+      client: apiClient,
+      path: { scan_id: scanId },
+      body: { request_review: true },
+    });
     setLifecycleMessage(
-      response.ok
+      response.data
         ? translate('reviewRequested')
         : translate('reviewRequestFailed'),
     );
   };
   const deleteAnalysis = async (): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await fetch(`${getApiBaseUrl()}/api/v1/scans/${scanId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+    const response = await deleteScanApiV1ScansScanIdDelete({
+      client: apiClient,
+      path: { scan_id: scanId },
     });
-    if (response.ok) {
+    if (response.data) {
       setLifecycleMessage(translate('deletionRequested'));
       router.replace('/scan');
       return;
@@ -138,39 +129,35 @@ export default function Result(): ReactNode {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const load = async (): Promise<void> => {
       try {
-        const headers = { Authorization: `Bearer ${token}` };
-        const scan = await fetch(`${getApiBaseUrl()}/api/v1/scans/${scanId}`, {
-          headers,
+        const scan = await scanDetailApiV1ScansScanIdGet({
+          client: apiClient,
+          path: { scan_id: scanId },
         });
-        if (!scan.ok) throw new Error('SCAN_UNAVAILABLE');
-        const status = (await scan.json()) as {
-          status: string;
-          analysis_stage?: string;
-          garment_id?: string;
-        };
+        if (!scan.data) throw new Error('SCAN_UNAVAILABLE');
+        const status = scan.data;
         if (cancelled) return;
         setStage(status.analysis_stage ?? status.status);
-        setGarmentId(status.garment_id);
-        const candidates = await fetch(
-          `${getApiBaseUrl()}/api/v1/garments/identity-candidates/${scanId}`,
-          { headers },
-        );
-        if (candidates.ok && !cancelled) {
-          setIdentityCandidates(
-            (await candidates.json()) as IdentityCandidate[],
-          );
+        setGarmentId(status.garment_id ?? undefined);
+        const candidates =
+          await identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet({
+            client: apiClient,
+            path: { scan_id: scanId },
+          });
+        if (candidates.data && !cancelled) {
+          setIdentityCandidates(candidates.data);
         }
         if (status.status === 'failed') {
           setFailed(true);
           return;
         }
-        const response = await fetch(
-          `${getApiBaseUrl()}/api/v1/scans/${scanId}/result?language=${locale}`,
-          { headers },
-        );
-        if (response.ok) {
-          const value = (await response.json()) as { result: RichResult };
-          if (!cancelled) setResult(value.result);
+        const response = await scanResultApiV1ScansScanIdResultGet({
+          client: apiClient,
+          path: { scan_id: scanId },
+          query: { language: locale },
+        });
+        if (response.data) {
+          if (!cancelled)
+            setResult(response.data.result as unknown as RichResult);
           return;
         }
         if (!cancelled) timeout = setTimeout(() => void load(), 1500);
@@ -183,7 +170,7 @@ export default function Result(): ReactNode {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
     };
-  }, [locale, scanId, token]);
+  }, [apiClient, locale, scanId, token]);
   return (
     <FoundationShell
       title={translate('resultTitle')}

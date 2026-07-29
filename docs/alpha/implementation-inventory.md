@@ -1,19 +1,31 @@
 # Free alpha implementation inventory
 
-**Inventory date:** 2026-07-28
-**Scope:** Phase 0 only. This records the implementation that exists before the
-free-alpha deployment phases; it does not alter runtime behavior.
+**Baseline inventory date:** 2026-07-28
+**Capability-boundary update:** 2026-07-29
+**Scope:** The detailed inventory below records the pre-alpha baseline. The
+following update is authoritative where it differs from that historical
+baseline.
+
+Current runtime composition has independent `JobDispatcher`, `HotCache`,
+`RateLimiter`, `ConcurrencyGate`, `VisionEvidenceProvider`,
+`CarePlanningProvider`, `ConversationProvider`, `ObjectStorage`, and
+`ProductInformationProvider` ports. Celery/QStash use the same identifier-only
+application messages. A bounded API recovery loop republishes committed
+analysis/conversation intents and processes durable object deletions with
+PostgreSQL `FOR UPDATE SKIP LOCKED`. The S3-compatible adapter is configured for
+MinIO, AWS workload identity, or R2; model capabilities independently select
+mock, Gemini, or OpenAI Responses. Application services receive ports and
+narrow policies rather than global settings.
 
 ## Existing execution boundary
 
-There is **no `JobDispatcher` port** in the current codebase, despite the main
-implementation plan selecting Celery behind one. The current dispatch boundary
-is instead two direct API-to-Celery calls:
+The historical Phase-0 baseline had no `JobDispatcher` port. The current
+implementation has replaced those direct transport calls:
 
 | Trigger | Current implementation | Payload |
 | --- | --- | --- |
-| `POST /v1/scans/{scan_id}/analyse` | `backend/src/fabricassist/api/routes/scans.py` imports `celery_app` inside the handler and calls `send_task("fabricassist.analyse_scan", args=[scan_id], headers={correlation_id})` | scan UUID plus correlation header |
-| `POST /v1/scans/{scan_id}/messages` | `backend/src/fabricassist/api/routes/conversations.py` imports `celery_app` inside the handler and calls `send_task("fabricassist.answer_message", args=[message_id], headers={correlation_id})` | message UUID plus correlation header |
+| `POST /v1/scans/{scan_id}/analyse` | The route calls an injected `JobDispatcher`; a committed PostgreSQL outbox row precedes Celery/QStash publication | versioned identifier-only `AnalysisJobMessage` plus correlation header |
+| `POST /v1/scans/{scan_id}/messages` | The route calls the injected conversation dispatch capability implemented by Celery/QStash adapters | durable conversation-message UUID plus correlation header |
 
 The reusable orchestration functions are:
 
@@ -37,8 +49,8 @@ persisted as terminal scan failures before being re-raised.
 
 All direct Celery dependencies found in source are:
 
-- `api/routes/scans.py` — direct import and `send_task` for analysis;
-- `api/routes/conversations.py` — direct import and `send_task` for chat;
+- `api/routes/scans.py` — transport-neutral durable analysis orchestration;
+- `api/routes/conversations.py` — transport-neutral conversation dispatch;
 - `worker/celery_app.py` — `Celery` construction and configuration;
 - `worker/tasks.py` — `shared_task` decorators and Celery retry API;
 - `infrastructure/telemetry.py` — `CeleryInstrumentor` worker telemetry.
@@ -92,7 +104,7 @@ publish fails.
 ## Object storage
 
 `backend/src/fabricassist/infrastructure/storage/s3.py` provides the one
-existing storage adapter, `S3Storage`. It constructs a boto3 S3 client with
+existing storage adapter, `S3ObjectStorageAdapter`. It constructs a boto3 S3 client with
 `endpoint_url`, `region_name="us-east-1"`, credentials, and
 `Config(s3={"addressing_style": "path"})` when
 `Settings.s3_force_path_style` is true. It already supports the required S3
@@ -126,14 +138,14 @@ region, or alpha-specific limits.
 
 `backend/src/fabricassist/api/main.py:create_app` is the API composition root.
 It builds `Database(settings.database_url)`, `ValkeyRateLimiter`, and
-`S3Storage`, stores them on `app.state`, and exposes dependencies through route
+`S3ObjectStorageAdapter`, stores them on `app.state`, and exposes dependencies through route
 overrides. This is the appropriate infrastructure-boundary location for future
 dispatcher selection and an internal QStash route; domain and application
 modules should remain environment-agnostic.
 
 `backend/src/fabricassist/worker/celery_app.py` is the separate local worker
 composition root. Worker task functions instantiate `Settings`, `Database`,
-and `S3Storage` at task execution time.
+and `S3ObjectStorageAdapter` at task execution time.
 
 The existing OpenAPI source is the FastAPI app. `make openapi` writes
 `docs/api/openapi.json` and runs the frontend generated-client command. Internal

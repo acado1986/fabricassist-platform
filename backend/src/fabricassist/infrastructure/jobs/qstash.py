@@ -6,42 +6,53 @@ from hashlib import sha256
 
 import httpx
 
-from fabricassist.application.jobs import AnalysisJobMessage
-from fabricassist.settings import Settings
+from fabricassist.application.jobs import (
+    AnalysisJobMessage,
+    ConversationJobMessage,
+    JobMessage,
+    PermanentJobDispatchError,
+    RetryableJobDispatchError,
+)
+from fabricassist.infrastructure.jobs.config import QStashJobDispatcherConfig
 
 
-class JobDispatchError(RuntimeError):
-    """Base class that never includes credentials or raw message content."""
-
-
-class RetryableJobDispatchError(JobDispatchError):
-    """A transient transport or upstream availability failure."""
-
-
-class PermanentJobDispatchError(JobDispatchError):
-    """An authentication, configuration, or permanently rejected publication."""
-
-
-class QStashJobDispatcher:
+class QStashJobDispatcherAdapter:
     """Publish strict identifier-only jobs through QStash with bounded I/O."""
 
     _PUBLISH_BASE_URL = "https://qstash.upstash.io/v2/publish/"
 
     def __init__(
-        self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None
+        self,
+        config: QStashJobDispatcherConfig,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self._token = settings.qstash_token
-        self._destination_url = settings.qstash_destination_url
-        self._timeout = float(min(settings.job_stage_budget_seconds, 30))
-        self._delivery_timeout = settings.job_stage_budget_seconds
+        self._token = config.token
+        self._destination_url = config.destination_url
+        self._timeout = config.request_timeout_seconds
+        self._delivery_timeout = config.delivery_timeout_seconds
         self._transport = transport
 
     @staticmethod
-    def deduplication_id(message: AnalysisJobMessage) -> str:
-        value = f"fabricassist:v1:{message.operation_key}:{message.stage}"
+    def deduplication_id(message: JobMessage) -> str:
+        if isinstance(message, AnalysisJobMessage):
+            value = f"fabricassist:v1:analysis:{message.operation_key}:{message.stage}"
+        else:
+            value = f"fabricassist:v1:conversation:{message.conversation_message_id}"
         return sha256(value.encode()).hexdigest()
 
     async def dispatch_analysis(self, message: AnalysisJobMessage, *, correlation_id: str) -> None:
+        await self._publish(message, correlation_id=correlation_id)
+
+    async def dispatch_conversation(
+        self,
+        message: ConversationJobMessage,
+        *,
+        correlation_id: str,
+    ) -> None:
+        await self._publish(message, correlation_id=correlation_id)
+
+    async def _publish(self, message: JobMessage, *, correlation_id: str) -> None:
         payload = message.model_dump(mode="json")
         headers = {
             "Authorization": f"Bearer {self._token}",
