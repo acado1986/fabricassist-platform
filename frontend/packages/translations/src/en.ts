@@ -98,6 +98,8 @@ export const en = {
     scanValidationFailed:
       'We could not validate this image. Retake a clear, well-lit photo.',
     signOut: 'Sign out',
+    customerMenu: 'Menu',
+    scan: 'Scan garment',
     history: 'History',
     customerHistory: 'Customer history',
     customerHistoryTitle: 'Your garment history',

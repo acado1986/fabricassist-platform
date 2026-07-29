@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
+import { useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -29,6 +30,7 @@ export function FoundationShell({
 }): ReactNode {
   const { translate } = useTranslation();
   const { token, signOut } = useSession();
+  const [customerMenuOpen, setCustomerMenuOpen] = useState(false);
   const { width } = useWindowDimensions();
   const isCompact = width < 640;
 
@@ -53,38 +55,56 @@ export function FoundationShell({
           </View>
           <View style={styles.headerActions}>
             {token ? (
-              <>
+              <View style={styles.customerMenu}>
                 <Pressable
-                  accessibilityLabel={translate('customerHistory')}
+                  accessibilityLabel={translate('customerMenu')}
                   accessibilityRole="button"
-                  onPress={() => router.push('/history')}
+                  accessibilityState={{ expanded: customerMenuOpen }}
+                  onPress={() => setCustomerMenuOpen((open) => !open)}
                   style={({ pressed }) => [
                     styles.headerButton,
                     pressed && styles.headerButtonPressed,
                   ]}
                 >
-                  <Feather color={colors.text} name="clock" size={17} />
+                  <Feather color={colors.text} name="menu" size={18} />
                   <Text style={styles.headerButtonText}>
-                    {translate('history')}
+                    {translate('customerMenu')}
                   </Text>
                 </Pressable>
-                <Pressable
-                  accessibilityLabel={translate('signOut')}
-                  accessibilityRole="button"
-                  onPress={() => void signOut()}
-                  style={({ pressed }) => [
-                    styles.headerButton,
-                    pressed && styles.headerButtonPressed,
-                  ]}
-                >
-                  <Feather color={colors.text} name="log-out" size={17} />
-                  <Text style={styles.headerButtonText}>
-                    {translate('signOut')}
-                  </Text>
-                </Pressable>
-              </>
+                {customerMenuOpen ? (
+                  <View accessibilityRole="menu" style={styles.menuPanel}>
+                    <MenuItem
+                      icon="camera"
+                      label={translate('scan')}
+                      onPress={() => {
+                        setCustomerMenuOpen(false);
+                        router.push('/scan');
+                      }}
+                    />
+                    <MenuItem
+                      icon="clock"
+                      label={translate('history')}
+                      onPress={() => {
+                        setCustomerMenuOpen(false);
+                        router.push('/history');
+                      }}
+                    />
+                    <View style={styles.languageMenuItem}>
+                      <Text style={styles.menuLabel}>
+                        {translate('language')}
+                      </Text>
+                      <LanguageSelector />
+                    </View>
+                    <MenuItem
+                      icon="log-out"
+                      label={translate('signOut')}
+                      onPress={() => void signOut()}
+                    />
+                  </View>
+                ) : null}
+              </View>
             ) : null}
-            <LanguageSelector />
+            {!token ? <LanguageSelector /> : null}
           </View>
         </View>
 
@@ -104,6 +124,30 @@ export function FoundationShell({
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function MenuItem({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: ComponentProps<typeof Feather>['name'];
+  label: string;
+  onPress: () => void;
+}): ReactNode {
+  return (
+    <Pressable
+      accessibilityRole="menuitem"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.menuItem,
+        pressed && styles.menuItemPressed,
+      ]}
+    >
+      <Feather color={colors.text} name={icon} size={17} />
+      <Text style={styles.menuLabel}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -133,6 +177,7 @@ const styles = StyleSheet.create({
     gap: spacing.small,
     justifyContent: 'flex-end',
   },
+  customerMenu: { position: 'relative' },
   headerButton: {
     alignItems: 'center',
     borderColor: colors.border,
@@ -145,6 +190,39 @@ const styles = StyleSheet.create({
   },
   headerButtonPressed: { opacity: 0.72 },
   headerButtonText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  menuPanel: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    gap: spacing.xsmall,
+    minWidth: 200,
+    padding: spacing.xsmall,
+    position: 'absolute',
+    right: 0,
+    top: 42,
+    zIndex: 2,
+  },
+  menuItem: {
+    alignItems: 'center',
+    borderRadius: radii.small,
+    flexDirection: 'row',
+    gap: spacing.small,
+    minHeight: 44,
+    paddingHorizontal: spacing.small,
+  },
+  menuItemPressed: { backgroundColor: colors.surfaceMuted },
+  menuLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  languageMenuItem: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.small,
+    justifyContent: 'space-between',
+    minHeight: 52,
+    paddingHorizontal: spacing.small,
+  },
   mark: {
     alignItems: 'center',
     backgroundColor: colors.primary,
