@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { useState } from 'react';
 import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -71,42 +72,57 @@ export function FoundationShell({
                     {translate('customerMenu')}
                   </Text>
                 </Pressable>
-                {customerMenuOpen ? (
-                  <View accessibilityRole="menu" style={styles.menuPanel}>
-                    <MenuItem
-                      icon="camera"
-                      label={translate('scan')}
-                      onPress={() => {
-                        setCustomerMenuOpen(false);
-                        router.push('/scan');
-                      }}
-                    />
-                    <MenuItem
-                      icon="clock"
-                      label={translate('history')}
-                      onPress={() => {
-                        setCustomerMenuOpen(false);
-                        router.push('/history');
-                      }}
-                    />
-                    <View style={styles.languageMenuItem}>
-                      <Text style={styles.menuLabel}>
-                        {translate('language')}
-                      </Text>
-                      <LanguageSelector />
-                    </View>
-                    <MenuItem
-                      icon="log-out"
-                      label={translate('signOut')}
-                      onPress={() => void signOut()}
-                    />
-                  </View>
-                ) : null}
               </View>
             ) : null}
             {!token ? <LanguageSelector /> : null}
           </View>
         </View>
+
+        <Modal
+          animationType="fade"
+          onRequestClose={() => setCustomerMenuOpen(false)}
+          transparent
+          visible={customerMenuOpen}
+        >
+          <View style={styles.menuOverlay}>
+            <Pressable
+              accessibilityLabel={translate('closeMenu')}
+              accessibilityRole="button"
+              onPress={() => setCustomerMenuOpen(false)}
+              style={styles.menuBackdrop}
+            />
+            <View
+              accessibilityRole="menu"
+              style={[styles.menuPanel, isCompact && styles.menuPanelCompact]}
+            >
+              <MenuItem
+                icon="camera"
+                label={translate('scan')}
+                onPress={() => {
+                  setCustomerMenuOpen(false);
+                  router.push('/scan');
+                }}
+              />
+              <MenuItem
+                icon="clock"
+                label={translate('history')}
+                onPress={() => {
+                  setCustomerMenuOpen(false);
+                  router.push('/history');
+                }}
+              />
+              <View style={styles.languageMenuItem}>
+                <Text style={styles.menuLabel}>{translate('language')}</Text>
+                <LanguageSelector />
+              </View>
+              <MenuItem
+                icon="log-out"
+                label={translate('signOut')}
+                onPress={() => void signOut()}
+              />
+            </View>
+          </View>
+        </Modal>
 
         <View role="main" style={[styles.content, wide && styles.contentWide]}>
           {title ? (
@@ -172,12 +188,13 @@ const styles = StyleSheet.create({
   brandRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   headerActions: {
     alignItems: 'center',
+    alignSelf: 'flex-end',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.small,
     justifyContent: 'flex-end',
   },
-  customerMenu: { position: 'relative' },
+  customerMenu: { zIndex: 3 },
   headerButton: {
     alignItems: 'center',
     borderColor: colors.border,
@@ -190,18 +207,24 @@ const styles = StyleSheet.create({
   },
   headerButtonPressed: { opacity: 0.72 },
   headerButtonText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  menuOverlay: { flex: 1 },
+  menuBackdrop: { bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
   menuPanel: {
     backgroundColor: colors.background,
     borderColor: colors.border,
     borderRadius: radii.medium,
     borderWidth: 1,
+    elevation: 8,
     gap: spacing.xsmall,
     minWidth: 200,
     padding: spacing.xsmall,
     position: 'absolute',
-    right: 0,
-    top: 42,
-    zIndex: 2,
+    right: spacing.large,
+    top: 76,
+  },
+  menuPanelCompact: {
+    right: spacing.medium,
+    top: 118,
   },
   menuItem: {
     alignItems: 'center',

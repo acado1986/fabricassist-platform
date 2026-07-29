@@ -99,6 +99,7 @@ export const en = {
       'We could not validate this image. Retake a clear, well-lit photo.',
     signOut: 'Sign out',
     customerMenu: 'Menu',
+    closeMenu: 'Close menu',
     scan: 'Scan garment',
     history: 'History',
     customerHistory: 'Customer history',

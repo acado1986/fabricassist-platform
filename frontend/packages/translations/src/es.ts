@@ -104,6 +104,7 @@ export const es: TranslationCatalog = {
       'No hemos podido validar la imagen. Haz otra foto clara y bien iluminada.',
     signOut: 'Cerrar sesión',
     customerMenu: 'Menú',
+    closeMenu: 'Cerrar menú',
     scan: 'Analizar prenda',
     history: 'Historial',
     customerHistory: 'Historial del cliente',
