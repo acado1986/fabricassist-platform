@@ -1,13 +1,22 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
   getGarmentApiV1GarmentsGarmentIdGet,
+  scanHistoryApiV1ScansHistoryGet,
   type GarmentResponse,
+  type ScanHistoryResponse,
 } from '@fabricassist/api-client';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '../../../auth/session';
 import { FoundationShell } from '../../../components/FoundationShell';
 import { useTranslation } from '../../../i18n/TranslationProvider';
@@ -28,6 +37,18 @@ export default function GarmentHistory(): ReactNode {
       return result.data;
     },
   });
+  const { data: scans, isError: scansError } = useQuery<ScanHistoryResponse[]>({
+    queryKey: ['scan-history', garmentId],
+    enabled: Boolean(garmentId && token),
+    queryFn: async () => {
+      const result = await scanHistoryApiV1ScansHistoryGet({
+        client: apiClient,
+      });
+      if (!result.data) throw result.error;
+      return result.data;
+    },
+  });
+  const garmentScans = scans?.filter((scan) => scan.garment_id === garmentId);
 
   return (
     <FoundationShell
@@ -79,6 +100,55 @@ export default function GarmentHistory(): ReactNode {
                   garment.cleaned_before ? translate('yes') : translate('no')
                 }
               />
+            </View>
+            <View style={styles.analyses}>
+              <Text style={styles.sectionTitle}>
+                {translate('previousAnalyses')}
+              </Text>
+              {scansError ? (
+                <Text>{translate('scanHistoryLoadFailed')}</Text>
+              ) : null}
+              {!scansError && garmentScans?.length === 0 ? (
+                <Text>{translate('previousAnalysesEmpty')}</Text>
+              ) : null}
+              {garmentScans?.map((scan) => (
+                <Pressable
+                  accessibilityLabel={translate('viewPreviousResult')}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !scan.result_available }}
+                  disabled={!scan.result_available}
+                  key={scan.scan_id}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/result',
+                      params: { scanId: scan.scan_id },
+                    })
+                  }
+                  style={({ pressed }) => [
+                    styles.analysis,
+                    !scan.result_available && styles.analysisDisabled,
+                    pressed && scan.result_available && styles.analysisPressed,
+                  ]}
+                >
+                  <View>
+                    <Text style={styles.analysisTitle}>
+                      {translate('previousAnalysis')}
+                    </Text>
+                    <Text style={styles.analysisDate}>
+                      {formatTimestamp(
+                        scan.created_at,
+                        locale,
+                        translate('notAvailable'),
+                      )}
+                    </Text>
+                  </View>
+                  <Feather
+                    color={colors.primary}
+                    name="chevron-right"
+                    size={20}
+                  />
+                </Pressable>
+              ))}
             </View>
             <View style={styles.events}>
               <Text style={styles.sectionTitle}>
@@ -176,6 +246,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
+  analyses: { gap: spacing.small, marginTop: spacing.small },
+  analysis: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.medium,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.medium,
+  },
+  analysisDisabled: { opacity: 0.55 },
+  analysisPressed: { opacity: 0.72 },
+  analysisTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  analysisDate: { color: colors.muted, fontSize: 12, marginTop: 2 },
   events: { gap: spacing.small, marginTop: spacing.small },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
 });
