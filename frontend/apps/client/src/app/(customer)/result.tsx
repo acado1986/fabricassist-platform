@@ -127,6 +127,9 @@ export default function Result(): ReactNode {
     if (!scanId || !token) return;
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    const retry = (): void => {
+      if (!cancelled) timeout = setTimeout(() => void load(), 1500);
+    };
     const load = async (): Promise<void> => {
       try {
         const scan = await scanDetailApiV1ScansScanIdGet({
@@ -150,6 +153,17 @@ export default function Result(): ReactNode {
           setFailed(true);
           return;
         }
+        // The result endpoint intentionally returns 409 while the worker is
+        // still processing. Do not turn that normal state transition into a
+        // permanent error screen, especially with a slower live provider.
+        if (
+          !['completed', 'needs_review', 'needs_better_image'].includes(
+            status.status,
+          )
+        ) {
+          retry();
+          return;
+        }
         const response = await scanResultApiV1ScansScanIdResultGet({
           client: apiClient,
           path: { scan_id: scanId },
@@ -160,9 +174,11 @@ export default function Result(): ReactNode {
             setResult(response.data.result as unknown as RichResult);
           return;
         }
-        if (!cancelled) timeout = setTimeout(() => void load(), 1500);
+        retry();
       } catch {
-        if (!cancelled) setFailed(true);
+        // Network/API races are recoverable while a scan is being processed.
+        // Only the durable `failed` scan status above is terminal here.
+        retry();
       }
     };
     void load();
