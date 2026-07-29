@@ -382,7 +382,7 @@ async def confirm_identity_candidate(
     if existing is not None:
         if existing.garment_id != garment.id:
             raise HTTPException(409, "This scan already has a different confirmed garment.")
-        return await response_for(session, garment)
+        return await response_for(session, garment, storage)
     scan.garment_id = garment.id
     candidate.status = "confirmed"
     session.add(
