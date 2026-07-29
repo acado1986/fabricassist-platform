@@ -99,6 +99,30 @@ make seed
 idempotent development tenant required for local registration. Do not skip
 either command after a new or reset local database.
 
+For the isolated local Docker profile in this checkout, copy
+`.env.android.example` to `.env.android` and use the Make target below. It
+loads `.env.local` for Docker settings, applies the Android endpoint overrides,
+and starts Expo Dev Client with a clean Metro cache:
+
+```bash
+cp .env.android.example .env.android
+make start-android
+```
+
+For wireless Android development, replace the `localhost` values in
+`.env.android` with the workstation's LAN IP, then start Expo in LAN mode:
+
+```bash
+ANDROID_EXPO_FLAGS=--lan make start-android
+```
+
+This command is for a phone connected over trusted Wi-Fi. Do not use
+`adb reverse` in this mode; ensure the phone can reach the workstation's API,
+Metro, and MinIO ports.
+
+Run `make migrate` and `make seed` in another terminal before registering the
+first local user.
+
 ## 2. Connect the device to local services
 
 ### USB connection

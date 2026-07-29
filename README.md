@@ -178,6 +178,17 @@ evidence remains authoritative.
 Set `FABRICASSIST_API_PUBLIC_URL` in `.env` for a non-local API host before
 building a client.
 
+For local Android development, copy `.env.android.example` to `.env.android`
+and run `make start-android`. For a phone connected over trusted Wi-Fi, replace
+the Android profile's `localhost` values with the workstation LAN IP and run:
+
+```bash
+ANDROID_EXPO_FLAGS=--lan make start-android
+```
+
+USB Android development uses `adb reverse`; wireless development uses direct
+LAN access and does not use `adb reverse`.
+
 ### Enable a real vision LLM
 
 The default `FABRICASSIST_EVIDENCE_PROVIDER=mock` makes no network calls and cannot

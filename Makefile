@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-render-config check-alpha-workflows alpha-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-render-config check-alpha-workflows alpha-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -21,7 +21,17 @@ up: ## Start the healthy local dependency stack, API, and analysis worker.
 	docker compose up -d --build --wait fabricassist-postgres fabricassist-valkey fabricassist-minio fabricassist-minio-init fabricassist-api fabricassist-worker
 
 start: up ## Start the local backend stack and Expo web client.
-	pnpm --dir frontend --filter fabricassist-app web
+	EXPO_PUBLIC_FABRICASSIST_API_URL="$${EXPO_PUBLIC_FABRICASSIST_API_URL:-$${FABRICASSIST_API_PUBLIC_URL:-http://localhost:8000}}" pnpm --dir frontend --filter fabricassist-app exec expo start --web --clear
+
+ANDROID_ENV_FILE ?= .env.android
+
+start-android: ## Start the local backend stack and Expo Dev Client for Android.
+	@test -f .env.local || { echo '.env.local is required for local Docker settings.' >&2; exit 2; }
+	@test -f "$(ANDROID_ENV_FILE)" || { echo "$(ANDROID_ENV_FILE) is required; copy .env.android.example to it." >&2; exit 2; }
+	@set -a; . ./.env.local; . ./$(ANDROID_ENV_FILE); set +a; \
+		$(MAKE) up; \
+		ANDROID_EXPO_FLAGS="$${ANDROID_EXPO_FLAGS:---localhost}"; \
+		pnpm --dir frontend --filter fabricassist-app exec expo start --dev-client $$ANDROID_EXPO_FLAGS --clear
 
 down: ## Stop the local FabricAssist Compose project without deleting volumes.
 	docker compose down
