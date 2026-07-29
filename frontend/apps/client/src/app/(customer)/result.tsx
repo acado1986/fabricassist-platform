@@ -67,7 +67,9 @@ export default function Result(): ReactNode {
   const { locale, translate } = useTranslation();
   const [result, setResult] = useState<RichResult>();
   const [failed, setFailed] = useState(false);
+  const [failureCode, setFailureCode] = useState<string>();
   const [stage, setStage] = useState<string>();
+  const [progressPercent, setProgressPercent] = useState(0);
   const [garmentId, setGarmentId] = useState<string>();
   const [lifecycleMessage, setLifecycleMessage] = useState<string>();
   const [identityCandidates, setIdentityCandidates] = useState<
@@ -140,6 +142,7 @@ export default function Result(): ReactNode {
         const status = scan.data;
         if (cancelled) return;
         setStage(status.analysis_stage ?? status.status);
+        setProgressPercent(status.progress_percent);
         setGarmentId(status.garment_id ?? undefined);
         const candidates =
           await identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet({
@@ -150,6 +153,7 @@ export default function Result(): ReactNode {
           setIdentityCandidates(candidates.data);
         }
         if (status.status === 'failed') {
+          setFailureCode(status.error_code ?? undefined);
           setFailed(true);
           return;
         }
@@ -200,7 +204,9 @@ export default function Result(): ReactNode {
               {translate('resultLoading')}
             </Text>
             <View style={styles.progressTrack}>
-              <View style={styles.progressValue} />
+              <View
+                style={[styles.progressValue, { width: `${progressPercent}%` }]}
+              />
             </View>
             <Text style={styles.loadingCopy}>
               {stage
@@ -209,7 +215,19 @@ export default function Result(): ReactNode {
             </Text>
           </View>
         ) : null}
-        {failed ? <Text>{translate('resultUnavailable')}</Text> : null}
+        {failed ? (
+          <View accessibilityLiveRegion="assertive" style={styles.failure}>
+            <Feather color={colors.danger} name="alert-triangle" size={24} />
+            <Text style={styles.failureTitle}>
+              {translate('analysisFailedTitle')}
+            </Text>
+            <Text style={styles.failureCopy}>
+              {failureCode?.startsWith('PROVIDER_')
+                ? translate('analysisProviderFailed')
+                : translate('analysisFailed')}
+            </Text>
+          </View>
+        ) : null}
         {result ? (
           <>
             <Text accessibilityRole="header" style={styles.title}>
@@ -480,6 +498,15 @@ const styles = StyleSheet.create({
   identityButtonText: { color: colors.background, fontWeight: '800' },
   identityHistory: { color: colors.muted, fontWeight: '700' },
   warning: { backgroundColor: colors.dangerSoft },
+  failure: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radii.medium,
+    gap: spacing.small,
+    padding: spacing.large,
+  },
+  failureTitle: { color: colors.danger, fontSize: 18, fontWeight: '800' },
+  failureCopy: { color: colors.text, textAlign: 'center' },
   heading: { fontWeight: '800', color: colors.primary },
   loading: {
     alignItems: 'center',
