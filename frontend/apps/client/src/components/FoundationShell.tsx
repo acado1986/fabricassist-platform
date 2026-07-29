@@ -1,16 +1,20 @@
 import type { ReactNode } from 'react';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 
 import { LanguageSelector } from './LanguageSelector';
 import { useTranslation } from '../i18n/TranslationProvider';
+import { useSession } from '../auth/session';
 
 export function FoundationShell({
   children,
@@ -24,6 +28,7 @@ export function FoundationShell({
   wide?: boolean;
 }): ReactNode {
   const { translate } = useTranslation();
+  const { token, signOut } = useSession();
   const { width } = useWindowDimensions();
   const isCompact = width < 640;
 
@@ -46,7 +51,41 @@ export function FoundationShell({
               <Text style={styles.tagline}>{translate('tagline')}</Text>
             </View>
           </View>
-          <LanguageSelector />
+          <View style={styles.headerActions}>
+            {token ? (
+              <>
+                <Pressable
+                  accessibilityLabel={translate('customerHistory')}
+                  accessibilityRole="button"
+                  onPress={() => router.push('/history')}
+                  style={({ pressed }) => [
+                    styles.headerButton,
+                    pressed && styles.headerButtonPressed,
+                  ]}
+                >
+                  <Feather color={colors.text} name="clock" size={17} />
+                  <Text style={styles.headerButtonText}>
+                    {translate('history')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={translate('signOut')}
+                  accessibilityRole="button"
+                  onPress={() => void signOut()}
+                  style={({ pressed }) => [
+                    styles.headerButton,
+                    pressed && styles.headerButtonPressed,
+                  ]}
+                >
+                  <Feather color={colors.text} name="log-out" size={17} />
+                  <Text style={styles.headerButtonText}>
+                    {translate('signOut')}
+                  </Text>
+                </Pressable>
+              </>
+            ) : null}
+            <LanguageSelector />
+          </View>
         </View>
 
         <View role="main" style={[styles.content, wide && styles.contentWide]}>
@@ -87,6 +126,25 @@ const styles = StyleSheet.create({
     gap: spacing.medium,
   },
   brandRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.small,
+    justifyContent: 'flex-end',
+  },
+  headerButton: {
+    alignItems: 'center',
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xsmall,
+    minHeight: 36,
+    paddingHorizontal: spacing.small,
+  },
+  headerButtonPressed: { opacity: 0.72 },
+  headerButtonText: { color: colors.text, fontSize: 12, fontWeight: '700' },
   mark: {
     alignItems: 'center',
     backgroundColor: colors.primary,

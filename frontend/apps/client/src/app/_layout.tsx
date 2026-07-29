@@ -30,6 +30,10 @@ export default function RootLayout(): ReactNode {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="(customer)/history"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="(operator)/review"
             options={{ headerShown: false }}
           />

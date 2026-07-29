@@ -82,11 +82,17 @@ export function SessionProvider({
     return performRefresh();
   }
   async function signOut(): Promise<void> {
-    if (token) await logoutApiV1AuthLogoutPost({ client: apiClient });
-    await secureSession.clear();
-    tokenRef.current = null;
-    setToken(null);
-    router.replace('/login');
+    try {
+      if (token) await logoutApiV1AuthLogoutPost({ client: apiClient });
+    } finally {
+      // A local logout must still succeed if the access token has expired or
+      // the network is unavailable. The server-side refresh token is revoked
+      // whenever the request reaches the API.
+      await secureSession.clear();
+      tokenRef.current = null;
+      setToken(null);
+      router.replace('/login');
+    }
   }
   return (
     <SessionContext.Provider

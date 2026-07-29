@@ -103,6 +103,14 @@ export const es: TranslationCatalog = {
     scanValidationFailed:
       'No hemos podido validar la imagen. Haz otra foto clara y bien iluminada.',
     signOut: 'Cerrar sesión',
+    history: 'Historial',
+    customerHistory: 'Historial del cliente',
+    customerHistoryTitle: 'Historial de tus prendas',
+    customerHistoryDescription:
+      'Revisa las prendas que has analizado y su historial de servicio confirmado.',
+    customerHistoryEmpty: 'Aún no tienes historial de prendas.',
+    customerHistoryLoadFailed:
+      'No hemos podido cargar tu historial de prendas.',
     resultTitle: 'Tus instrucciones de cuidado',
     resultDescription:
       'Estas indicaciones se basan en la evidencia que pudimos verificar en la etiqueta.',

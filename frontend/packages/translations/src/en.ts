@@ -98,6 +98,13 @@ export const en = {
     scanValidationFailed:
       'We could not validate this image. Retake a clear, well-lit photo.',
     signOut: 'Sign out',
+    history: 'History',
+    customerHistory: 'Customer history',
+    customerHistoryTitle: 'Your garment history',
+    customerHistoryDescription:
+      'Review garments you have analysed and their confirmed service history.',
+    customerHistoryEmpty: 'You have no garment history yet.',
+    customerHistoryLoadFailed: 'We could not load your garment history.',
     resultTitle: 'Your care guidance',
     resultDescription:
       'This guidance is built from the care-label evidence we could verify.',
