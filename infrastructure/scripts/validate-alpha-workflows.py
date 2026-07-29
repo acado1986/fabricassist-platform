@@ -39,6 +39,7 @@ def main() -> None:
         "make test-object-storage",
         "make check-openapi-drift",
         "make build-alpha-web",
+        "make check-alpha-workflows",
     ):
         require(quality, marker, "alpha-quality.yml")
     for forbidden in (
@@ -70,12 +71,25 @@ def main() -> None:
         "accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
         "gitHubToken: ${{ secrets.GITHUB_TOKEN }}",
         "steps.deploy-pages.outputs.deployment-url",
-        "uv run --project backend alembic -c backend/alembic.ini upgrade head",
+        "run-alpha-migrations.sh",
     ):
         require(deploy, marker, "deploy-alpha.yml")
     for forbidden in ("KOYEB_API_TOKEN", "koyeb-community/", "koyeb/action-"):
         if forbidden in deploy:
             raise SystemExit(f"deploy-alpha.yml must not use Koyeb: {forbidden}")
+
+    migration_runner = SCRIPTS / "run-alpha-migrations.sh"
+    if not migration_runner.is_file():
+        raise SystemExit(f"missing migration runner: {migration_runner}")
+    runner = migration_runner.read_text()
+    for marker in (
+        "max_attempts=4",
+        "FABRICASSIST_MIGRATION_RETRY_DELAY_SECONDS",
+        "AdminShutdown",
+        "alembic -c backend/alembic.ini upgrade head",
+        "Migration failed with a non-transient error; not retrying.",
+    ):
+        require(runner, marker, "run-alpha-migrations.sh")
 
     smoke = load("alpha-live-smoke.yml")
     for marker in ("workflow_dispatch:", "base_url:", "make alpha-live-smoke"):

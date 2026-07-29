@@ -127,6 +127,7 @@ check-render-config: ## Validate the Render alpha API workflow and container con
 
 check-alpha-workflows: ## Validate Alpha CI, deployment, and live-smoke workflow contracts.
 	python3 infrastructure/scripts/validate-alpha-workflows.py
+	@./infrastructure/scripts/test-run-alpha-migrations.sh
 
 alpha-live-smoke: ## Run the opt-in hosted alpha smoke using protected credentials.
 	python3 infrastructure/scripts/alpha-live-smoke.py

@@ -44,6 +44,7 @@ jobs:
           make test-object-storage
           make check-openapi-drift
           make build-alpha-web
+          make check-alpha-workflows
       - id: revision
         name: Record selected revision
         run: echo "git_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -64,7 +65,7 @@ jobs:
       - name: Apply backward-compatible migrations
         env:
           FABRICASSIST_DATABASE_MIGRATION_URL: ${{ secrets.FABRICASSIST_DATABASE_MIGRATION_URL }}
-        run: uv run --project backend alembic -c backend/alembic.ini upgrade head
+        run: ./infrastructure/scripts/run-alpha-migrations.sh
 
   deploy-api:
     needs: [quality, migrate]

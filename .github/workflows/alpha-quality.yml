@@ -35,3 +35,4 @@ jobs:
           make test-object-storage
           make check-openapi-drift
           make build-alpha-web
+          make check-alpha-workflows

@@ -35,7 +35,7 @@ In GitHub, `alpha-quality.yml` additionally runs `make test-migrations`, `make t
 
 ## Failure recovery
 
-- **Migration failure:** stop before API/web deployment; correct the migration or database configuration, apply only forward-compatible remediation, then rerun the same release process. Never automatically downgrade Neon.
+- **Migration failure:** the deployment runner retries only transient managed-PostgreSQL connection shutdowns up to four times with bounded backoff. A schema/configuration failure still stops before API/web deployment; correct it with forward-compatible remediation, then rerun the same release process. Never automatically downgrade Neon.
 - **API/web deployment failure:** confirm the selected SHA in workflow output, correct configuration or workflow failure, then redeploy that SHA. Do not deploy a different unreviewed checkout.
 - **QStash destination failure:** pause new alpha analysis dispatch if message compatibility is affected; fix the exact HTTPS destination/signing keys, send a synthetic signed delivery, and let recovery reconcile durable pending checkpoints before reopening traffic.
 - **Smoke failure after deployment:** keep the release unaccepted, follow [troubleshooting](troubleshooting.md), then either fix-forward or execute [rollback](rollback.md).
