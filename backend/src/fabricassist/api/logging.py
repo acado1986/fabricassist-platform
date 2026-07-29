@@ -38,6 +38,8 @@ class JsonFormatter(logging.Formatter):
             ("http_path", "http_path"),
             ("http_status", "http_status"),
             ("error_type", "error_type"),
+            ("scan_id", "scan_id"),
+            ("analysis_phase", "analysis_phase"),
         ):
             value = getattr(record, source, None)
             if value is not None:

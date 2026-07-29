@@ -186,7 +186,7 @@ def main() -> int:
             headers=auth,
         )
         analysis_key = str(uuid4())
-        analysis, _ = request(
+        analysis, analysis_headers = request(
             base_url,
             f"/api/v1/scans/{scan_id}/analyse",
             method="POST",
@@ -206,9 +206,14 @@ def main() -> int:
             raise RuntimeError(
                 "analysis idempotency did not return the original operation"
             )
+        correlation_id = analysis_headers.get("X-Correlation-ID", "unknown")
         deadline = time.monotonic() + timeout
+        last_status = "unknown"
+        last_stage = "unknown"
         while time.monotonic() < deadline:
             detail, _ = request(base_url, f"/api/v1/scans/{scan_id}", headers=auth)
+            last_status = str(detail.get("status", "unknown"))
+            last_stage = str(detail.get("analysis_stage", "unknown"))
             if detail.get("status") in {
                 "completed",
                 "needs_review",
@@ -223,7 +228,11 @@ def main() -> int:
                 raise RuntimeError(f"analysis ended with {detail.get('status')}")
             time.sleep(3)
         else:
-            raise RuntimeError("analysis did not complete before the smoke timeout")
+            raise RuntimeError(
+                "analysis did not complete before the smoke timeout "
+                f"(scan_id={scan_id}, correlation_id={correlation_id}, "
+                f"status={last_status}, stage={last_stage})"
+            )
         request(base_url, f"/api/v1/scans/{scan_id}/result", headers=auth)
         request(
             base_url,

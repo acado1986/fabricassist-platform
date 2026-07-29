@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from io import BytesIO
 from time import perf_counter
@@ -80,6 +81,7 @@ from fabricassist.infrastructure.persistence.models import (
 )
 
 TEMPLATE_VERSION = "rich-result-v2"
+logger = logging.getLogger(__name__)
 
 
 _RENDERED_CARE_TEXT: dict[str, tuple[str, str]] = {
@@ -359,6 +361,10 @@ async def analyse_scan(
         scan.analysis_stage = "evidence"
         scan.progress_percent = 25
         try:
+            logger.info(
+                "Analysis phase started",
+                extra={"scan_id": str(scan.id), "analysis_phase": "normalize_images"},
+            )
             normalized = tuple(
                 normalize_image(storage.read_object(i.object_key), i.id, i.role) for i in images
             )
@@ -501,6 +507,10 @@ async def analyse_scan(
                     },
                 )
         for image in new_images:
+            logger.info(
+                "Analysis phase started",
+                extra={"scan_id": str(scan.id), "analysis_phase": "evidence_extraction"},
+            )
             extracted = await provider.extract_evidence((image,), prior)
             session.add(
                 ModelRun(
@@ -666,6 +676,10 @@ async def analyse_scan(
                         confidence=float(observation.confidence),
                     )
                 )
+        logger.info(
+            "Analysis phase started",
+            extra={"scan_id": str(scan.id), "analysis_phase": "care_planning"},
+        )
         planning_result = await care_planning_provider.propose_plan(dossier)
         proposal = planning_result.proposal
         planning_latency_ms = planning_result.latency_ms
@@ -802,6 +816,10 @@ async def analyse_scan(
                     answer=answer,
                 )
             )
+        logger.info(
+            "Analysis phase started",
+            extra={"scan_id": str(scan.id), "analysis_phase": "persist_result"},
+        )
         revision.status = "completed"
         scan.active_analysis_revision_id = revision.id
         garment.active_analysis_revision_id = revision.id
