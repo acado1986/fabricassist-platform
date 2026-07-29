@@ -68,9 +68,18 @@ def decode_barcodes(images: tuple[NormalizedImage, ...]) -> tuple[BarcodeCandida
 
 
 class VisionProviderError(Exception):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        provider_http_status: int | None = None,
+        provider_message: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.provider_http_status = provider_http_status
+        self.provider_message = provider_message
 
 
 class VisionEvidenceProvider(Protocol):

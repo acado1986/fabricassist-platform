@@ -254,10 +254,12 @@ docker compose up -d --build fabricassist-worker
 docker compose logs -f --tail=100 fabricassist-worker
 ```
 
-This emits `openai_responses_model_request` with the prompt, model limits, and normalized
-image metadata, plus `openai_responses_model_response` with the model's text output. It
-never logs image bytes, API keys, gateway headers, or endpoint URLs. Disable it
-again after debugging because model output can include care-label text.
+This emits provider/model/operation records with request metadata (text lengths,
+image byte counts, MIME types, and schema keys) and response metadata (whether
+text was returned, text length, finish reasons, and token counts). Gemini HTTP
+failures additionally include the status and a bounded provider diagnostic.
+It never logs prompts, response text, image bytes, API keys, gateway headers, or
+endpoint URLs. Disable it again after debugging.
 
 ## Local infrastructure
 

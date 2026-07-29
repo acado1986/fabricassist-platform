@@ -34,6 +34,7 @@ def _construct(
                 model=settings.gemini_model,
                 timeout_seconds=settings.vision_timeout_seconds,
                 max_output_tokens=settings.vision_max_output_tokens,
+                debug_logging=settings.vision_debug_logging,
                 prompts=GEMINI_PROVIDER_PROMPTS,
             )
         )
@@ -49,6 +50,7 @@ def _construct(
                     json.loads(settings.openai_responses_extra_headers_json),
                 ),
                 max_output_tokens=settings.vision_max_output_tokens,
+                debug_logging=settings.vision_debug_logging,
             )
         )
     raise ValueError(f"Unsupported model capability provider: {selected}")

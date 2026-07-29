@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -29,6 +30,8 @@ from fabricassist.domain.care import ProposedCarePlan
 from fabricassist.domain.conversations import AssistantMessageProposal, ConversationContext
 from fabricassist.domain.evidence import GarmentEvidenceDelta, GarmentEvidenceDossier
 from fabricassist.infrastructure.vision.providers.common import validate_sources
+
+logger = logging.getLogger(__name__)
 
 GeminiGenerateContent = Callable[
     [str, object, types.GenerateContentConfig],
@@ -59,6 +62,7 @@ class GeminiAdapterConfig:
     model: str
     timeout_seconds: int
     max_output_tokens: int
+    debug_logging: bool = False
     prompts: ProviderPrompts = field(default_factory=ProviderPrompts)
 
 
@@ -75,25 +79,62 @@ class _GeminiAdapter:
         self._model = config.model
         self._timeout_seconds = config.timeout_seconds
         self._max_output_tokens = config.max_output_tokens
+        self._debug_logging = config.debug_logging
         self._prompts = config.prompts
         self._generate_content_override = generate_content
 
     async def _generate(
-        self, contents: object, config: types.GenerateContentConfig
+        self,
+        contents: object,
+        config: types.GenerateContentConfig,
+        *,
+        operation: str,
     ) -> types.GenerateContentResponse:
+        if self._debug_logging:
+            logger.debug(
+                "Gemini request summary",
+                extra={
+                    "provider": "gemini",
+                    "model": self._model,
+                    "operation": operation,
+                    "request_summary": self._request_summary(contents, config),
+                },
+            )
         try:
             if self._generate_content_override is not None:
-                return await self._generate_content_override(self._model, contents, config)
+                response = await self._generate_content_override(self._model, contents, config)
+                if self._debug_logging:
+                    logger.debug(
+                        "Gemini response summary",
+                        extra={
+                            "provider": "gemini",
+                            "model": self._model,
+                            "operation": operation,
+                            "response_summary": self._response_summary(response),
+                        },
+                    )
+                return response
             client = genai.Client(
                 api_key=self._api_key,
                 http_options=types.HttpOptions(timeout=self._timeout_seconds * 1_000),
             )
             try:
-                return await client.aio.models.generate_content(
+                response = await client.aio.models.generate_content(
                     model=self._model,
                     contents=contents,  # pyright: ignore[reportArgumentType]
                     config=config,
                 )
+                if self._debug_logging:
+                    logger.debug(
+                        "Gemini response summary",
+                        extra={
+                            "provider": "gemini",
+                            "model": self._model,
+                            "operation": operation,
+                            "response_summary": self._response_summary(response),
+                        },
+                    )
+                return response
             finally:
                 await client.aio.aclose()
                 client.close()
@@ -103,17 +144,76 @@ class _GeminiAdapter:
             code = (
                 "PROVIDER_RATE_LIMIT"
                 if error.code == 429
+                else "PROVIDER_AUTHENTICATION_FAILED"
+                if error.code in {401, 403}
+                else "PROVIDER_MODEL_UNAVAILABLE"
+                if error.code == 404
                 else "PROVIDER_UNAVAILABLE"
                 if error.code >= 500
                 else "PROVIDER_REJECTED"
             )
+            provider_message = str(error)[:500]
+            logger.error(
+                "Gemini request rejected",
+                extra={
+                    "provider": "gemini",
+                    "model": self._model,
+                    "operation": operation,
+                    "provider_http_status": error.code,
+                    "provider_error_code": code,
+                    "provider_message": provider_message,
+                },
+            )
             raise VisionProviderError(
-                code, f"Gemini provider returned HTTP {error.code}"
+                code,
+                f"Gemini provider returned HTTP {error.code}",
+                provider_http_status=error.code,
+                provider_message=provider_message,
             ) from error
         except httpx.HTTPError as error:
             raise VisionProviderError(
                 "PROVIDER_NETWORK_ERROR", "Gemini provider request failed"
             ) from error
+
+    @staticmethod
+    def _request_summary(
+        contents: object, config: types.GenerateContentConfig
+    ) -> dict[str, object]:
+        parts = contents if isinstance(contents, list) else [contents]
+        summary: list[dict[str, object]] = []
+        for part in parts:
+            text = getattr(part, "text", None)
+            inline_data = getattr(part, "inline_data", None)
+            item: dict[str, object] = {"type": type(part).__name__}
+            if text is not None:
+                item["text_length"] = len(text)
+            if inline_data is not None:
+                data = getattr(inline_data, "data", None)
+                item["mime_type"] = getattr(inline_data, "mime_type", None)
+                item["image_bytes"] = len(data) if isinstance(data, bytes) else None
+            summary.append(item)
+        schema = config.response_json_schema
+        return {
+            "parts": summary,
+            "response_mime_type": config.response_mime_type,
+            "schema_keys": sorted(schema.keys()) if isinstance(schema, dict) else None,
+        }
+
+    @staticmethod
+    def _response_summary(response: types.GenerateContentResponse) -> dict[str, object]:
+        usage = response.usage_metadata
+        return {
+            "text_present": response.text is not None,
+            "text_length": len(response.text) if response.text is not None else 0,
+            "candidate_count": len(response.candidates or []),
+            "finish_reasons": [
+                str(candidate.finish_reason)
+                for candidate in (response.candidates or [])
+                if candidate.finish_reason is not None
+            ],
+            "prompt_tokens": usage.prompt_token_count if usage is not None else None,
+            "output_tokens": usage.candidates_token_count if usage is not None else None,
+        }
 
     @property
     def descriptor(self) -> ProviderDescriptor:
@@ -145,6 +245,7 @@ class _GeminiVisionCapability(_GeminiAdapter):
                 max_output_tokens=self._max_output_tokens,
                 temperature=0,
             ),
+            operation="evidence",
         )
         try:
             if response.text is None:
@@ -199,6 +300,7 @@ class _GeminiConversationCapability(_GeminiAdapter):
                 max_output_tokens=self._max_output_tokens,
                 temperature=0,
             ),
+            operation="conversation",
         )
         try:
             if response.text is None:
@@ -239,6 +341,7 @@ class _GeminiPlanningCapability(_GeminiAdapter):
                 max_output_tokens=self._max_output_tokens,
                 temperature=0,
             ),
+            operation="planning",
         )
         try:
             if response.text is None:

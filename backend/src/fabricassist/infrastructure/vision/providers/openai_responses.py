@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import cast
@@ -32,6 +33,7 @@ from fabricassist.infrastructure.vision.providers.common import (
 
 PROMPT_VERSION = "garment-evidence-v1"
 SCHEMA_VERSION = "garment-evidence-v1"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,7 @@ class OpenAIResponsesAdapterConfig:
     timeout_seconds: int
     extra_headers: dict[str, str] = field(repr=False)
     max_output_tokens: int
+    debug_logging: bool = False
     prompts: ProviderPrompts = field(default_factory=ProviderPrompts)
 
 
@@ -82,6 +85,7 @@ class _OpenAIResponsesVisionCapability:
         self._timeout_seconds = config.timeout_seconds
         self._extra_headers = config.extra_headers
         self._max_output_tokens = config.max_output_tokens
+        self._debug_logging = config.debug_logging
         self._prompts = config.prompts
         self._transport = transport
 
@@ -128,6 +132,7 @@ class _OpenAIResponsesVisionCapability:
             "store": False,
         }
         headers = {"Authorization": f"Bearer {self._api_key}", **self._extra_headers}
+        self._log_request("evidence", payload)
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout_seconds, transport=self._transport
@@ -136,6 +141,7 @@ class _OpenAIResponsesVisionCapability:
                     f"{self._base_url}/responses", headers=headers, json=payload
                 )
                 response.raise_for_status()
+            self._log_response("evidence", response)
         except httpx.TimeoutException as error:
             raise VisionProviderError("PROVIDER_TIMEOUT", "Vision provider timed out") from error
         except httpx.HTTPStatusError as error:
@@ -143,11 +149,32 @@ class _OpenAIResponsesVisionCapability:
             code = (
                 "PROVIDER_RATE_LIMIT"
                 if status == 429
+                else "PROVIDER_AUTHENTICATION_FAILED"
+                if status in {401, 403}
+                else "PROVIDER_MODEL_UNAVAILABLE"
+                if status == 404
                 else "PROVIDER_UNAVAILABLE"
                 if status >= 500
                 else "PROVIDER_REJECTED"
             )
-            raise VisionProviderError(code, f"Vision provider returned HTTP {status}") from error
+            provider_message = error.response.text[:500]
+            logger.error(
+                "OpenAI Responses provider request rejected",
+                extra={
+                    "provider": "openai_responses",
+                    "model": self._model,
+                    "operation": "evidence",
+                    "provider_http_status": status,
+                    "provider_error_code": code,
+                    "provider_message": provider_message,
+                },
+            )
+            raise VisionProviderError(
+                code,
+                f"Vision provider returned HTTP {status}",
+                provider_http_status=status,
+                provider_message=provider_message,
+            ) from error
         except httpx.HTTPError as error:
             raise VisionProviderError(
                 "PROVIDER_NETWORK_ERROR", "Vision provider request failed"
@@ -170,6 +197,75 @@ class _OpenAIResponsesVisionCapability:
             latency_ms=round((perf_counter() - started) * 1000),
             input_tokens=optional_int(usage_data.get("input_tokens")),
             output_tokens=optional_int(usage_data.get("output_tokens")),
+        )
+
+    def _log_request(self, operation: str, payload: dict[str, object]) -> None:
+        if not self._debug_logging:
+            return
+        content = payload.get("input")
+        content_items = []
+        if isinstance(content, list):
+            for message in content:
+                if not isinstance(message, dict):
+                    continue
+                items = message.get("content")
+                if isinstance(items, list):
+                    content_items.extend(item for item in items if isinstance(item, dict))
+        text_lengths = [
+            len(str(item["text"])) for item in content_items if item.get("type") == "input_text"
+        ]
+        image_bytes = [
+            round((len(str(item["image_url"])) - len("data:image/jpeg;base64,")) * 3 / 4)
+            for item in content_items
+            if item.get("type") == "input_image" and isinstance(item.get("image_url"), str)
+        ]
+        logger.debug(
+            "OpenAI Responses request summary",
+            extra={
+                "provider": "openai_responses",
+                "model": self._model,
+                "operation": operation,
+                "request_summary": {
+                    "text_lengths": text_lengths,
+                    "image_count": len(image_bytes),
+                    "image_bytes": image_bytes,
+                    "schema_present": "text" in payload,
+                },
+            },
+        )
+
+    def _log_response(self, operation: str, response: httpx.Response) -> None:
+        if not self._debug_logging:
+            return
+        try:
+            body = response.json()
+        except (TypeError, ValueError, json.JSONDecodeError):
+            body = {}
+        try:
+            output_text = (
+                _response_output_text(cast(dict[str, object], body))
+                if isinstance(body, dict)
+                else ""
+            )
+        except ValueError:
+            output_text = ""
+        usage = body.get("usage") if isinstance(body, dict) else None
+        usage_data = usage if isinstance(usage, dict) else {}
+        logger.debug(
+            "OpenAI Responses response summary",
+            extra={
+                "provider": "openai_responses",
+                "model": self._model,
+                "operation": operation,
+                "response_summary": {
+                    "http_status": response.status_code,
+                    "text_present": bool(output_text),
+                    "text_length": len(output_text),
+                    "response_keys": sorted(body) if isinstance(body, dict) else [],
+                    "input_tokens": optional_int(usage_data.get("input_tokens")),
+                    "output_tokens": optional_int(usage_data.get("output_tokens")),
+                },
+            },
         )
 
     async def extract_barcode_candidates(
@@ -205,7 +301,7 @@ def _response_output_text(response: dict[str, object]) -> str:
     raise ValueError("Response has no output text")
 
 
-class _OpenAIResponsesConversationCapability:
+class _OpenAIResponsesConversationCapability(_OpenAIResponsesVisionCapability):
     """Responses adapter for server-owned, schema-validated follow-up answers."""
 
     def __init__(
@@ -220,6 +316,7 @@ class _OpenAIResponsesConversationCapability:
         self._timeout_seconds = config.timeout_seconds
         self._extra_headers = config.extra_headers
         self._max_output_tokens = config.max_output_tokens
+        self._debug_logging = config.debug_logging
         self._prompts = config.prompts
         self._transport = transport
 
@@ -251,6 +348,7 @@ class _OpenAIResponsesConversationCapability:
             "store": False,
         }
         headers = {"Authorization": f"Bearer {self._api_key}", **self._extra_headers}
+        self._log_request("conversation", payload)
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout_seconds,
@@ -260,13 +358,41 @@ class _OpenAIResponsesConversationCapability:
                     f"{self._base_url}/responses", headers=headers, json=payload
                 )
                 response.raise_for_status()
+            self._log_response("conversation", response)
         except httpx.TimeoutException as error:
             raise VisionProviderError(
                 "PROVIDER_TIMEOUT", "Conversation provider timed out"
             ) from error
         except httpx.HTTPStatusError as error:
+            status = error.response.status_code
+            code = (
+                "PROVIDER_RATE_LIMIT"
+                if status == 429
+                else "PROVIDER_AUTHENTICATION_FAILED"
+                if status in {401, 403}
+                else "PROVIDER_MODEL_UNAVAILABLE"
+                if status == 404
+                else "PROVIDER_UNAVAILABLE"
+                if status >= 500
+                else "PROVIDER_REJECTED"
+            )
+            provider_message = error.response.text[:500]
+            logger.error(
+                "OpenAI Responses provider request rejected",
+                extra={
+                    "provider": "openai_responses",
+                    "model": self._model,
+                    "operation": "conversation",
+                    "provider_http_status": status,
+                    "provider_error_code": code,
+                    "provider_message": provider_message,
+                },
+            )
             raise VisionProviderError(
-                "PROVIDER_REJECTED", "Conversation provider rejected request"
+                code,
+                f"Conversation provider returned HTTP {status}",
+                provider_http_status=status,
+                provider_message=provider_message,
             ) from error
         except httpx.HTTPError as error:
             raise VisionProviderError(
@@ -319,6 +445,7 @@ class _OpenAIResponsesPlanningCapability(_OpenAIResponsesConversationCapability)
             "store": False,
         }
         headers = {"Authorization": f"Bearer {self._api_key}", **self._extra_headers}
+        self._log_request("planning", payload)
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout_seconds,
@@ -328,11 +455,39 @@ class _OpenAIResponsesPlanningCapability(_OpenAIResponsesConversationCapability)
                     f"{self._base_url}/responses", headers=headers, json=payload
                 )
                 response.raise_for_status()
+            self._log_response("planning", response)
         except httpx.TimeoutException as error:
             raise VisionProviderError("PROVIDER_TIMEOUT", "Planning provider timed out") from error
         except httpx.HTTPStatusError as error:
+            status = error.response.status_code
+            code = (
+                "PROVIDER_RATE_LIMIT"
+                if status == 429
+                else "PROVIDER_AUTHENTICATION_FAILED"
+                if status in {401, 403}
+                else "PROVIDER_MODEL_UNAVAILABLE"
+                if status == 404
+                else "PROVIDER_UNAVAILABLE"
+                if status >= 500
+                else "PROVIDER_REJECTED"
+            )
+            provider_message = error.response.text[:500]
+            logger.error(
+                "OpenAI Responses provider request rejected",
+                extra={
+                    "provider": "openai_responses",
+                    "model": self._model,
+                    "operation": "planning",
+                    "provider_http_status": status,
+                    "provider_error_code": code,
+                    "provider_message": provider_message,
+                },
+            )
             raise VisionProviderError(
-                "PROVIDER_REJECTED", "Planning provider rejected request"
+                code,
+                f"Planning provider returned HTTP {status}",
+                provider_http_status=status,
+                provider_message=provider_message,
             ) from error
         except httpx.HTTPError as error:
             raise VisionProviderError(

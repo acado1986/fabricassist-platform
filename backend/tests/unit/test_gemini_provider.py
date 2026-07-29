@@ -5,7 +5,7 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from google.genai import types
+from google.genai import errors, types
 
 from fabricassist.application.provider_prompts import (
     DEFAULT_EVIDENCE_SYSTEM_PROMPT,
@@ -30,6 +30,16 @@ def _config(*, prompts: ProviderPrompts | None = None) -> GeminiAdapterConfig:
         timeout_seconds=120,
         max_output_tokens=16_000,
         prompts=prompts or ProviderPrompts(),
+    )
+
+
+def _debug_config() -> GeminiAdapterConfig:
+    return GeminiAdapterConfig(
+        api_key="synthetic-test-key",
+        model="gemini-2.5-flash",
+        timeout_seconds=120,
+        max_output_tokens=16_000,
+        debug_logging=True,
     )
 
 
@@ -121,6 +131,69 @@ async def test_gemini_provider_sends_image_bytes_and_validates_evidence() -> Non
     config = cast(types.GenerateContentConfig, observed["config"])
     assert config.response_mime_type == "application/json"
     assert config.response_json_schema == result.delta.__class__.model_json_schema()
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_maps_model_not_found_and_preserves_diagnostics() -> None:
+    async def generate(
+        model: str, contents: object, config: types.GenerateContentConfig
+    ) -> types.GenerateContentResponse:
+        _ = (model, contents, config)
+        raise errors.APIError(
+            404,
+            {"error": {"status": "NOT_FOUND", "message": "model is unavailable"}},
+        )
+
+    provider = GeminiProviderAdapter(_config(), generate_content=generate)
+    with pytest.raises(VisionProviderError, match="HTTP 404") as raised:
+        await provider._generate("test", types.GenerateContentConfig(), operation="evidence")
+
+    assert raised.value.code == "PROVIDER_MODEL_UNAVAILABLE"
+    assert raised.value.provider_http_status == 404
+    assert "model is unavailable" in (raised.value.provider_message or "")
+
+
+@pytest.mark.asyncio
+async def test_gemini_debug_logging_records_safe_request_and_response_summary(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    image_id = uuid4()
+
+    async def generate(
+        model: str, contents: object, config: types.GenerateContentConfig
+    ) -> types.GenerateContentResponse:
+        _ = (model, contents, config)
+        return _response(
+            {
+                "observations": [],
+                "care_facts": [],
+                "uncertainties": [],
+            }
+        )
+
+    provider = GeminiProviderAdapter(_debug_config(), generate_content=generate)
+    with caplog.at_level("DEBUG"):
+        await provider.extract_evidence(
+            (
+                NormalizedImage(
+                    image_id=image_id,
+                    jpeg_bytes=b"private-image-bytes",
+                    sha256="0" * 64,
+                    width=640,
+                    height=640,
+                    role=ImageRole.CARE_LABEL,
+                ),
+            )
+        )
+
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "Gemini request summary" in messages
+    assert "Gemini response summary" in messages
+    assert "private-image-bytes" not in messages
+    request_record = next(
+        record for record in caplog.records if record.getMessage() == "Gemini request summary"
+    )
+    assert request_record.request_summary["parts"][1]["image_bytes"] == len(b"private-image-bytes")
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ def _config() -> OpenAIResponsesAdapterConfig:
         timeout_seconds=120,
         extra_headers={"X-Gateway-Key": "gateway-secret"},
         max_output_tokens=16_000,
+        debug_logging=True,
     )
 
 
@@ -108,6 +109,56 @@ async def test_responses_provider_sends_images_and_validates_structured_evidence
     response_format = observed_request["text"]["format"]  # type: ignore[index]
     assert response_format["strict"] is True  # type: ignore[index]
     assert response_format["schema"]["additionalProperties"] is False  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_responses_provider_debug_logging_uses_safe_summaries(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def responder(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"observations":[],"care_facts":[],"uncertainties":[]}',
+                            }
+                        ],
+                    }
+                ],
+                "usage": {"input_tokens": 3, "output_tokens": 2},
+            },
+        )
+
+    provider = OpenAIResponsesProviderAdapter(_config(), transport=httpx.MockTransport(responder))
+    with caplog.at_level("DEBUG"):
+        await provider.extract_evidence(
+            (
+                NormalizedImage(
+                    uuid4(),
+                    b"private-image-bytes",
+                    "0" * 64,
+                    640,
+                    640,
+                    ImageRole.CARE_LABEL,
+                ),
+            )
+        )
+
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "OpenAI Responses request summary" in messages
+    assert "OpenAI Responses response summary" in messages
+    assert "private-image-bytes" not in messages
+    request_record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "OpenAI Responses request summary"
+    )
+    assert request_record.request_summary["image_count"] == 1
 
 
 @pytest.mark.asyncio

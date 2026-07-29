@@ -260,7 +260,18 @@ async def execute_checkpoint(
         await session.commit()
         logger.error(
             "Analysis execution failed permanently",
-            extra={"error_type": type(error).__name__},
+            extra={
+                "error_type": type(error).__name__,
+                "provider_error_code": error.code
+                if isinstance(error, VisionProviderError)
+                else None,
+                "provider_http_status": error.provider_http_status
+                if isinstance(error, VisionProviderError)
+                else None,
+                "provider_message": error.provider_message
+                if isinstance(error, VisionProviderError)
+                else None,
+            },
         )
         raise AnalysisExecutionError(error_code, error) from error
     except Exception as error:
