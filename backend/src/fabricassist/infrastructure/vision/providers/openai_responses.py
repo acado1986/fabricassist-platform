@@ -203,14 +203,23 @@ class _OpenAIResponsesVisionCapability:
         if not self._debug_logging:
             return
         content = payload.get("input")
-        content_items = []
+        content_items: list[dict[str, object]] = []
         if isinstance(content, list):
-            for message in content:
-                if not isinstance(message, dict):
+            for message_value in cast(list[object], content):
+                message = (
+                    cast(dict[str, object], message_value)
+                    if isinstance(message_value, dict)
+                    else None
+                )
+                if message is None:
                     continue
                 items = message.get("content")
                 if isinstance(items, list):
-                    content_items.extend(item for item in items if isinstance(item, dict))
+                    content_items.extend(
+                        cast(dict[str, object], item)
+                        for item in cast(list[object], items)
+                        if isinstance(item, dict)
+                    )
         text_lengths = [
             len(str(item["text"])) for item in content_items if item.get("type") == "input_text"
         ]
@@ -238,7 +247,7 @@ class _OpenAIResponsesVisionCapability:
         if not self._debug_logging:
             return
         try:
-            body = response.json()
+            body: object = response.json()
         except (TypeError, ValueError, json.JSONDecodeError):
             body = {}
         try:
@@ -249,8 +258,9 @@ class _OpenAIResponsesVisionCapability:
             )
         except ValueError:
             output_text = ""
-        usage = body.get("usage") if isinstance(body, dict) else None
-        usage_data = usage if isinstance(usage, dict) else {}
+        body_data = cast(dict[str, object], body) if isinstance(body, dict) else {}
+        usage = body_data.get("usage")
+        usage_data = cast(dict[str, object], usage) if isinstance(usage, dict) else {}
         logger.debug(
             "OpenAI Responses response summary",
             extra={
@@ -261,7 +271,7 @@ class _OpenAIResponsesVisionCapability:
                     "http_status": response.status_code,
                     "text_present": bool(output_text),
                     "text_length": len(output_text),
-                    "response_keys": sorted(body) if isinstance(body, dict) else [],
+                    "response_keys": sorted(body_data),
                     "input_tokens": optional_int(usage_data.get("input_tokens")),
                     "output_tokens": optional_int(usage_data.get("output_tokens")),
                 },

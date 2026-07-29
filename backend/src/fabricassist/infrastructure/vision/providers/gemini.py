@@ -7,6 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from time import perf_counter
+from typing import cast
 
 import httpx
 from google import genai
@@ -179,7 +180,9 @@ class _GeminiAdapter:
     def _request_summary(
         contents: object, config: types.GenerateContentConfig
     ) -> dict[str, object]:
-        parts = contents if isinstance(contents, list) else [contents]
+        parts: list[object] = (
+            cast(list[object], contents) if isinstance(contents, list) else [contents]
+        )
         summary: list[dict[str, object]] = []
         for part in parts:
             text = getattr(part, "text", None)
@@ -192,11 +195,14 @@ class _GeminiAdapter:
                 item["mime_type"] = getattr(inline_data, "mime_type", None)
                 item["image_bytes"] = len(data) if isinstance(data, bytes) else None
             summary.append(item)
-        schema = config.response_json_schema
+        schema = cast(object, config.response_json_schema)
+        schema_keys = (
+            sorted(cast(dict[str, object], schema).keys()) if isinstance(schema, dict) else None
+        )
         return {
             "parts": summary,
             "response_mime_type": config.response_mime_type,
-            "schema_keys": sorted(schema.keys()) if isinstance(schema, dict) else None,
+            "schema_keys": schema_keys,
         }
 
     @staticmethod

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import cast
 from uuid import uuid4
 
@@ -146,7 +147,9 @@ async def test_gemini_provider_maps_model_not_found_and_preserves_diagnostics() 
 
     provider = GeminiProviderAdapter(_config(), generate_content=generate)
     with pytest.raises(VisionProviderError, match="HTTP 404") as raised:
-        await provider._generate("test", types.GenerateContentConfig(), operation="evidence")
+        await provider._generate(  # pyright: ignore[reportPrivateUsage]
+            "test", types.GenerateContentConfig(), operation="evidence"
+        )
 
     assert raised.value.code == "PROVIDER_MODEL_UNAVAILABLE"
     assert raised.value.provider_http_status == 404
@@ -156,6 +159,7 @@ async def test_gemini_provider_maps_model_not_found_and_preserves_diagnostics() 
 @pytest.mark.asyncio
 async def test_gemini_debug_logging_records_safe_request_and_response_summary(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     image_id = uuid4()
 
@@ -172,6 +176,10 @@ async def test_gemini_debug_logging_records_safe_request_and_response_summary(
         )
 
     provider = GeminiProviderAdapter(_debug_config(), generate_content=generate)
+    provider_logger = logging.getLogger("fabricassist.infrastructure.vision.providers.gemini")
+    monkeypatch.setattr(provider_logger, "handlers", [caplog.handler])
+    monkeypatch.setattr(provider_logger, "propagate", False)
+    caplog.set_level(logging.DEBUG, logger=provider_logger.name)
     with caplog.at_level("DEBUG"):
         await provider.extract_evidence(
             (
@@ -193,7 +201,12 @@ async def test_gemini_debug_logging_records_safe_request_and_response_summary(
     request_record = next(
         record for record in caplog.records if record.getMessage() == "Gemini request summary"
     )
-    assert request_record.request_summary["parts"][1]["image_bytes"] == len(b"private-image-bytes")
+    request_summary = cast(
+        dict[str, object],
+        vars(request_record)["request_summary"],
+    )
+    parts = cast(list[dict[str, object]], request_summary["parts"])
+    assert parts[1]["image_bytes"] == len(b"private-image-bytes")
 
 
 @pytest.mark.asyncio

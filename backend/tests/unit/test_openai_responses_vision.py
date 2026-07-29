@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from typing import cast
 from uuid import uuid4
 
 import httpx
@@ -114,6 +116,7 @@ async def test_responses_provider_sends_images_and_validates_structured_evidence
 @pytest.mark.asyncio
 async def test_responses_provider_debug_logging_uses_safe_summaries(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def responder(_: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -135,6 +138,12 @@ async def test_responses_provider_debug_logging_uses_safe_summaries(
         )
 
     provider = OpenAIResponsesProviderAdapter(_config(), transport=httpx.MockTransport(responder))
+    provider_logger = logging.getLogger(
+        "fabricassist.infrastructure.vision.providers.openai_responses"
+    )
+    monkeypatch.setattr(provider_logger, "handlers", [caplog.handler])
+    monkeypatch.setattr(provider_logger, "propagate", False)
+    caplog.set_level(logging.DEBUG, logger=provider_logger.name)
     with caplog.at_level("DEBUG"):
         await provider.extract_evidence(
             (
@@ -158,7 +167,11 @@ async def test_responses_provider_debug_logging_uses_safe_summaries(
         for record in caplog.records
         if record.getMessage() == "OpenAI Responses request summary"
     )
-    assert request_record.request_summary["image_count"] == 1
+    request_summary = cast(
+        dict[str, object],
+        vars(request_record)["request_summary"],
+    )
+    assert request_summary["image_count"] == 1
 
 
 @pytest.mark.asyncio
