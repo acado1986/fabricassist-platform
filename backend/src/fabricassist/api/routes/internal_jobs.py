@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request
@@ -13,6 +14,7 @@ from fabricassist.application.cache import HotCache
 from fabricassist.application.conversation_provider import ConversationProvider
 from fabricassist.application.conversations import answer_message_by_id
 from fabricassist.application.job_execution import (
+    AnalysisExecutionError,
     PermanentJobMessageError,
     TemporaryJobError,
     execute_checkpoint,
@@ -43,6 +45,8 @@ from fabricassist.infrastructure.persistence.models import (
     AnalysisJobOperation,
     ConversationMessage,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal/jobs", include_in_schema=False)
 
@@ -182,6 +186,14 @@ async def execute_stage(
                 )
     except DeliveryVerificationError:
         return Response(status_code=401)
+    except AnalysisExecutionError as error:
+        # The execution layer already persisted a redacted terminal status. Do
+        # not let QStash retry an internal error indefinitely or retain payloads.
+        logger.error(
+            "QStash analysis delivery reached a terminal execution failure",
+            extra={"error_type": error.cause_type},
+        )
+        return Response(status_code=489, headers={"Upstash-NonRetryable-Error": "true"})
     except PermanentJobMessageError:
         return Response(status_code=489, headers={"Upstash-NonRetryable-Error": "true"})
     except TemporaryJobError:

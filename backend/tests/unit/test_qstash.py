@@ -16,7 +16,9 @@ from pydantic import ValidationError
 from fabricassist.api.main import create_app
 from fabricassist.api.routes import internal_jobs
 from fabricassist.application.job_execution import (
+    AnalysisExecutionError,
     StageResult,
+    TemporaryJobError,
     execute_checkpoint,
 )
 from fabricassist.application.jobs import AnalysisJobMessage
@@ -236,6 +238,103 @@ async def test_execute_analysis_stage_uses_shared_application_pipeline(
     assert operation.status == "completed"
     assert session.commit_count == 2
     assert "analysis_job_operations.stage =" in str(session.scalar_statements[0])
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_stage_records_a_safe_terminal_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
+
+    initial = message()
+    job = initial.model_copy(update={"stage": "execute_analysis"})
+    scan = Scan(id=job.scan_id, tenant_id=uuid4(), status="queued", requested_language="en")
+    operation = AnalysisJobOperation(
+        id=uuid4(),
+        scan_id=job.scan_id,
+        revision_id=job.revision_id,
+        operation_key=job.operation_key,
+        stage=job.stage,
+    )
+    session = CheckpointSession([operation], scan)
+
+    async def fail_analysis(**_kwargs: object) -> None:
+        raise RuntimeError("private provider payload must never reach client state")
+
+    monkeypatch.setattr("fabricassist.application.job_execution.analyse_scan", fail_analysis)
+    with pytest.raises(AnalysisExecutionError) as raised:
+        await execute_checkpoint(
+            session=session,  # type: ignore[arg-type]
+            message=job,
+            execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
+            analysis_policy=AnalysisExecutionPolicy(
+                hot_cache_ttl_seconds=86_400,
+                product_cache_minutes=1_440,
+            ),
+            database=object(),  # type: ignore[arg-type]
+            storage=object(),  # type: ignore[arg-type]
+            evidence_provider=object(),  # type: ignore[arg-type]
+            care_planning_provider=object(),  # type: ignore[arg-type]
+            product_information_provider=object(),  # type: ignore[arg-type]
+            hot_cache=NoOpHotCacheAdapter(),
+            concurrency_gate=NoOpConcurrencyGateAdapter(),
+        )
+
+    assert raised.value.code == "ANALYSIS_INTERNAL_ERROR"
+    assert raised.value.cause_type == "RuntimeError"
+    assert scan.status == "failed"
+    assert scan.analysis_stage == "failed"
+    assert scan.analysis_error_code == "ANALYSIS_INTERNAL_ERROR"
+    assert scan.progress_percent == 100
+    assert operation.status == "failed"
+    assert operation.lease_expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_stage_releases_lease_before_a_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabricassist.application.object_storage import RetryableObjectStorageError
+    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
+
+    initial = message()
+    job = initial.model_copy(update={"stage": "execute_analysis"})
+    scan = Scan(id=job.scan_id, tenant_id=uuid4(), status="queued", requested_language="en")
+    operation = AnalysisJobOperation(
+        id=uuid4(),
+        scan_id=job.scan_id,
+        revision_id=job.revision_id,
+        operation_key=job.operation_key,
+        stage=job.stage,
+    )
+    session = CheckpointSession([operation], scan)
+
+    async def transient_failure(**_kwargs: object) -> None:
+        raise RetryableObjectStorageError("synthetic outage")
+
+    monkeypatch.setattr("fabricassist.application.job_execution.analyse_scan", transient_failure)
+    with pytest.raises(TemporaryJobError):
+        await execute_checkpoint(
+            session=session,  # type: ignore[arg-type]
+            message=job,
+            execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
+            analysis_policy=AnalysisExecutionPolicy(
+                hot_cache_ttl_seconds=86_400,
+                product_cache_minutes=1_440,
+            ),
+            database=object(),  # type: ignore[arg-type]
+            storage=object(),  # type: ignore[arg-type]
+            evidence_provider=object(),  # type: ignore[arg-type]
+            care_planning_provider=object(),  # type: ignore[arg-type]
+            product_information_provider=object(),  # type: ignore[arg-type]
+            hot_cache=NoOpHotCacheAdapter(),
+            concurrency_gate=NoOpConcurrencyGateAdapter(),
+        )
+
+    assert operation.status == "queued"
+    assert operation.lease_expires_at is None
+    assert scan.status == "queued"
+    assert scan.analysis_stage == "execute_analysis"
 
 
 def test_internal_route_retries_when_continuation_publication_fails() -> None:

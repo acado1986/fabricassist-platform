@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -29,11 +30,16 @@ from fabricassist.application.limits import (
     ConcurrencyLimitExceeded,
     LimitBackendUnavailable,
 )
-from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.application.object_storage import (
+    ObjectNotFoundError,
+    ObjectStorage,
+    PermanentObjectStorageError,
+    RetryableObjectStorageError,
+)
 from fabricassist.application.planning import CarePlanningProvider
 from fabricassist.application.policies import AnalysisExecutionPolicy, JobExecutionPolicy
 from fabricassist.application.product_information import ProductInformationProvider
-from fabricassist.application.vision import VisionEvidenceProvider
+from fabricassist.application.vision import VisionEvidenceProvider, VisionProviderError
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
     AnalysisJobOperation,
@@ -42,6 +48,8 @@ from fabricassist.infrastructure.persistence.models import (
     ScanImage,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class PermanentJobMessageError(Exception):
     """An invalid or unknown message that a transport must not retry."""
@@ -49,6 +57,15 @@ class PermanentJobMessageError(Exception):
 
 class TemporaryJobError(Exception):
     """A dependency failure which the selected transport should retry."""
+
+
+class AnalysisExecutionError(PermanentJobMessageError):
+    """A durably recorded analysis failure safe to expose only as a code."""
+
+    def __init__(self, code: str, cause: Exception) -> None:
+        super().__init__(code)
+        self.code = code
+        self.cause_type = type(cause).__name__
 
 
 class StageResult(str, Enum):
@@ -208,10 +225,61 @@ async def execute_checkpoint(
                     hot_cache=hot_cache,
                     policy=analysis_policy,
                 )
-    except TimeoutError as error:
+    except (TimeoutError, RetryableObjectStorageError) as error:
+        # A retry must be able to claim this row immediately. Leaving it in
+        # ``processing`` until its old lease expires turns a bounded transport
+        # retry into a customer-visible spinner.
+        operation.status = "queued"
+        operation.lease_expires_at = None
+        scan.status = "queued"
+        scan.analysis_stage = message.stage
+        await session.commit()
+        logger.warning(
+            "Analysis execution will be retried",
+            extra={"error_type": type(error).__name__},
+        )
         raise TemporaryJobError("analysis stage exceeded its execution budget") from error
     except (ConcurrencyLimitExceeded, LimitBackendUnavailable) as error:
+        operation.status = "queued"
+        operation.lease_expires_at = None
+        scan.status = "queued"
+        scan.analysis_stage = message.stage
+        await session.commit()
         raise TemporaryJobError("analysis concurrency is temporarily unavailable") from error
+    except (ObjectNotFoundError, PermanentObjectStorageError, VisionProviderError) as error:
+        error_code = (
+            error.code if isinstance(error, VisionProviderError) else "ANALYSIS_STORAGE_ERROR"
+        )
+        operation.status = "failed"
+        operation.completed_at = datetime.now(UTC)
+        operation.lease_expires_at = None
+        scan.status = "failed"
+        scan.analysis_stage = "failed"
+        scan.analysis_error_code = error_code
+        scan.progress_percent = 100
+        await session.commit()
+        logger.error(
+            "Analysis execution failed permanently",
+            extra={"error_type": type(error).__name__},
+        )
+        raise AnalysisExecutionError(error_code, error) from error
+    except Exception as error:
+        # Persist a safe terminal code before returning a non-retryable delivery
+        # response. The underlying exception type is retained only in structured
+        # server logs with the request correlation context.
+        operation.status = "failed"
+        operation.completed_at = datetime.now(UTC)
+        operation.lease_expires_at = None
+        scan.status = "failed"
+        scan.analysis_stage = "failed"
+        scan.analysis_error_code = "ANALYSIS_INTERNAL_ERROR"
+        scan.progress_percent = 100
+        await session.commit()
+        logger.exception(
+            "Analysis execution failed unexpectedly",
+            extra={"error_type": type(error).__name__},
+        )
+        raise AnalysisExecutionError("ANALYSIS_INTERNAL_ERROR", error) from error
     operation.status = "completed"
     operation.completed_at = datetime.now(UTC)
     operation.lease_expires_at = None
