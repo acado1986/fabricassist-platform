@@ -4,7 +4,8 @@ This directory is the operator guide for the FabricAssist free alpha. It describ
 
 ## Read in this order
 
-1. [Architecture](architecture.md) and [configuration](configuration.md).
+1. [Architecture](architecture.md), [configuration](configuration.md), and the
+   repository-wide [environment reference](../environment.md).
 2. [Secrets](secrets.md), then create the provider resources in the exact order in [deployment](deployment.md).
 3. Execute [smoke tests](smoke-tests.md) after deployment.
 4. Use [troubleshooting](troubleshooting.md) for a failed check or outage, and [rollback](rollback.md) for a release reversal.

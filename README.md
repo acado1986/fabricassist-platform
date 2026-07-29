@@ -44,6 +44,7 @@ Read these documents before making changes, in the precedence described by
 - [Product and technical requirements](docs/requirements.md)
 - [Architecture](docs/architecture.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
+- [Environment variable reference](docs/environment.md)
 - [Next-session garment-intelligence prompt](docs/prompts/IMPLEMENT_GARMENT_INTELLIGENCE.md)
 
 The three source documents intentionally remain under `docs/`; they must not be
@@ -96,6 +97,10 @@ make bootstrap
 `.env.example` contains development-only placeholders. Change every value marked
 for replacement before using any shared, staging, or production environment.
 Never commit `.env` or real credentials.
+
+See the complete [environment variable reference](docs/environment.md) for the
+purpose of each setting, the local Docker versus hosted-alpha topology, and the
+capability selectors. The examples are templates, not files to source directly.
 
 Capability selection examples:
 

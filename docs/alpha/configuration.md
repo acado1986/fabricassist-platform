@@ -10,6 +10,9 @@ provider dashboard. It intentionally contains placeholders, not credentials.
 Never expose database, R2, QStash, provider, JWT, or refresh-token secrets in
 `EXPO_PUBLIC_*` variables.
 
+For the meaning of every variable and the difference between local Docker and
+hosted alpha, see the repository-wide [environment reference](../environment.md).
+
 ## Required alpha settings
 
 Set `FABRICASSIST_ENVIRONMENT=alpha`,
