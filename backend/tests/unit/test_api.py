@@ -229,6 +229,67 @@ class DownloadStorage:
         )
 
 
+class ScanHistorySession:
+    def __init__(self, scan: object, image: object) -> None:
+        self.scan = scan
+        self.image = image
+
+    async def scalars(self, statement: object):
+        class Result:
+            def __init__(self, scan: object) -> None:
+                self.scan = scan
+
+            def all(self) -> list[object]:
+                return [self.scan]
+
+        return Result(self.scan)
+
+    async def scalar(self, statement: object) -> object | None:
+        return self.image
+
+
+@pytest.mark.asyncio
+async def test_scan_history_lists_owned_results_with_presigned_thumbnails() -> None:
+    from fabricassist.api.routes.scans import scan_history
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="completed",
+        requested_language="en",
+        active_result_id=uuid4(),
+        created_at=datetime.now(UTC),
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="garment_overview",
+        display_order=0,
+        object_key="private/tenant/scan/image.jpg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+
+    response = await scan_history(
+        ScanHistorySession(scan, image),  # type: ignore[arg-type]
+        user,
+        DownloadStorage(),  # type: ignore[arg-type]
+    )
+
+    assert response[0].scan_id == scan.id
+    assert response[0].result_available
+    assert (
+        response[0].thumbnail_url == "https://storage.invalid/private/private/tenant/scan/image.jpg"
+    )
+
+
 @pytest.mark.asyncio
 async def test_garment_response_exposes_only_presigned_thumbnail_url() -> None:
     from fabricassist.api.routes.garments import response_for

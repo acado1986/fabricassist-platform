@@ -72,6 +72,15 @@ class ScanResponse(BaseModel):
     error_code: str | None = None
 
 
+class ScanHistoryResponse(BaseModel):
+    scan_id: UUID
+    garment_id: UUID | None = None
+    status: str
+    created_at: datetime
+    result_available: bool
+    thumbnail_url: str | None = None
+
+
 class CreateScanResponse(BaseModel):
     scan_id: UUID
     status: str
@@ -391,6 +400,50 @@ async def request_analysis(
         status=scan.status,
         operation_key=operation.operation_key,
     )
+
+
+@router.get("/history", response_model=list[ScanHistoryResponse])
+async def scan_history(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+) -> list[ScanHistoryResponse]:
+    scans = list(
+        (
+            await session.scalars(
+                select(Scan)
+                .where(
+                    Scan.tenant_id == user.tenant_id,
+                    Scan.user_id == user.id,
+                    Scan.status != "deleted",
+                )
+                .order_by(Scan.created_at.desc())
+            )
+        ).all()
+    )
+    responses: list[ScanHistoryResponse] = []
+    for scan in scans:
+        image = await session.scalar(
+            select(ScanImage)
+            .where(
+                ScanImage.tenant_id == user.tenant_id,
+                ScanImage.scan_id == scan.id,
+                ScanImage.deleted_at.is_(None),
+            )
+            .order_by(ScanImage.created_at.desc())
+            .limit(1)
+        )
+        responses.append(
+            ScanHistoryResponse(
+                scan_id=scan.id,
+                garment_id=scan.garment_id,
+                status=scan.status,
+                created_at=scan.created_at,
+                result_available=scan.active_result_id is not None,
+                thumbnail_url=storage.presign_get(key=image.object_key).url if image else None,
+            )
+        )
+    return responses
 
 
 @router.get("/{scan_id}", response_model=ScanResponse)

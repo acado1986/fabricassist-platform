@@ -1015,6 +1015,59 @@
         "title": "ReviewResponse",
         "type": "object"
       },
+      "ScanHistoryResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "garment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Garment Id"
+          },
+          "result_available": {
+            "title": "Result Available",
+            "type": "boolean"
+          },
+          "scan_id": {
+            "format": "uuid",
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          }
+        },
+        "required": [
+          "scan_id",
+          "status",
+          "created_at",
+          "result_available"
+        ],
+        "title": "ScanHistoryResponse",
+        "type": "object"
+      },
       "ScanResponse": {
         "properties": {
           "analysis_stage": {
@@ -2144,6 +2197,31 @@
           }
         },
         "summary": "Create Scan",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
+    "/api/v1/scans/history": {
+      "get": {
+        "operationId": "scan_history_api_v1_scans_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanHistoryResponse"
+                  },
+                  "title": "Response Scan History Api V1 Scans History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Scan History",
         "tags": [
           "scans"
         ]

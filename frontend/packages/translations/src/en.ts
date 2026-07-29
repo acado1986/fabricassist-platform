@@ -108,6 +108,12 @@ export const en = {
       'Review garments you have analysed and their confirmed service history.',
     customerHistoryEmpty: 'You have no garment history yet.',
     customerHistoryLoadFailed: 'We could not load your garment history.',
+    previousAnalyses: 'Previous analyses',
+    previousAnalysesEmpty: 'You have no previous analyses yet.',
+    previousAnalysis: 'Care analysis',
+    viewPreviousResult: 'View care result',
+    scanHistoryLoadFailed: 'We could not load your previous analyses.',
+    yourGarments: 'Your garments',
     resultTitle: 'Your care guidance',
     resultDescription:
       'This guidance is built from the care-label evidence we could verify.',

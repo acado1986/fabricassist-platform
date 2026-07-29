@@ -114,6 +114,12 @@ export const es: TranslationCatalog = {
     customerHistoryEmpty: 'Aún no tienes historial de prendas.',
     customerHistoryLoadFailed:
       'No hemos podido cargar tu historial de prendas.',
+    previousAnalyses: 'Análisis anteriores',
+    previousAnalysesEmpty: 'Aún no tienes análisis anteriores.',
+    previousAnalysis: 'Análisis de cuidado',
+    viewPreviousResult: 'Ver resultado de cuidado',
+    scanHistoryLoadFailed: 'No hemos podido cargar tus análisis anteriores.',
+    yourGarments: 'Tus prendas',
     resultTitle: 'Tus instrucciones de cuidado',
     resultDescription:
       'Estas indicaciones se basan en la evidencia que pudimos verificar en la etiqueta.',

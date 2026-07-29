@@ -181,14 +181,13 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   topBarCompact: {
-    alignItems: 'flex-start',
-    flexDirection: 'column',
-    gap: spacing.medium,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   brandRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   headerActions: {
     alignItems: 'center',
-    alignSelf: 'flex-end',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.small,
@@ -224,7 +223,7 @@ const styles = StyleSheet.create({
   },
   menuPanelCompact: {
     right: spacing.medium,
-    top: 118,
+    top: 76,
   },
   menuItem: {
     alignItems: 'center',

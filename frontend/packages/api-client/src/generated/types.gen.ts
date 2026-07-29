@@ -611,6 +611,36 @@ export type ReviewResponse = {
 };
 
 /**
+ * ScanHistoryResponse
+ */
+export type ScanHistoryResponse = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Garment Id
+     */
+    garment_id?: string | null;
+    /**
+     * Result Available
+     */
+    result_available: boolean;
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Thumbnail Url
+     */
+    thumbnail_url?: string | null;
+};
+
+/**
  * ScanResponse
  */
 export type ScanResponse = {
@@ -1295,6 +1325,24 @@ export type CreateScanApiV1ScansPostResponses = {
 };
 
 export type CreateScanApiV1ScansPostResponse = CreateScanApiV1ScansPostResponses[keyof CreateScanApiV1ScansPostResponses];
+
+export type ScanHistoryApiV1ScansHistoryGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/scans/history';
+};
+
+export type ScanHistoryApiV1ScansHistoryGetResponses = {
+    /**
+     * Response Scan History Api V1 Scans History Get
+     *
+     * Successful Response
+     */
+    200: Array<ScanHistoryResponse>;
+};
+
+export type ScanHistoryApiV1ScansHistoryGetResponse = ScanHistoryApiV1ScansHistoryGetResponses[keyof ScanHistoryApiV1ScansHistoryGetResponses];
 
 export type DeleteScanApiV1ScansScanIdDeleteData = {
     body?: never;
