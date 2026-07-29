@@ -36,6 +36,7 @@ from fabricassist.infrastructure.persistence.seeding import (
     seed_development_data,
 )
 from fabricassist.infrastructure.storage.s3 import S3Storage
+from fabricassist.infrastructure.vision.providers.mock import MockModelProviderAdapter
 from fabricassist.settings import Settings
 
 TEST_DATABASE_URL = os.environ.get("FABRICASSIST_TEST_DATABASE_URL")
@@ -164,7 +165,13 @@ def test_real_minio_object_and_worker_create_an_active_revision() -> None:
 
     database = Database(TEST_DATABASE_URL)
     asyncio.run(
-        analyse_scan(database=database, storage=storage, settings=settings, scan_id=scan_id)
+        analyse_scan(
+            database=database,
+            storage=storage,
+            settings=settings,
+            scan_id=scan_id,
+            model_provider=MockModelProviderAdapter(),
+        )
     )
     asyncio.run(database.close())
 

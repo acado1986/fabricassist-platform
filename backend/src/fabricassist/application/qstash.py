@@ -27,6 +27,7 @@ from fabricassist.application.jobs import (
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan, ScanImage
 from fabricassist.infrastructure.storage.s3 import S3Storage
+from fabricassist.infrastructure.vision.providers import build_model_provider
 from fabricassist.settings import Settings
 
 
@@ -212,6 +213,7 @@ async def execute_checkpoint(
                 storage=storage,
                 settings=settings,
                 scan_id=message.scan_id,
+                model_provider=build_model_provider(settings),
             )
     except TimeoutError as error:
         raise TemporaryJobError("analysis stage exceeded its execution budget") from error

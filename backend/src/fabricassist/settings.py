@@ -77,9 +77,9 @@ class Settings(BaseSettings):
     upload_url_minutes: int = Field(default=10, ge=1, le=60)
     max_images_per_scan: int = Field(default=8, ge=1, le=20)
     analysis_lease_minutes: int = Field(default=5, ge=1, le=30)
-    vision_provider: Literal["mock", "openai_compatible", "openai_responses", "azure_openai"] = (
-        "mock"
-    )
+    vision_provider: Literal[
+        "mock", "gemini", "openai_compatible", "openai_responses", "azure_openai"
+    ] = "mock"
     vision_base_url: str = ""
     vision_api_key: str = ""
     vision_model: str = ""
@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     vision_max_input_tokens: int = Field(default=128_000, ge=1_024, le=128_000)
     vision_max_output_tokens: int = Field(default=16_000, ge=256, le=16_000)
     vision_debug_logging: bool = False
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     product_provider: Literal["mock", "http_json"] = "mock"
     product_base_url: str = ""
     product_api_key: str = ""
@@ -279,6 +281,10 @@ class Settings(BaseSettings):
                 "FABRICASSIST_VISION_BASE_URL, FABRICASSIST_VISION_API_KEY, and "
                 "FABRICASSIST_VISION_MODEL are required for the OpenAI-compatible provider"
             )
+        if self.vision_provider == "gemini" and not self.gemini_api_key:
+            raise ValueError(
+                "FABRICASSIST_GEMINI_API_KEY is required when the Gemini provider is selected"
+            )
         try:
             headers = json.loads(self.vision_extra_headers_json)
         except json.JSONDecodeError as error:
@@ -312,6 +318,15 @@ class Settings(BaseSettings):
                 "FABRICASSIST_PRODUCT_BASE_URL and FABRICASSIST_PRODUCT_ALLOWED_HOSTS are required"
             )
         return self
+
+    @property
+    def active_vision_model(self) -> str:
+        """Return the configured model identifier without leaking provider details upward."""
+        if self.vision_provider == "mock":
+            return "deterministic-review-safe"
+        if self.vision_provider == "gemini":
+            return self.gemini_model
+        return self.vision_model
 
     @property
     def migration_database_url(self) -> str:

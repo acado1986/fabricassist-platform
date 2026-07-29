@@ -6,13 +6,14 @@ import pytest
 import zxingcpp
 from PIL import Image
 
-from fabricassist.application.vision import MockVisionProvider, NormalizedImage, decode_barcodes
+from fabricassist.application.vision import NormalizedImage, decode_barcodes
 from fabricassist.domain.evidence import ImageRole
+from fabricassist.infrastructure.vision.providers.mock import MockModelProviderAdapter
 
 
 @pytest.mark.asyncio
 async def test_mock_evidence_is_source_referenced() -> None:
-    result = await MockVisionProvider().extract_evidence(
+    result = await MockModelProviderAdapter().extract_evidence(
         (NormalizedImage(uuid4(), b"x", "0" * 64, 320, 320, ImageRole.CARE_LABEL),)
     )
     assert result.delta.observations[0].source.role is ImageRole.CARE_LABEL
@@ -20,7 +21,7 @@ async def test_mock_evidence_is_source_referenced() -> None:
 
 @pytest.mark.asyncio
 async def test_mock_vision_does_not_fabricate_barcode_digits() -> None:
-    candidates = await MockVisionProvider().extract_barcode_candidates(
+    candidates = await MockModelProviderAdapter().extract_barcode_candidates(
         (NormalizedImage(uuid4(), b"x", "0" * 64, 320, 320, ImageRole.BARCODE_BRAND_LABEL),)
     )
     assert candidates == ()

@@ -29,6 +29,7 @@ from fabricassist.infrastructure.limits import (
 from fabricassist.infrastructure.persistence.models import ConversationMessage, Scan
 from fabricassist.infrastructure.storage.s3 import S3Storage
 from fabricassist.infrastructure.telemetry import measure_job
+from fabricassist.infrastructure.vision.providers import build_model_provider
 from fabricassist.settings import Settings
 
 
@@ -64,6 +65,7 @@ async def _run_analysis_with_limit(
             storage=storage,
             settings=settings,
             scan_id=scan_id,
+            model_provider=build_model_provider(settings),
         )
 
 
@@ -74,7 +76,12 @@ async def _run_message_with_limit(database: Database, settings: Settings, messag
     async with DistributedConcurrencyGate(settings).slot(
         tenant_id=tenant_id, operation="conversation"
     ):
-        await answer_message_by_id(database, message_id, settings)
+        await answer_message_by_id(
+            database,
+            message_id,
+            settings,
+            build_model_provider(settings),
+        )
 
 
 async def _mark_analysis_failed(database: Database, scan_id: UUID, error_code: str) -> None:

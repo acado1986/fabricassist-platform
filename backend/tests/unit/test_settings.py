@@ -44,6 +44,19 @@ def test_azure_provider_requires_its_complete_configuration() -> None:
         Settings(vision_provider="azure_openai")
 
 
+def test_gemini_provider_requires_api_key_and_uses_provider_model() -> None:
+    with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+        Settings(vision_provider="gemini")
+
+    settings = Settings(
+        vision_provider="gemini",
+        gemini_api_key="synthetic-key",
+        gemini_model="gemini-2.5-flash",
+    )
+
+    assert settings.active_vision_model == "gemini-2.5-flash"
+
+
 def test_settings_accept_test_configuration() -> None:
     settings = Settings(environment="test", database_url="postgresql://example.test/fabricassist")
 

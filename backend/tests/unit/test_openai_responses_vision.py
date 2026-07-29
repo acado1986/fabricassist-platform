@@ -8,18 +8,20 @@ import pytest
 
 from fabricassist.application.vision import NormalizedImage, VisionProviderError
 from fabricassist.domain.evidence import ImageRole
-from fabricassist.infrastructure.vision.providers import OpenAIResponsesVisionProvider
-from fabricassist.settings import Settings
+from fabricassist.infrastructure.vision.providers import (
+    OpenAIResponsesAdapterConfig,
+    OpenAIResponsesProviderAdapter,
+)
 
 
-def _settings() -> Settings:
-    return Settings(
-        environment="test",
-        vision_provider="openai_responses",
-        vision_base_url="https://provider.example/v1",
-        vision_api_key="test-key",
-        vision_model="test-vision-model",
-        vision_extra_headers_json='{"X-Gateway-Key":"gateway-secret"}',
+def _config() -> OpenAIResponsesAdapterConfig:
+    return OpenAIResponsesAdapterConfig(
+        base_url="https://provider.example/v1",
+        api_key="test-key",
+        model="test-vision-model",
+        timeout_seconds=120,
+        extra_headers={"X-Gateway-Key": "gateway-secret"},
+        max_output_tokens=16_000,
     )
 
 
@@ -81,7 +83,7 @@ async def test_responses_provider_sends_images_and_validates_structured_evidence
             },
         )
 
-    provider = OpenAIResponsesVisionProvider(_settings(), transport=httpx.MockTransport(responder))
+    provider = OpenAIResponsesProviderAdapter(_config(), transport=httpx.MockTransport(responder))
     result = await provider.extract_evidence(
         (
             NormalizedImage(
@@ -109,8 +111,8 @@ async def test_responses_provider_sends_images_and_validates_structured_evidence
 
 @pytest.mark.asyncio
 async def test_responses_provider_categorizes_provider_rejection() -> None:
-    provider = OpenAIResponsesVisionProvider(
-        _settings(),
+    provider = OpenAIResponsesProviderAdapter(
+        _config(),
         transport=httpx.MockTransport(lambda _: httpx.Response(400, json={"error": {}})),
     )
 

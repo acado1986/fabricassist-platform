@@ -24,6 +24,7 @@ from fabricassist.application.cache import (
     upsert_exact_evidence_cache_entry,
 )
 from fabricassist.application.lifecycle import ensure_review_case
+from fabricassist.application.model_provider import ModelProvider
 from fabricassist.application.planning import MockCarePlanningProvider
 from fabricassist.application.products import (
     PersistedProductLookup,
@@ -76,7 +77,6 @@ from fabricassist.infrastructure.persistence.models import (
     ValidationReport,
 )
 from fabricassist.infrastructure.storage.s3 import S3Storage
-from fabricassist.infrastructure.vision.providers import get_vision_provider
 from fabricassist.settings import Settings
 
 TEMPLATE_VERSION = "rich-result-v2"
@@ -276,11 +276,7 @@ async def _lookup_barcodes_from_images(
                 scan_id=scan.id,
                 operation="barcode_ocr",
                 provider=settings.vision_provider,
-                model=(
-                    "deterministic-review-safe"
-                    if settings.vision_provider == "mock"
-                    else settings.vision_model
-                ),
+                model=settings.active_vision_model,
                 prompt_version=EVIDENCE_PROMPT_VERSION,
                 schema_version="barcode-candidate-v1",
                 request_fingerprint=hashlib.sha256(
@@ -330,7 +326,12 @@ async def _lookup_barcodes_from_images(
 
 
 async def analyse_scan(
-    *, database: Database, storage: S3Storage, settings: Settings, scan_id: UUID
+    *,
+    database: Database,
+    storage: S3Storage,
+    settings: Settings,
+    scan_id: UUID,
+    model_provider: ModelProvider,
 ) -> None:
     async with database.session_factory() as session:
         scan = await session.get(Scan, scan_id)
@@ -417,7 +418,7 @@ async def analyse_scan(
                     image_id=image.id,
                 )
             )
-        provider = get_vision_provider(settings)
+        provider = model_provider
         prior = None
         if garment.active_analysis_revision_id is not None:
             previous = await session.scalar(
@@ -434,11 +435,7 @@ async def analyse_scan(
         expected_provider = (
             "mock" if settings.vision_provider == "mock" else settings.vision_provider
         )
-        expected_model = (
-            "deterministic-review-safe"
-            if settings.vision_provider == "mock"
-            else settings.vision_model
-        )
+        expected_model = settings.active_vision_model
         entries = list(
             (
                 await session.scalars(

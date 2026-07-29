@@ -6,12 +6,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Protocol
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import UUID
 
 import zxingcpp
 from PIL import Image
 
-from fabricassist.domain.evidence import EvidenceSource, GarmentEvidenceDelta, ImageRole
+from fabricassist.domain.evidence import GarmentEvidenceDelta, ImageRole
 
 EVIDENCE_PROMPT_VERSION = "garment-evidence-v1"
 EVIDENCE_SCHEMA_VERSION = "garment-evidence-v1"
@@ -80,39 +80,3 @@ class VisionEvidenceProvider(Protocol):
     async def extract_barcode_candidates(
         self, images: tuple[NormalizedImage, ...]
     ) -> tuple[BarcodeCandidate, ...]: ...
-
-
-class MockVisionProvider:
-    """No-network provider: it intentionally returns unknown, review-safe evidence."""
-
-    async def extract_evidence(
-        self, images: tuple[NormalizedImage, ...], prior_dossier: object | None = None
-    ) -> EvidenceProviderResult:
-        _ = prior_dossier
-        observations = []
-        for image in images:
-            observations.append(
-                {
-                    "id": uuid5(NAMESPACE_URL, f"mock:{image.image_id}"),
-                    "kind": "image_received",
-                    "value": image.role.value,
-                    "confidence": 100,
-                    "source": EvidenceSource(image_id=image.image_id, role=image.role),
-                }
-            )
-        return EvidenceProviderResult(
-            delta=GarmentEvidenceDelta(
-                observations=observations, uncertainties=["care_label_facts_unknown"]
-            ),
-            provider="mock",
-            model="deterministic-review-safe",
-            latency_ms=0,
-        )
-
-    async def extract_barcode_candidates(
-        self, images: tuple[NormalizedImage, ...]
-    ) -> tuple[BarcodeCandidate, ...]:
-        # The default local provider never fabricates digits from pixels. Live
-        # adapters may use OCR solely to recover candidates for validation.
-        _ = images
-        return ()

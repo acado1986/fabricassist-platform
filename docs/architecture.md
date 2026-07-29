@@ -718,6 +718,13 @@ class ConversationProvider(Protocol):
         ...
 ```
 
+The current composition exposes these capabilities through one application-level
+`ModelProvider` port. Each concrete infrastructure adapter implements the
+complete port. Only the provider composition root translates typed settings into
+adapter-owned configuration; application services never receive provider API
+keys, SDK clients, HTTP headers, or endpoint-specific DTOs. Credential fields
+must be excluded from configuration representations and logs.
+
 Adapters may include:
 
 - A hosted multimodal provider.
@@ -749,6 +756,10 @@ external evidence. A product match never proves one physical garment instance.
 - Require source image/fact IDs for evidence and proposed actions.
 - A single constrained planning retry may receive validator violation codes; it
   receives no ability to change validator policy.
+- Provide reviewed default system prompts for each operation. An adapter may
+  select a model-tailored prompt profile without changing the application port,
+  schemas, or validator. Prompt text contains task instructions rather than
+  provider names or implementation annotations.
 
 ### 10.3 Model result validation
 
@@ -1235,6 +1246,8 @@ FABRICASSIST_VISION_API_BASE
 FABRICASSIST_VISION_API_KEY
 FABRICASSIST_VISION_TIMEOUT_SECONDS
 FABRICASSIST_VISION_MAX_CONCURRENCY
+FABRICASSIST_GEMINI_API_KEY
+FABRICASSIST_GEMINI_MODEL
 
 FABRICASSIST_CARE_PLANNER_PROVIDER
 FABRICASSIST_CARE_PLANNER_MODEL

@@ -19,6 +19,7 @@ from fabricassist.infrastructure.persistence.models import (
     Scan,
     ScanImage,
 )
+from fabricassist.infrastructure.vision.providers.mock import MockModelProviderAdapter
 from fabricassist.settings import Settings
 
 
@@ -122,6 +123,7 @@ async def test_worker_creates_tenant_owned_revision_membership_and_activates_res
         storage=FakeStorage(image_bytes()),  # type: ignore[arg-type]
         settings=Settings(environment="test", vision_provider="mock"),
         scan_id=scan.id,
+        model_provider=MockModelProviderAdapter(),
     )
 
     memberships = [value for value in session.added if isinstance(value, RevisionImage)]

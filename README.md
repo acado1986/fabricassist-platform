@@ -152,26 +152,36 @@ recognize a label. To process real photos, add these values to your ignored `.en
 and restart `make up`:
 
 ```bash
-FABRICASSIST_VISION_PROVIDER=openai_compatible
-FABRICASSIST_VISION_BASE_URL=https://your-provider.example/v1
-FABRICASSIST_VISION_API_KEY=your-secret
-FABRICASSIST_VISION_MODEL=your-vision-model
+FABRICASSIST_VISION_PROVIDER=gemini
+FABRICASSIST_GEMINI_API_KEY=your-secret
+FABRICASSIST_GEMINI_MODEL=gemini-2.5-flash
 ```
 
 Never commit the API key. Provider evidence, proposed plans, and chat claims are
 schema validated and every actionable claim passes the deterministic validator.
+The Gemini adapter uses the official async Google Gen AI SDK, sends normalized
+JPEG bytes directly, requests JSON matching FabricAssist's Pydantic schema, and
+then validates both the schema and every source image ID locally.
 
 ## Provider-neutral model interface
 
-The current worker depends only on the `VisionEvidenceProvider` interface. The
-no-network mock and the configured OpenAI **Responses**-compatible HTTP adapter
-are infrastructure adapters selected by `FABRICASSIST_VISION_PROVIDER`; neither
-the worker nor the care rules contain vendor-specific logic. The adapter sends
-each normalized image as a data URL, requires strict JSON-schema evidence, and
-rejects facts whose source does not match a supplied image. Adding another
-provider means implementing and registering one adapter. Planned provider-neutral ports for
-evidence extraction, care planning, product information, and conversation are
-defined in the architecture and will retain strict schemas and validation gates.
+Application orchestration depends on the `ModelProvider` interface in
+`backend/src/fabricassist/application/model_provider.py`. The no-network mock,
+Gemini, and OpenAI **Responses**-compatible implementations are adapters selected
+by `FABRICASSIST_VISION_PROVIDER`; neither application services nor care rules
+contain SDK, endpoint, header, or credential logic. Each live adapter lives under
+`backend/src/fabricassist/infrastructure/vision/providers/`, returns the same
+typed contracts, and rejects facts whose source does not match a supplied image.
+The composition root converts typed settings into an adapter-specific
+configuration whose credential fields are excluded from representations.
+Adding another model means implementing the interface and registering one
+adapter without changing application or domain validation.
+
+Evidence and conversation operations have safe default system prompts. An
+adapter may select a reviewed prompt profile tailored to that model while
+retaining the same safety constraints, schemas, source validation, prompt
+versioning, and deterministic release gate. Provider names and implementation
+notes are not sent inside prompt text.
 
 For an OpenAI Responses-compatible gateway (including an Azure API Management
 gateway that exposes `/v1/responses`), use the generic configuration below;
