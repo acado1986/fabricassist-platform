@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -32,8 +32,30 @@ export function FoundationShell({
   const { translate } = useTranslation();
   const { token, signOut } = useSession();
   const [customerMenuOpen, setCustomerMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    right: number;
+    top: number;
+  }>();
+  const menuButtonRef = useRef<View>(null);
   const { width } = useWindowDimensions();
   const isCompact = width < 640;
+
+  function toggleCustomerMenu(): void {
+    if (customerMenuOpen) {
+      setCustomerMenuOpen(false);
+      return;
+    }
+
+    setCustomerMenuOpen(true);
+    menuButtonRef.current?.measureInWindow(
+      (x, y, buttonWidth, buttonHeight) => {
+        setMenuPosition({
+          right: Math.max(spacing.medium, width - x - buttonWidth),
+          top: y + buttonHeight + spacing.small,
+        });
+      },
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -58,12 +80,12 @@ export function FoundationShell({
           </View>
           <View style={styles.headerActions}>
             {token ? (
-              <View style={styles.customerMenu}>
+              <View ref={menuButtonRef} style={styles.customerMenu}>
                 <Pressable
                   accessibilityLabel={translate('customerMenu')}
                   accessibilityRole="button"
                   accessibilityState={{ expanded: customerMenuOpen }}
-                  onPress={() => setCustomerMenuOpen((open) => !open)}
+                  onPress={toggleCustomerMenu}
                   style={({ pressed }) => [
                     styles.headerButton,
                     pressed && styles.headerButtonPressed,
@@ -95,7 +117,12 @@ export function FoundationShell({
             />
             <View
               accessibilityRole="menu"
-              style={[styles.menuPanel, isCompact && styles.menuPanelCompact]}
+              style={[
+                styles.menuPanel,
+                menuPosition
+                  ? { right: menuPosition.right, top: menuPosition.top }
+                  : null,
+              ]}
             >
               <MenuItem
                 icon="camera"
@@ -177,7 +204,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    maxWidth: 1120,
+    maxWidth: 760,
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
     width: '100%',
@@ -230,10 +257,6 @@ const styles = StyleSheet.create({
     padding: spacing.xsmall,
     position: 'absolute',
     right: spacing.large,
-    top: 76,
-  },
-  menuPanelCompact: {
-    right: spacing.medium,
     top: 76,
   },
   menuItem: {

@@ -4,7 +4,7 @@ export const es: TranslationCatalog = {
   shell: {
     title: 'FabricAssist',
     foundation: 'Base de desarrollo',
-    tagline: 'Cuidado de prendas\nbasado en evidencias',
+    tagline: 'Cuidado de prendas basado en evidencias',
     privacyNote:
       'Tus imágenes son privadas y solo se usan para preparar tu consulta de cuidado.',
     loginTitle: 'Te damos la bienvenida',
