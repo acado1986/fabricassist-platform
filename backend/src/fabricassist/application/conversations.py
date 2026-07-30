@@ -6,14 +6,15 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
-from time import perf_counter
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.conversation_provider import ConversationProvider
+from fabricassist.application.policies import ConversationPolicy
 from fabricassist.domain.care import validate_care_plan
-from fabricassist.domain.conversations import AssistantMessageProposal, ConversationContext
+from fabricassist.domain.conversations import ConversationContext
 from fabricassist.domain.evidence import GarmentEvidenceDossier
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
@@ -26,20 +27,6 @@ from fabricassist.infrastructure.persistence.models import (
     RevisionImage,
     ScanImage,
 )
-from fabricassist.infrastructure.vision.providers import OpenAIResponsesConversationProvider
-from fabricassist.settings import Settings
-
-
-class MockConversationProvider:
-    async def answer(
-        self, context: ConversationContext, user_text: str
-    ) -> AssistantMessageProposal:
-        _ = context
-        return AssistantMessageProposal(
-            text="I can only confirm actions supported by the active validated care result.",
-            uncertainties=["chat_mock_provider"],
-            follow_up_questions=["Would you like to add a clear care-label photo?"],
-        )
 
 
 def select_relevant_image_ids(images: Sequence[ScanImage], user_text: str) -> list[UUID]:
@@ -55,7 +42,11 @@ def select_relevant_image_ids(images: Sequence[ScanImage], user_text: str) -> li
     return selected[:8]
 
 
-async def build_context(session: AsyncSession, message: ConversationMessage) -> ConversationContext:
+async def build_context(
+    session: AsyncSession,
+    message: ConversationMessage,
+    policy: ConversationPolicy,
+) -> ConversationContext:
     result = await session.get(CareResult, message.care_result_id)
     dossier = (
         await session.scalar(select(EvidenceDossier).where(EvidenceDossier.id == result.dossier_id))
@@ -86,7 +77,7 @@ async def build_context(session: AsyncSession, message: ConversationMessage) -> 
                     ConversationMessage.id != message.id,
                 )
                 .order_by(ConversationMessage.created_at.desc())
-                .limit(12)
+                .limit(policy.recent_message_limit)
             )
         ).all()
     )
@@ -111,25 +102,32 @@ async def build_context(session: AsyncSession, message: ConversationMessage) -> 
         service_history=[{"kind": item.kind, "note": item.note} for item in history],
         summary=summary.payload if summary else None,
         recent_messages=[{"role": item.role, "text": item.text} for item in reversed(recent)],
-        relevant_image_ids=select_relevant_image_ids(images, message.text),
+        relevant_image_ids=select_relevant_image_ids(images, message.text)[
+            : policy.relevant_image_limit
+        ],
     )
 
 
-async def answer_message(session: AsyncSession, message_id: object, settings: Settings) -> None:
-    message = await session.get(ConversationMessage, message_id)
+async def answer_message(
+    session: AsyncSession,
+    message_id: object,
+    conversation_provider: ConversationProvider,
+    policy: ConversationPolicy,
+) -> None:
+    message = await session.scalar(
+        select(ConversationMessage).where(ConversationMessage.id == message_id).with_for_update()
+    )
     if message is None or message.role != "user" or message.status == "completed":
         return
     message.status = "processing"
-    context = await build_context(session, message)
+    context = await build_context(session, message, policy)
     model_run = ModelRun(
         id=uuid4(),
         tenant_id=message.tenant_id,
         scan_id=message.scan_id,
         operation="conversation",
-        provider="mock" if settings.vision_provider == "mock" else settings.vision_provider,
-        model="deterministic-conversation"
-        if settings.vision_provider == "mock"
-        else settings.vision_model,
+        provider=conversation_provider.descriptor.provider,
+        model=conversation_provider.descriptor.model,
         prompt_version="conversation-v1",
         schema_version="conversation-v1",
         request_fingerprint=sha256(
@@ -139,22 +137,14 @@ async def answer_message(session: AsyncSession, message_id: object, settings: Se
     )
     session.add(model_run)
     await session.flush()
-    started = perf_counter()
-    if settings.vision_provider == "mock":
-        proposal = await MockConversationProvider().answer(context, message.text)
-        model_run.latency_ms = round((perf_counter() - started) * 1000)
-        model_run.input_tokens = None
-        model_run.output_tokens = None
-        model_run.estimated_cost_usd = Decimal(0)
-    else:
-        result = await OpenAIResponsesConversationProvider(settings).answer(context, message.text)
-        proposal = result.proposal
-        model_run.provider = result.provider
-        model_run.model = result.model
-        model_run.latency_ms = result.latency_ms
-        model_run.input_tokens = result.input_tokens
-        model_run.output_tokens = result.output_tokens
-        model_run.estimated_cost_usd = None
+    result = await conversation_provider.answer(context, message.text)
+    proposal = result.proposal
+    model_run.provider = result.provider
+    model_run.model = result.model
+    model_run.latency_ms = result.latency_ms
+    model_run.input_tokens = result.input_tokens
+    model_run.output_tokens = result.output_tokens
+    model_run.estimated_cost_usd = Decimal(0) if result.provider == "mock" else None
     model_run.status = "completed"
     dossier = GarmentEvidenceDossier.model_validate(context.dossier)
     reports = [validate_care_plan(dossier, claim.plan) for claim in proposal.actionable_claims]
@@ -214,6 +204,16 @@ async def answer_message(session: AsyncSession, message_id: object, settings: Se
     await session.commit()
 
 
-async def answer_message_by_id(database: Database, message_id: object, settings: Settings) -> None:
+async def answer_message_by_id(
+    database: Database,
+    message_id: object,
+    conversation_provider: ConversationProvider,
+    policy: ConversationPolicy,
+) -> None:
     async with database.session_factory() as session:
-        await answer_message(session, message_id, settings)
+        await answer_message(
+            session,
+            message_id,
+            conversation_provider,
+            policy,
+        )

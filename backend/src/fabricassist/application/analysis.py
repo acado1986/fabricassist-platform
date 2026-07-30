@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from io import BytesIO
 from time import perf_counter
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.cache import (
     NORMALIZATION_VERSION,
+    HotCache,
     canonical_plan_signature,
     evidence_cache_key,
     perceptual_hash,
@@ -24,10 +26,13 @@ from fabricassist.application.cache import (
     upsert_exact_evidence_cache_entry,
 )
 from fabricassist.application.lifecycle import ensure_review_case
-from fabricassist.application.planning import MockCarePlanningProvider
-from fabricassist.application.products import (
+from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.application.planning import CarePlanningProvider
+from fabricassist.application.policies import AnalysisExecutionPolicy
+from fabricassist.application.product_information import (
     PersistedProductLookup,
-    get_product_provider,
+    ProductInformationError,
+    ProductInformationProvider,
     lookup_and_record,
     product_lookup_from_run,
 )
@@ -51,8 +56,7 @@ from fabricassist.domain.evidence import (
     merge_evidence,
 )
 from fabricassist.domain.identity import IdentityClassification
-from fabricassist.domain.products import ProductLookupError, normalize_barcode
-from fabricassist.infrastructure.cache.valkey import ValkeyHotMirror
+from fabricassist.domain.products import normalize_barcode
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
@@ -75,11 +79,9 @@ from fabricassist.infrastructure.persistence.models import (
     ScanImage,
     ValidationReport,
 )
-from fabricassist.infrastructure.storage.s3 import S3Storage
-from fabricassist.infrastructure.vision.providers import get_vision_provider
-from fabricassist.settings import Settings
 
 TEMPLATE_VERSION = "rich-result-v2"
+logger = logging.getLogger(__name__)
 
 
 _RENDERED_CARE_TEXT: dict[str, tuple[str, str]] = {
@@ -260,7 +262,8 @@ async def _lookup_barcodes_from_images(
     scan: Scan,
     provider: VisionEvidenceProvider,
     normalized: tuple[NormalizedImage, ...],
-    settings: Settings,
+    product_provider: ProductInformationProvider,
+    cache_minutes: int,
 ) -> PersistedProductLookup | None:
     """Use OCR/vision only to locate barcode digits, then validate locally."""
     barcode_images = tuple(
@@ -275,12 +278,8 @@ async def _lookup_barcodes_from_images(
                 tenant_id=scan.tenant_id,
                 scan_id=scan.id,
                 operation="barcode_ocr",
-                provider=settings.vision_provider,
-                model=(
-                    "deterministic-review-safe"
-                    if settings.vision_provider == "mock"
-                    else settings.vision_model
-                ),
+                provider=provider.descriptor.provider,
+                model=provider.descriptor.model,
                 prompt_version=EVIDENCE_PROMPT_VERSION,
                 schema_version="barcode-candidate-v1",
                 request_fingerprint=hashlib.sha256(
@@ -288,7 +287,7 @@ async def _lookup_barcodes_from_images(
                 ).hexdigest(),
                 status="completed",
                 latency_ms=round((perf_counter() - barcode_started) * 1000),
-                estimated_cost_usd=0 if settings.vision_provider == "mock" else None,
+                estimated_cost_usd=0 if provider.descriptor.provider == "mock" else None,
             )
         )
         candidates = (
@@ -314,10 +313,10 @@ async def _lookup_barcodes_from_images(
                     session=session,
                     scan=scan,
                     barcode=barcode,
-                    provider=get_product_provider(settings),
-                    cache_minutes=settings.product_cache_minutes,
+                    provider=product_provider,
+                    cache_minutes=cache_minutes,
                 )
-            except ProductLookupError:
+            except ProductInformationError:
                 # Product enrichment is optional: catalog outages cannot make a
                 # photographed-label analysis fail or weaken its safety gate.
                 return None
@@ -330,7 +329,15 @@ async def _lookup_barcodes_from_images(
 
 
 async def analyse_scan(
-    *, database: Database, storage: S3Storage, settings: Settings, scan_id: UUID
+    *,
+    database: Database,
+    storage: ObjectStorage,
+    scan_id: UUID,
+    evidence_provider: VisionEvidenceProvider,
+    care_planning_provider: CarePlanningProvider,
+    product_information_provider: ProductInformationProvider,
+    hot_cache: HotCache,
+    policy: AnalysisExecutionPolicy,
 ) -> None:
     async with database.session_factory() as session:
         scan = await session.get(Scan, scan_id)
@@ -354,6 +361,10 @@ async def analyse_scan(
         scan.analysis_stage = "evidence"
         scan.progress_percent = 25
         try:
+            logger.info(
+                "Analysis phase started",
+                extra={"scan_id": str(scan.id), "analysis_phase": "normalize_images"},
+            )
             normalized = tuple(
                 normalize_image(storage.read_object(i.object_key), i.id, i.role) for i in images
             )
@@ -417,7 +428,7 @@ async def analyse_scan(
                     image_id=image.id,
                 )
             )
-        provider = get_vision_provider(settings)
+        provider = evidence_provider
         prior = None
         if garment.active_analysis_revision_id is not None:
             previous = await session.scalar(
@@ -431,14 +442,8 @@ async def analyse_scan(
         # Exact normalized-image cache reuse is tenant-scoped and versioned. A
         # pHash is recorded/discoverable but never contributes a dossier: visually
         # similar or crossed-symbol images must be extracted again.
-        expected_provider = (
-            "mock" if settings.vision_provider == "mock" else settings.vision_provider
-        )
-        expected_model = (
-            "deterministic-review-safe"
-            if settings.vision_provider == "mock"
-            else settings.vision_model
-        )
+        expected_provider = provider.descriptor.provider
+        expected_model = provider.descriptor.model
         entries = list(
             (
                 await session.scalars(
@@ -454,11 +459,16 @@ async def analyse_scan(
             ).all()
         )
         exact_entries = {(entry.normalized_sha256, entry.role): entry for entry in entries}
-        hot_cache = ValkeyHotMirror(settings.valkey_url, settings.cache_hot_mirror_enabled)
         hot_deltas: dict[tuple[str, str], GarmentEvidenceDelta] = {}
         for image in normalized:
             if (image.sha256, image.role.value) not in exact_entries:
-                payload = await hot_cache.get_json(evidence_cache_key(image))
+                payload = await hot_cache.get_json(
+                    evidence_cache_key(
+                        image,
+                        tenant_id=str(scan.tenant_id),
+                        descriptor=provider.descriptor,
+                    )
+                )
                 if payload is not None:
                     hot_deltas[(image.sha256, image.role.value)] = (
                         GarmentEvidenceDelta.model_validate(payload)
@@ -497,6 +507,10 @@ async def analyse_scan(
                     },
                 )
         for image in new_images:
+            logger.info(
+                "Analysis phase started",
+                extra={"scan_id": str(scan.id), "analysis_phase": "evidence_extraction"},
+            )
             extracted = await provider.extract_evidence((image,), prior)
             session.add(
                 ModelRun(
@@ -518,9 +532,13 @@ async def analyse_scan(
             )
             deltas.append(extracted.delta)
             await hot_cache.set_json(
-                evidence_cache_key(image),
+                evidence_cache_key(
+                    image,
+                    tenant_id=str(scan.tenant_id),
+                    descriptor=provider.descriptor,
+                ),
                 extracted.delta.model_dump(mode="json"),
-                settings.cache_hot_ttl_seconds,
+                ttl_seconds=policy.hot_cache_ttl_seconds,
             )
             await upsert_exact_evidence_cache_entry(
                 session,
@@ -582,7 +600,12 @@ async def analyse_scan(
             identity_match_run.classification = IdentityClassification.PROBABLE_INSTANCE.value
             identity_match_run.reasons = {"source": "exact_normalized_image_match"}
         product_lookup = await _lookup_barcodes_from_images(
-            session=session, scan=scan, provider=provider, normalized=normalized, settings=settings
+            session=session,
+            scan=scan,
+            provider=provider,
+            normalized=normalized,
+            product_provider=product_information_provider,
+            cache_minutes=policy.product_cache_minutes,
         )
         if product_lookup is not None and product_lookup.status in {"exact", "probable"}:
             matching_garment_ids = list(
@@ -653,17 +676,23 @@ async def analyse_scan(
                         confidence=float(observation.confidence),
                     )
                 )
-        planner = MockCarePlanningProvider()
-        planning_started = perf_counter()
-        proposal = await planner.propose_plan(dossier)
-        planning_latency_ms = round((perf_counter() - planning_started) * 1000)
+        logger.info(
+            "Analysis phase started",
+            extra={"scan_id": str(scan.id), "analysis_phase": "care_planning"},
+        )
+        planning_result = await care_planning_provider.propose_plan(dossier)
+        proposal = planning_result.proposal
+        planning_latency_ms = planning_result.latency_ms
         report = validate_care_plan(dossier, proposal)
         retried = False
         if report.repairable and report.outcome == ValidationOutcome.BLOCKED:
             retried = True
-            planning_started = perf_counter()
-            proposal = await planner.propose_plan(dossier, tuple(report.violations))
-            planning_latency_ms += round((perf_counter() - planning_started) * 1000)
+            planning_result = await care_planning_provider.propose_plan(
+                dossier,
+                tuple(report.violations),
+            )
+            proposal = planning_result.proposal
+            planning_latency_ms += planning_result.latency_ms
             report = validate_care_plan(dossier, proposal)
         session.add(
             ModelRun(
@@ -671,8 +700,8 @@ async def analyse_scan(
                 tenant_id=scan.tenant_id,
                 scan_id=scan.id,
                 operation="planning",
-                provider="mock",
-                model="deterministic-review-safe",
+                provider=planning_result.provider,
+                model=planning_result.model,
                 prompt_version="care-planning-v1",
                 schema_version="proposed-care-plan-v1",
                 request_fingerprint=hashlib.sha256(
@@ -680,9 +709,9 @@ async def analyse_scan(
                 ).hexdigest(),
                 status="completed",
                 latency_ms=planning_latency_ms,
-                input_tokens=None,
-                output_tokens=None,
-                estimated_cost_usd=0,
+                input_tokens=planning_result.input_tokens,
+                output_tokens=planning_result.output_tokens,
+                estimated_cost_usd=0 if planning_result.provider == "mock" else None,
             )
         )
         plan = ProposedPlan(
@@ -787,6 +816,10 @@ async def analyse_scan(
                     answer=answer,
                 )
             )
+        logger.info(
+            "Analysis phase started",
+            extra={"scan_id": str(scan.id), "analysis_phase": "persist_result"},
+        )
         revision.status = "completed"
         scan.active_analysis_revision_id = revision.id
         garment.active_analysis_revision_id = revision.id

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import apply_human_correction, audit
+from fabricassist.application.planning import CarePlanningProvider
 from fabricassist.domain.evidence import GarmentEvidenceDossier
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
@@ -64,6 +65,10 @@ async def get_session() -> AsyncSession:
 
 async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
+
+
+async def get_care_planning_provider() -> CarePlanningProvider:
+    raise RuntimeError("Care-planning provider dependency was not configured.")
 
 
 def require_operator(user: User) -> None:
@@ -168,13 +173,22 @@ async def correct_review(
     request: CorrectionRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    care_planning_provider: Annotated[
+        CarePlanningProvider,
+        Depends(get_care_planning_provider),
+    ],
 ) -> ReviewResponse:
     require_operator(user)
     review = await case_for(session, user, review_id)
     if review.assigned_operator_id not in {None, user.id}:
         raise HTTPException(409, "Review case is assigned to another operator.")
     result = await apply_human_correction(
-        session, review=review, actor_id=user.id, dossier=request.dossier, reason=request.reason
+        session,
+        review=review,
+        actor_id=user.id,
+        dossier=request.dossier,
+        reason=request.reason,
+        care_planning_provider=care_planning_provider,
     )
     await session.commit()
     # The correction is a successor revision; approval never erases source artifacts.

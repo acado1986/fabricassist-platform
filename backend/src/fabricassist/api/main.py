@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from secrets import compare_digest
@@ -30,14 +32,48 @@ from fabricassist.api.middleware import (
     RateLimitMiddleware,
     SecurityHeadersMiddleware,
 )
-from fabricassist.api.routes import auth, conversations, garments, products, reviews, scans
+from fabricassist.api.routes import (
+    auth,
+    conversations,
+    garments,
+    internal_jobs,
+    products,
+    reviews,
+    scans,
+)
 from fabricassist.application.auth import decode_access_token
+from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.application.policies import (
+    AnalysisExecutionPolicy,
+    ConversationPolicy,
+    JobExecutionPolicy,
+    ProductLookupPolicy,
+    UploadPolicy,
+)
+from fabricassist.application.publication_recovery import (
+    publication_recovery_loop,
+    stop_recovery_task,
+)
+from fabricassist.infrastructure.cache.factory import create_hot_cache
+from fabricassist.infrastructure.concurrency.factory import create_concurrency_gate
 from fabricassist.infrastructure.database import Database, DatabasePort
-from fabricassist.infrastructure.limits import ValkeyRateLimiter
+from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
+from fabricassist.infrastructure.jobs.qstash_inbound import (
+    create_qstash_delivery_verifier,
+)
 from fabricassist.infrastructure.operational_metrics import durable_metrics
 from fabricassist.infrastructure.persistence.models import User
-from fabricassist.infrastructure.storage.s3 import S3Storage
+from fabricassist.infrastructure.product_information.factory import (
+    create_product_information_provider,
+)
+from fabricassist.infrastructure.rate_limits.factory import create_rate_limiter
+from fabricassist.infrastructure.storage.factory import create_object_storage
 from fabricassist.infrastructure.telemetry import configure_telemetry, metrics_payload
+from fabricassist.infrastructure.vision.providers import (
+    create_care_planning_provider,
+    create_conversation_provider,
+    create_evidence_provider,
+)
 from fabricassist.settings import Settings
 
 
@@ -47,19 +83,63 @@ def create_app(
 ) -> FastAPI:
     """Compose the API foundation without any business feature routes."""
     resolved_settings = settings or Settings()
-    resolved_database = database or Database(resolved_settings.database_url)
-    rate_limiter = ValkeyRateLimiter(resolved_settings.valkey_url)
+    resolved_database = database or Database.from_settings(resolved_settings)
+    rate_limiter = create_rate_limiter(resolved_settings)
+    job_dispatcher = create_job_dispatcher(resolved_settings)
+    qstash_verifier = create_qstash_delivery_verifier(
+        resolved_settings.qstash_current_signing_key,
+        resolved_settings.qstash_next_signing_key,
+        resolved_settings.qstash_destination_url,
+    )
+    hot_cache = create_hot_cache(resolved_settings)
+    concurrency_gate = create_concurrency_gate(resolved_settings)
+    evidence_provider = create_evidence_provider(resolved_settings)
+    care_planning_provider = create_care_planning_provider(resolved_settings)
+    conversation_provider = create_conversation_provider(resolved_settings)
+    product_information_provider = create_product_information_provider(resolved_settings)
+    storage = create_object_storage(resolved_settings)
+    analysis_policy = AnalysisExecutionPolicy(
+        hot_cache_ttl_seconds=resolved_settings.cache_hot_ttl_seconds,
+        product_cache_minutes=resolved_settings.product_cache_minutes,
+    )
+    job_execution_policy = JobExecutionPolicy(
+        stage_budget_seconds=resolved_settings.job_stage_budget_seconds
+    )
+    conversation_policy = ConversationPolicy(
+        recent_message_limit=resolved_settings.conversation_recent_message_limit,
+        relevant_image_limit=resolved_settings.conversation_relevant_image_limit,
+    )
+    product_lookup_policy = ProductLookupPolicy(
+        cache_minutes=resolved_settings.product_cache_minutes
+    )
+    upload_policy = UploadPolicy(max_images_per_scan=resolved_settings.max_images_per_scan)
     configure_logging(resolved_settings.log_level)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+        recovery_task: asyncio.Task[None] | None = None
+        if isinstance(resolved_database, Database):
+            recovery_task = asyncio.create_task(
+                publication_recovery_loop(
+                    database=resolved_database,
+                    dispatcher=job_dispatcher,
+                    storage=storage,
+                    interval_seconds=resolved_settings.publication_recovery_interval_seconds,
+                    batch_size=resolved_settings.publication_recovery_batch_size,
+                    deletion_max_attempts=resolved_settings.deletion_max_attempts,
+                ),
+                name="fabricassist-durable-recovery",
+            )
         try:
             yield
         finally:
             try:
-                await rate_limiter.close()
+                await stop_recovery_task(recovery_task)
             finally:
-                await resolved_database.close()
+                try:
+                    await rate_limiter.close()
+                finally:
+                    await resolved_database.close()
 
     app = FastAPI(
         title="FabricAssist API",
@@ -69,7 +149,19 @@ def create_app(
     )
     app.state.settings = resolved_settings
     app.state.database = resolved_database
-    app.state.storage = S3Storage(resolved_settings)
+    app.state.storage = storage
+    app.state.job_dispatcher = job_dispatcher
+    app.state.qstash_verifier = qstash_verifier
+    app.state.hot_cache = hot_cache
+    app.state.concurrency_gate = concurrency_gate
+    app.state.evidence_provider = evidence_provider
+    app.state.care_planning_provider = care_planning_provider
+    app.state.conversation_provider = conversation_provider
+    app.state.product_information_provider = product_information_provider
+    app.state.analysis_policy = analysis_policy
+    app.state.job_execution_policy = job_execution_policy
+    app.state.conversation_policy = conversation_policy
+    app.state.product_lookup_policy = product_lookup_policy
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -102,6 +194,12 @@ def create_app(
     def get_database(request: Request) -> DatabasePort:
         return request.app.state.database  # type: ignore[no-any-return]
 
+    def get_runtime_database(request: Request) -> Database:
+        database_instance = request.app.state.database
+        if not isinstance(database_instance, Database):
+            raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Database runtime is unavailable.")
+        return database_instance
+
     async def get_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
         database_instance = request.app.state.database
         if not isinstance(database_instance, Database):
@@ -112,8 +210,44 @@ def create_app(
     def get_settings(request: Request) -> Settings:
         return request.app.state.settings  # type: ignore[no-any-return]
 
-    def get_storage(request: Request) -> S3Storage:
+    def get_storage(request: Request) -> ObjectStorage:
         return request.app.state.storage  # type: ignore[no-any-return]
+
+    def get_job_dispatcher(request: Request) -> object:
+        return request.app.state.job_dispatcher
+
+    def get_qstash_verifier(request: Request) -> object:
+        return request.app.state.qstash_verifier
+
+    def get_hot_cache(request: Request) -> object:
+        return request.app.state.hot_cache
+
+    def get_concurrency_gate(request: Request) -> object:
+        return request.app.state.concurrency_gate
+
+    def get_evidence_provider(request: Request) -> object:
+        return request.app.state.evidence_provider
+
+    def get_care_planning_provider(request: Request) -> object:
+        return request.app.state.care_planning_provider
+
+    def get_conversation_provider(request: Request) -> object:
+        return request.app.state.conversation_provider
+
+    def get_product_information_provider(request: Request) -> object:
+        return request.app.state.product_information_provider
+
+    def get_analysis_policy(request: Request) -> object:
+        return request.app.state.analysis_policy
+
+    def get_job_execution_policy(request: Request) -> object:
+        return request.app.state.job_execution_policy
+
+    def get_conversation_policy(request: Request) -> object:
+        return request.app.state.conversation_policy
+
+    def get_product_lookup_policy(request: Request) -> object:
+        return request.app.state.product_lookup_policy
 
     bearer = HTTPBearer(auto_error=False)
 
@@ -145,24 +279,48 @@ def create_app(
     app.dependency_overrides[scans.get_session] = get_session
     app.dependency_overrides[scans.get_current_user] = get_current_user
     app.dependency_overrides[scans.get_storage] = get_storage
-    app.dependency_overrides[scans.get_settings] = get_settings
+    app.dependency_overrides[scans.get_upload_policy] = lambda: upload_policy
+    app.dependency_overrides[scans.get_job_dispatcher] = get_job_dispatcher
     app.dependency_overrides[products.get_session] = get_session
     app.dependency_overrides[products.get_current_user] = get_current_user
-    app.dependency_overrides[products.get_settings] = get_settings
+    app.dependency_overrides[products.get_product_information_provider] = (
+        get_product_information_provider
+    )
+    app.dependency_overrides[products.get_product_lookup_policy] = get_product_lookup_policy
     app.dependency_overrides[conversations.get_session] = get_session
     app.dependency_overrides[conversations.get_current_user] = get_current_user
+    app.dependency_overrides[conversations.get_job_dispatcher] = get_job_dispatcher
     app.dependency_overrides[reviews.get_session] = get_session
     app.dependency_overrides[reviews.get_current_user] = get_current_user
+    app.dependency_overrides[reviews.get_care_planning_provider] = get_care_planning_provider
+    app.dependency_overrides[internal_jobs.get_session] = get_session
+    app.dependency_overrides[internal_jobs.get_database] = get_runtime_database
+    app.dependency_overrides[internal_jobs.get_storage] = get_storage
+    app.dependency_overrides[internal_jobs.get_job_dispatcher] = get_job_dispatcher
+    app.dependency_overrides[internal_jobs.get_qstash_verifier] = get_qstash_verifier
+    app.dependency_overrides[internal_jobs.get_hot_cache] = get_hot_cache
+    app.dependency_overrides[internal_jobs.get_concurrency_gate] = get_concurrency_gate
+    app.dependency_overrides[internal_jobs.get_evidence_provider] = get_evidence_provider
+    app.dependency_overrides[internal_jobs.get_care_planning_provider] = get_care_planning_provider
+    app.dependency_overrides[internal_jobs.get_conversation_provider] = get_conversation_provider
+    app.dependency_overrides[internal_jobs.get_product_information_provider] = (
+        get_product_information_provider
+    )
+    app.dependency_overrides[internal_jobs.get_analysis_policy] = get_analysis_policy
+    app.dependency_overrides[internal_jobs.get_job_execution_policy] = get_job_execution_policy
+    app.dependency_overrides[internal_jobs.get_conversation_policy] = get_conversation_policy
     app.include_router(auth.router)
     app.include_router(scans.router)
     app.include_router(garments.router)
     app.include_router(products.router)
     app.include_router(conversations.router)
     app.include_router(reviews.router)
+    app.include_router(internal_jobs.router)
 
     @app.get("/api/v1/health/live", tags=["health"])
-    async def live() -> dict[str, str]:
+    async def live(response: Response) -> dict[str, str]:
         """Report process liveness without checking dependencies."""
+        response.headers["X-FabricAssist-Revision"] = os.environ.get("RENDER_GIT_COMMIT", "local")
         return {"status": "ok"}
 
     @app.get("/api/v1/health/ready", tags=["health"])
@@ -170,6 +328,20 @@ def create_app(
         database_dependency: DatabasePort = Depends(get_database),  # noqa: B008
     ) -> dict[str, str]:
         """Report readiness only when PostgreSQL accepts a safe probe."""
+        if not await database_dependency.is_available():
+            raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Service dependencies are unavailable.")
+        return {"status": "ok"}
+
+    @app.get("/api/v1/bootstrap", tags=["health"])
+    async def bootstrap(
+        database_dependency: DatabasePort = Depends(get_database),  # noqa: B008
+    ) -> dict[str, str]:
+        """Warm only the API and database dependencies needed for sign-in.
+
+        It has no request body, authentication state, or user-specific response.
+        In particular, it does not contact the job dispatcher, object storage,
+        vision, or product-information providers.
+        """
         if not await database_dependency.is_available():
             raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Service dependencies are unavailable.")
         return {"status": "ok"}

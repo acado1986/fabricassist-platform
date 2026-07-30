@@ -37,10 +37,21 @@ class JsonFormatter(logging.Formatter):
             ("http_method", "http_method"),
             ("http_path", "http_path"),
             ("http_status", "http_status"),
+            ("error_type", "error_type"),
+            ("scan_id", "scan_id"),
+            ("analysis_phase", "analysis_phase"),
+            ("provider", "provider"),
+            ("model", "model"),
+            ("operation", "operation"),
+            ("provider_http_status", "provider_http_status"),
+            ("provider_error_code", "provider_error_code"),
+            ("provider_message", "provider_message"),
+            ("request_summary", "request_summary"),
+            ("response_summary", "response_summary"),
         ):
             value = getattr(record, source, None)
             if value is not None:
-                payload[target] = value
+                payload[target] = _SECRET_PATTERN.sub(r"\1\2[REDACTED]", str(value))
         return json.dumps(payload, separators=(",", ":"), default=str)
 
 

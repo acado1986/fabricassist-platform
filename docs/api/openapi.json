@@ -425,6 +425,17 @@
             },
             "title": "Service Events",
             "type": "array"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           }
         },
         "required": [
@@ -504,6 +515,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           }
         },
         "required": [
@@ -836,6 +858,21 @@
         "title": "Observation",
         "type": "object"
       },
+      "RejectCandidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "format": "uuid",
+            "title": "Candidate Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id"
+        ],
+        "title": "RejectCandidateRequest",
+        "type": "object"
+      },
       "ResultResponse": {
         "properties": {
           "result": {
@@ -991,6 +1028,115 @@
           "approved_result_id"
         ],
         "title": "ReviewResponse",
+        "type": "object"
+      },
+      "ScanHistoryResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "garment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Garment Id"
+          },
+          "result_available": {
+            "title": "Result Available",
+            "type": "boolean"
+          },
+          "scan_id": {
+            "format": "uuid",
+            "title": "Scan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          }
+        },
+        "required": [
+          "scan_id",
+          "status",
+          "created_at",
+          "result_available"
+        ],
+        "title": "ScanHistoryResponse",
+        "type": "object"
+      },
+      "ScanImageResponse": {
+        "description": "Safe image metadata for the authenticated scan-image gallery.",
+        "properties": {
+          "detected_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_order": {
+            "title": "Display Order",
+            "type": "integer"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "image_id": {
+            "format": "uuid",
+            "title": "Image Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ImageRole"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "image_id",
+          "role",
+          "display_order"
+        ],
+        "title": "ScanImageResponse",
         "type": "object"
       },
       "ScanResponse": {
@@ -1438,6 +1584,32 @@
         ]
       }
     },
+    "/api/v1/bootstrap": {
+      "get": {
+        "description": "Warm only the API and database dependencies needed for sign-in.\n\nIt has no request body, authentication state, or user-specific response.\nIn particular, it does not contact the job dispatcher, object storage,\nvision, or product-information providers.",
+        "operationId": "bootstrap_api_v1_bootstrap_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Bootstrap Api V1 Bootstrap Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Bootstrap",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/api/v1/garments": {
       "get": {
         "operationId": "list_garments_api_v1_garments_get",
@@ -1558,6 +1730,60 @@
           }
         },
         "summary": "Confirm Identity Candidate",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/identity-candidates/{scan_id}/reject": {
+      "post": {
+        "description": "Record a declined candidate without affecting the new scan's garment.",
+        "operationId": "reject_identity_candidate_api_v1_garments_identity_candidates__scan_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityCandidateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Identity Candidate",
         "tags": [
           "garments"
         ]
@@ -2127,6 +2353,31 @@
         ]
       }
     },
+    "/api/v1/scans/history": {
+      "get": {
+        "operationId": "scan_history_api_v1_scans_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanHistoryResponse"
+                  },
+                  "title": "Response Scan History Api V1 Scans History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Scan History",
+        "tags": [
+          "scans"
+        ]
+      }
+    },
     "/api/v1/scans/{scan_id}": {
       "delete": {
         "operationId": "delete_scan_api_v1_scans__scan_id__delete",
@@ -2324,6 +2575,52 @@
       }
     },
     "/api/v1/scans/{scan_id}/images": {
+      "get": {
+        "description": "List only owned, completed image metadata; URLs remain short lived.",
+        "operationId": "list_scan_images_api_v1_scans__scan_id__images_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanImageResponse"
+                  },
+                  "title": "Response List Scan Images Api V1 Scans  Scan Id  Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Scan Images",
+        "tags": [
+          "scans"
+        ]
+      },
       "post": {
         "operationId": "add_image_api_v1_scans__scan_id__images_post",
         "parameters": [
@@ -2460,6 +2757,16 @@
               "format": "uuid",
               "title": "Image Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Download",
+              "type": "boolean"
             }
           }
         ],

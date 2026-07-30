@@ -12,8 +12,10 @@ application_secret_arns = {
   FABRICASSIST_ACCESS_TOKEN_SECRET    = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
   FABRICASSIST_DATABASE_URL           = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
   FABRICASSIST_VALKEY_URL             = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_CELERY_BROKER_URL      = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
   FABRICASSIST_METRICS_ACCESS_TOKEN   = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
-  FABRICASSIST_VISION_API_KEY         = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
-  FABRICASSIST_VISION_BASE_URL        = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
-  FABRICASSIST_VISION_MODEL           = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_GEMINI_API_KEY                 = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_OPENAI_RESPONSES_API_KEY       = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_OPENAI_RESPONSES_BASE_URL      = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
+  FABRICASSIST_OPENAI_RESPONSES_MODEL         = "arn:aws:secretsmanager:eu-west-1:000000000000:secret:replace"
 }

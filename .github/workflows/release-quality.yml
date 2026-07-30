@@ -1,0 +1,38 @@
+name: Release quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install toolchains
+        run: |
+          python3 -m pip install --user uv==0.11.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+      - name: Run deterministic release quality checks
+        run: |
+          make check
+          make check-alpha-config
+          make check-production-config
+          make test-qstash
+          make test-migrations
+          make test-object-storage
+          make check-openapi-drift
+          make build-release-web
+          make check-deployment-workflows

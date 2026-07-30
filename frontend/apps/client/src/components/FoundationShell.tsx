@@ -1,16 +1,22 @@
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
+import { useRef, useState } from 'react';
 import {
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 
 import { LanguageSelector } from './LanguageSelector';
 import { useTranslation } from '../i18n/TranslationProvider';
+import { useSession } from '../auth/session';
 
 export function FoundationShell({
   children,
@@ -24,8 +30,32 @@ export function FoundationShell({
   wide?: boolean;
 }): ReactNode {
   const { translate } = useTranslation();
+  const { token, signOut } = useSession();
+  const [customerMenuOpen, setCustomerMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    right: number;
+    top: number;
+  }>();
+  const menuButtonRef = useRef<View>(null);
   const { width } = useWindowDimensions();
   const isCompact = width < 640;
+
+  function toggleCustomerMenu(): void {
+    if (customerMenuOpen) {
+      setCustomerMenuOpen(false);
+      return;
+    }
+
+    setCustomerMenuOpen(true);
+    menuButtonRef.current?.measureInWindow(
+      (x, y, buttonWidth, buttonHeight) => {
+        setMenuPosition({
+          right: Math.max(spacing.medium, width - x - buttonWidth),
+          top: y + buttonHeight + spacing.small,
+        });
+      },
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -41,13 +71,87 @@ export function FoundationShell({
             <View style={styles.mark} accessibilityElementsHidden>
               <Text style={styles.markText}>FA</Text>
             </View>
-            <View>
+            <View
+              style={[styles.brandCopy, isCompact && styles.brandCopyCompact]}
+            >
               <Text style={styles.brand}>{translate('title')}</Text>
               <Text style={styles.tagline}>{translate('tagline')}</Text>
             </View>
           </View>
-          <LanguageSelector />
+          <View style={styles.headerActions}>
+            {token ? (
+              <View ref={menuButtonRef} style={styles.customerMenu}>
+                <Pressable
+                  accessibilityLabel={translate('customerMenu')}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: customerMenuOpen }}
+                  onPress={toggleCustomerMenu}
+                  style={({ pressed }) => [
+                    styles.headerButton,
+                    pressed && styles.headerButtonPressed,
+                  ]}
+                >
+                  <Feather color={colors.text} name="menu" size={18} />
+                  <Text style={styles.headerButtonText}>
+                    {translate('customerMenu')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+            {!token ? <LanguageSelector /> : null}
+          </View>
         </View>
+
+        <Modal
+          animationType="fade"
+          onRequestClose={() => setCustomerMenuOpen(false)}
+          transparent
+          visible={customerMenuOpen}
+        >
+          <View style={styles.menuOverlay}>
+            <Pressable
+              accessibilityLabel={translate('closeMenu')}
+              accessibilityRole="button"
+              onPress={() => setCustomerMenuOpen(false)}
+              style={styles.menuBackdrop}
+            />
+            <View
+              accessibilityRole="menu"
+              style={[
+                styles.menuPanel,
+                menuPosition
+                  ? { right: menuPosition.right, top: menuPosition.top }
+                  : null,
+              ]}
+            >
+              <MenuItem
+                icon="camera"
+                label={translate('scan')}
+                onPress={() => {
+                  setCustomerMenuOpen(false);
+                  router.push('/scan');
+                }}
+              />
+              <MenuItem
+                icon="clock"
+                label={translate('history')}
+                onPress={() => {
+                  setCustomerMenuOpen(false);
+                  router.push('/history');
+                }}
+              />
+              <View style={styles.languageMenuItem}>
+                <Text style={styles.menuLabel}>{translate('language')}</Text>
+                <LanguageSelector />
+              </View>
+              <MenuItem
+                icon="log-out"
+                label={translate('signOut')}
+                onPress={() => void signOut()}
+              />
+            </View>
+          </View>
+        </Modal>
 
         <View role="main" style={[styles.content, wide && styles.contentWide]}>
           {title ? (
@@ -68,6 +172,30 @@ export function FoundationShell({
   );
 }
 
+function MenuItem({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: ComponentProps<typeof Feather>['name'];
+  label: string;
+  onPress: () => void;
+}): ReactNode {
+  return (
+    <Pressable
+      accessibilityRole="menuitem"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.menuItem,
+        pressed && styles.menuItemPressed,
+      ]}
+    >
+      <Feather color={colors.text} name={icon} size={17} />
+      <Text style={styles.menuLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
   scrollContent: { flexGrow: 1, paddingBottom: spacing.xxlarge },
@@ -76,17 +204,81 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    maxWidth: 1120,
+    maxWidth: 760,
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
     width: '100%',
   },
   topBarCompact: {
-    alignItems: 'flex-start',
-    flexDirection: 'column',
-    gap: spacing.medium,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  brandRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  brandRow: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minWidth: 0,
+  },
+  brandCopy: { flexShrink: 1, minWidth: 0 },
+  brandCopyCompact: { maxWidth: 172 },
+  headerActions: {
+    alignItems: 'center',
+    flexShrink: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.small,
+    justifyContent: 'flex-end',
+  },
+  customerMenu: { zIndex: 3 },
+  headerButton: {
+    alignItems: 'center',
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xsmall,
+    minHeight: 36,
+    paddingHorizontal: spacing.small,
+  },
+  headerButtonPressed: { opacity: 0.72 },
+  headerButtonText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  menuOverlay: { flex: 1 },
+  menuBackdrop: { bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  menuPanel: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    elevation: 8,
+    gap: spacing.xsmall,
+    minWidth: 200,
+    padding: spacing.xsmall,
+    position: 'absolute',
+    right: spacing.large,
+    top: 76,
+  },
+  menuItem: {
+    alignItems: 'center',
+    borderRadius: radii.small,
+    flexDirection: 'row',
+    gap: spacing.small,
+    minHeight: 44,
+    paddingHorizontal: spacing.small,
+  },
+  menuItemPressed: { backgroundColor: colors.surfaceMuted },
+  menuLabel: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  languageMenuItem: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.small,
+    justifyContent: 'space-between',
+    minHeight: 52,
+    paddingHorizontal: spacing.small,
+  },
   mark: {
     alignItems: 'center',
     backgroundColor: colors.primary,
@@ -107,7 +299,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.4,
   },
-  tagline: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  tagline: {
+    color: colors.muted,
+    flexShrink: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
   content: {
     alignSelf: 'center',
     maxWidth: 520,

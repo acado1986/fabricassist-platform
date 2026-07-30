@@ -11,6 +11,7 @@ dependencies = [
   "celery[redis]>=5.4,<5.5",
   "email-validator>=2.2,<3",
   "fastapi>=0.139,<0.140",
+  "google-genai>=1.0,<2",
   "httpx>=0.28,<0.29",
   "opentelemetry-api>=1.44,<1.45",
   "opentelemetry-exporter-otlp-proto-http>=1.44,<1.45",

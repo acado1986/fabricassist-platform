@@ -161,6 +161,44 @@ class Scan(Base):
     )
 
 
+class AnalysisJobOperation(Base):
+    """PostgreSQL-authoritative analysis intent/outbox and stage checkpoint."""
+
+    __tablename__ = "analysis_job_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "scan_id",
+            "operation_key",
+            "stage",
+            name="uq_analysis_job_operations_scan_key_stage",
+        ),
+        Index("ix_analysis_job_operations_scan_id", "scan_id"),
+        Index(
+            "ix_analysis_job_operations_unpublished",
+            "status",
+            "published_at",
+            "created_at",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    revision_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    operation_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    stage: Mapped[str] = mapped_column(String(100), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, default="00000000-0000-0000-0000-000000000000"
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="queued")
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    published_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
 class ScanImage(Base):
     """Private object metadata only; object bytes remain in S3-compatible storage."""
 
@@ -644,6 +682,12 @@ class ConversationMessage(Base):
         ),
         Index("ix_conversation_messages_thread_created", "thread_id", "created_at", "id"),
         Index("ix_conversation_messages_tenant_id", "tenant_id"),
+        Index(
+            "ix_conversation_messages_unpublished",
+            "status",
+            "dispatch_published_at",
+            "created_at",
+        ),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -685,6 +729,10 @@ class ConversationMessage(Base):
     )
     validation_report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error_code: Mapped[str | None] = mapped_column(String(100))
+    dispatch_correlation_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, default="00000000-0000-0000-0000-000000000000"
+    )
+    dispatch_published_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
@@ -978,7 +1026,8 @@ class DeletionRequest(Base):
     __tablename__ = "deletion_requests"
     __table_args__ = (
         CheckConstraint(
-            "resource_type IN ('scan', 'garment')", name="ck_deletion_requests_resource_type"
+            "resource_type IN ('scan', 'garment', 'image')",
+            name="ck_deletion_requests_resource_type",
         ),
         CheckConstraint(
             "status IN ('queued', 'processing', 'completed', 'failed')",

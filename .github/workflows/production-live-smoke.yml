@@ -1,0 +1,30 @@
+name: Production live smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Production API URL (defaults to the protected production variable)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Run production smoke
+        env:
+          FABRICASSIST_RELEASE_API_URL: ${{ inputs.base_url || vars.FABRICASSIST_API_URL }}
+          FABRICASSIST_RELEASE_SMOKE_EMAIL: ${{ secrets.FABRICASSIST_SMOKE_EMAIL }}
+          FABRICASSIST_RELEASE_SMOKE_PASSWORD: ${{ secrets.FABRICASSIST_SMOKE_PASSWORD }}
+        run: make release-live-smoke

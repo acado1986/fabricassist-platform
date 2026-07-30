@@ -12,9 +12,18 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
+import {
+  confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost,
+  deleteScanApiV1ScansScanIdDelete,
+  identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet,
+  rejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPost,
+  scanDetailApiV1ScansScanIdGet,
+  scanResultApiV1ScansScanIdResultGet,
+  submitFeedbackApiV1ScansScanIdFeedbackPost,
+  type IdentityCandidateResponse,
+} from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
-import { getApiBaseUrl } from '../../config/environment';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
 type Source = {
@@ -53,65 +62,76 @@ type RichResult = {
     product: Record<string, unknown> | null;
   } | null;
 };
-type IdentityCandidate = {
-  id: string;
-  garment_id: string;
-  classification: string;
-  reasons: Record<string, unknown>;
-  status: string;
-  thumbnail_url: string | null;
-};
 export default function Result(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
-  const { token } = useSession();
+  const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
   const [result, setResult] = useState<RichResult>();
   const [failed, setFailed] = useState(false);
+  const [failureCode, setFailureCode] = useState<string>();
   const [stage, setStage] = useState<string>();
+  const [progressPercent, setProgressPercent] = useState(0);
   const [garmentId, setGarmentId] = useState<string>();
   const [lifecycleMessage, setLifecycleMessage] = useState<string>();
-  const [identityCandidates, setIdentityCandidates] = useState<IdentityCandidate[]>([]);
-  const confirmIdentityCandidate = async (candidateId: string): Promise<void> => {
+  const [identityCandidates, setIdentityCandidates] = useState<
+    IdentityCandidateResponse[]
+  >([]);
+  const confirmIdentityCandidate = async (
+    candidateId: string,
+  ): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/v1/garments/identity-candidates/${scanId}/confirm`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidate_id: candidateId }),
-      },
-    );
-    if (response.ok) {
+    const response =
+      await confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost(
+        {
+          client: apiClient,
+          path: { scan_id: scanId },
+          body: { candidate_id: candidateId },
+        },
+      );
+    if (response.data) {
       setIdentityCandidates([]);
       setLifecycleMessage(translate('identityCandidateConfirmed'));
     }
   };
+  const rejectIdentityCandidate = async (
+    candidateId: string,
+  ): Promise<void> => {
+    if (!scanId || !token) return;
+    const response =
+      await rejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPost(
+        {
+          client: apiClient,
+          path: { scan_id: scanId },
+          body: { candidate_id: candidateId },
+        },
+      );
+    if (response.data) {
+      setIdentityCandidates((current) =>
+        current.filter((candidate) => candidate.id !== candidateId),
+      );
+      setLifecycleMessage(translate('identityCandidateRejected'));
+    }
+  };
   const requestReview = async (): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/v1/scans/${scanId}/feedback`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ request_review: true }),
-      },
-    );
+    const response = await submitFeedbackApiV1ScansScanIdFeedbackPost({
+      client: apiClient,
+      path: { scan_id: scanId },
+      body: { request_review: true },
+    });
     setLifecycleMessage(
-      response.ok
+      response.data
         ? translate('reviewRequested')
         : translate('reviewRequestFailed'),
     );
   };
   const deleteAnalysis = async (): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await fetch(`${getApiBaseUrl()}/api/v1/scans/${scanId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+    const response = await deleteScanApiV1ScansScanIdDelete({
+      client: apiClient,
+      path: { scan_id: scanId },
     });
-    if (response.ok) {
+    if (response.data) {
       setLifecycleMessage(translate('deletionRequested'));
       router.replace('/scan');
       return;
@@ -129,44 +149,60 @@ export default function Result(): ReactNode {
     if (!scanId || !token) return;
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    const retry = (): void => {
+      if (!cancelled) timeout = setTimeout(() => void load(), 1500);
+    };
     const load = async (): Promise<void> => {
       try {
-        const headers = { Authorization: `Bearer ${token}` };
-        const scan = await fetch(`${getApiBaseUrl()}/api/v1/scans/${scanId}`, {
-          headers,
+        const scan = await scanDetailApiV1ScansScanIdGet({
+          client: apiClient,
+          path: { scan_id: scanId },
         });
-        if (!scan.ok) throw new Error('SCAN_UNAVAILABLE');
-        const status = (await scan.json()) as {
-          status: string;
-          analysis_stage?: string;
-          garment_id?: string;
-        };
+        if (!scan.data) throw new Error('SCAN_UNAVAILABLE');
+        const status = scan.data;
         if (cancelled) return;
         setStage(status.analysis_stage ?? status.status);
-        setGarmentId(status.garment_id);
-        const candidates = await fetch(
-          `${getApiBaseUrl()}/api/v1/garments/identity-candidates/${scanId}`,
-          { headers },
-        );
-        if (candidates.ok && !cancelled) {
-          setIdentityCandidates((await candidates.json()) as IdentityCandidate[]);
+        setProgressPercent(status.progress_percent);
+        setGarmentId(status.garment_id ?? undefined);
+        const candidates =
+          await identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet({
+            client: apiClient,
+            path: { scan_id: scanId },
+          });
+        if (candidates.data && !cancelled) {
+          setIdentityCandidates(candidates.data);
         }
         if (status.status === 'failed') {
+          setFailureCode(status.error_code ?? undefined);
           setFailed(true);
           return;
         }
-        const response = await fetch(
-          `${getApiBaseUrl()}/api/v1/scans/${scanId}/result?language=${locale}`,
-          { headers },
-        );
-        if (response.ok) {
-          const value = (await response.json()) as { result: RichResult };
-          if (!cancelled) setResult(value.result);
+        // The result endpoint intentionally returns 409 while the worker is
+        // still processing. Do not turn that normal state transition into a
+        // permanent error screen, especially with a slower live provider.
+        if (
+          !['completed', 'needs_review', 'needs_better_image'].includes(
+            status.status,
+          )
+        ) {
+          retry();
           return;
         }
-        if (!cancelled) timeout = setTimeout(() => void load(), 1500);
+        const response = await scanResultApiV1ScansScanIdResultGet({
+          client: apiClient,
+          path: { scan_id: scanId },
+          query: { language: locale },
+        });
+        if (response.data) {
+          if (!cancelled)
+            setResult(response.data.result as unknown as RichResult);
+          return;
+        }
+        retry();
       } catch {
-        if (!cancelled) setFailed(true);
+        // Network/API races are recoverable while a scan is being processed.
+        // Only the durable `failed` scan status above is terminal here.
+        retry();
       }
     };
     void load();
@@ -174,7 +210,7 @@ export default function Result(): ReactNode {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
     };
-  }, [locale, scanId, token]);
+  }, [apiClient, locale, scanId, token]);
   return (
     <FoundationShell
       title={translate('resultTitle')}
@@ -188,7 +224,9 @@ export default function Result(): ReactNode {
               {translate('resultLoading')}
             </Text>
             <View style={styles.progressTrack}>
-              <View style={styles.progressValue} />
+              <View
+                style={[styles.progressValue, { width: `${progressPercent}%` }]}
+              />
             </View>
             <Text style={styles.loadingCopy}>
               {stage
@@ -197,7 +235,19 @@ export default function Result(): ReactNode {
             </Text>
           </View>
         ) : null}
-        {failed ? <Text>{translate('resultUnavailable')}</Text> : null}
+        {failed ? (
+          <View accessibilityLiveRegion="assertive" style={styles.failure}>
+            <Feather color={colors.danger} name="alert-triangle" size={24} />
+            <Text style={styles.failureTitle}>
+              {translate('analysisFailedTitle')}
+            </Text>
+            <Text style={styles.failureCopy}>
+              {failureCode?.startsWith('PROVIDER_')
+                ? translate('analysisProviderFailed')
+                : translate('analysisFailed')}
+            </Text>
+          </View>
+        ) : null}
         {result ? (
           <>
             <Text accessibilityRole="header" style={styles.title}>
@@ -273,47 +323,91 @@ export default function Result(): ReactNode {
               title={translate('garmentChangeSummary')}
               values={result.change_summary ? [result.change_summary] : []}
             />
-            {identityCandidates.slice(0, 1).map((candidate) => (
-              <View key={candidate.id} style={styles.identityCandidate}>
-                {candidate.thumbnail_url ? (
-                  <Image
-                    accessibilityLabel={translate('identityCandidateThumbnail')}
-                    source={{ uri: candidate.thumbnail_url }}
-                    style={styles.identityThumbnail}
-                  />
-                ) : null}
-                <Text style={styles.heading}>
-                  {translate(
-                    candidate.classification === 'probable_instance'
-                      ? 'likelySameGarment'
-                      : 'likelySameModel',
-                  )}
-                </Text>
-                <Text>
-                  {translate(
-                    candidate.classification === 'probable_instance'
-                      ? 'likelySameGarmentDescription'
-                      : 'likelySameModelDescription',
-                  )}
-                </Text>
-                <Text style={styles.identityHistory}>
-                  {translate(
-                    candidate.classification === 'probable_instance'
-                      ? 'sameGarmentAnalysedBefore'
-                      : 'sameModelAnalysedBefore',
-                  )}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void confirmIdentityCandidate(candidate.id)}
-                  style={styles.identityButton}
-                >
-                  <Text style={styles.identityButtonText}>
-                    {translate('confirmSameGarment')}
+            {identityCandidates
+              .filter((candidate) => candidate.status === 'pending')
+              .map((candidate) => (
+                <View key={candidate.id} style={styles.identityCandidate}>
+                  {candidate.thumbnail_url ? (
+                    <Image
+                      accessibilityLabel={translate(
+                        'identityCandidateThumbnail',
+                      )}
+                      source={{ uri: candidate.thumbnail_url }}
+                      style={styles.identityThumbnail}
+                    />
+                  ) : null}
+                  <Text style={styles.heading}>
+                    {translate(
+                      candidate.classification === 'probable_instance'
+                        ? 'likelySameGarment'
+                        : 'likelySameModel',
+                    )}
                   </Text>
-                </Pressable>
+                  <Text>
+                    {translate(
+                      candidate.classification === 'probable_instance'
+                        ? 'likelySameGarmentDescription'
+                        : 'likelySameModelDescription',
+                    )}
+                  </Text>
+                  <Text style={styles.identityHistory}>
+                    {translate(
+                      candidate.classification === 'probable_instance'
+                        ? 'sameGarmentAnalysedBefore'
+                        : 'sameModelAnalysedBefore',
+                    )}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() =>
+                      router.push({
+                        pathname: `/garments/${candidate.garment_id}`,
+                        params: { decisionScanId: scanId },
+                      })
+                    }
+                    style={styles.identityReviewButton}
+                  >
+                    <Text style={styles.neutralButtonText}>
+                      {translate('reviewCandidateGarment')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void confirmIdentityCandidate(candidate.id)}
+                    style={styles.identityButton}
+                  >
+                    <Text style={styles.identityButtonText}>
+                      {translate('confirmSameGarment')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void rejectIdentityCandidate(candidate.id)}
+                    style={styles.identityRejectButton}
+                  >
+                    <Text style={styles.identityRejectText}>
+                      {translate('rejectSameGarment')}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: '/images', params: { scanId } })
+              }
+              style={({ pressed }) => [
+                styles.historyButton,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              <View style={styles.buttonContent}>
+                <Feather color={colors.text} name="image" size={18} />
+                <Text style={styles.neutralButtonText}>
+                  {translate('viewUploadedImages')}
+                </Text>
               </View>
-            ))}
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() =>
@@ -465,9 +559,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.medium,
     paddingVertical: spacing.small,
   },
+  identityReviewButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.small,
+  },
+  identityRejectButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.small,
+  },
+  identityRejectText: { color: colors.danger, fontWeight: '800' },
   identityButtonText: { color: colors.background, fontWeight: '800' },
   identityHistory: { color: colors.muted, fontWeight: '700' },
   warning: { backgroundColor: colors.dangerSoft },
+  failure: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radii.medium,
+    gap: spacing.small,
+    padding: spacing.large,
+  },
+  failureTitle: { color: colors.danger, fontSize: 18, fontWeight: '800' },
+  failureCopy: { color: colors.text, textAlign: 'center' },
   heading: { fontWeight: '800', color: colors.primary },
   loading: {
     alignItems: 'center',

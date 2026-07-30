@@ -20,6 +20,9 @@ from sqlalchemy.orm import Session
 from fabricassist.api.main import create_app
 from fabricassist.api.routes import scans
 from fabricassist.application.analysis import analyse_scan
+from fabricassist.application.planning import MockCarePlanningProvider
+from fabricassist.application.policies import AnalysisExecutionPolicy
+from fabricassist.infrastructure.cache.noop import NoOpHotCacheAdapter
 from fabricassist.infrastructure.database import Database, normalise_database_url
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
@@ -35,8 +38,13 @@ from fabricassist.infrastructure.persistence.seeding import (
     DEVELOPMENT_ADMIN_EMAIL,
     seed_development_data,
 )
-from fabricassist.infrastructure.storage.s3 import S3Storage
-from fabricassist.settings import Settings
+from fabricassist.infrastructure.product_information.mock import (
+    MockProductInformationAdapter,
+)
+from fabricassist.infrastructure.storage.factory import create_object_storage
+from fabricassist.infrastructure.storage.s3 import S3ObjectStorageAdapter
+from fabricassist.infrastructure.vision.providers.mock import MockModelCapabilityAdapter
+from fabricassist.settings import ModelCapabilityProvider, Settings
 
 TEST_DATABASE_URL = os.environ.get("FABRICASSIST_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
@@ -61,17 +69,21 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert TEST_DATABASE_URL is not None
-    monkeypatch.setenv("FABRICASSIST_DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("FABRICASSIST_DATABASE_URL", "postgresql://unreachable.invalid/fabricassist")
+    monkeypatch.setenv("FABRICASSIST_DATABASE_MIGRATION_URL", TEST_DATABASE_URL)
     engine = create_engine(normalise_database_url(TEST_DATABASE_URL))
     reset_database(engine)
     config = alembic_config()
 
     command.upgrade(config, "head")
     inspector = inspect(engine)
+    with engine.connect() as connection:
+        extensions = set(connection.scalars(text("SELECT extname FROM pg_extension")))
+    assert {"citext", "vector"} <= extensions
     assert set(inspector.get_table_names()) >= set(Base.metadata.tables)
     for table_name in Base.metadata.tables:
         columns = {column["name"] for column in inspector.get_columns(table_name)}
-        if table_name not in {"tenants", "analysis_revision_images"}:
+        if table_name not in {"tenants", "analysis_revision_images", "analysis_job_operations"}:
             assert "tenant_id" in columns
 
     with Session(engine) as session:
@@ -92,11 +104,36 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0014"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260729_0019"
+
+    reset_database(engine)
+    command.upgrade(config, "20260729_0018")
+    previous = inspect(engine)
+    assert "dispatch_correlation_id" not in {
+        column["name"] for column in previous.get_columns("conversation_messages")
+    }
+    command.upgrade(config, "head")
+    current = inspect(engine)
+    assert {
+        "dispatch_correlation_id",
+        "dispatch_published_at",
+    } <= {column["name"] for column in current.get_columns("conversation_messages")}
+    assert {
+        "ix_conversation_messages_unpublished",
+    } <= {index["name"] for index in current.get_indexes("conversation_messages")}
+    assert {
+        "ix_analysis_job_operations_unpublished",
+    } <= {index["name"] for index in current.get_indexes("analysis_job_operations")}
+    command.downgrade(config, "20260729_0018")
+    downgraded = inspect(engine)
+    assert "dispatch_correlation_id" not in {
+        column["name"] for column in downgraded.get_columns("conversation_messages")
+    }
+    command.upgrade(config, "head")
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260723_0014"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260729_0019"
     engine.dispose()
 
 
@@ -139,7 +176,7 @@ def test_real_minio_object_and_worker_create_an_active_revision() -> None:
 
     settings = Settings(
         environment="test",
-        vision_provider="mock",
+        evidence_provider=ModelCapabilityProvider.MOCK,
         database_url=TEST_DATABASE_URL,
         s3_endpoint_url="http://localhost:9002",
         s3_public_endpoint_url="http://localhost:9002",
@@ -147,7 +184,8 @@ def test_real_minio_object_and_worker_create_an_active_revision() -> None:
         s3_secret_key="change-me-local-minio-test",
         s3_bucket="fabricassist-test",
     )
-    storage = S3Storage(settings)
+    storage = create_object_storage(settings)
+    assert isinstance(storage, S3ObjectStorageAdapter)
     raw = BytesIO()
     Image.new("RGB", (400, 400), "white").save(raw, "JPEG")
     storage._client.put_object(  # pyright: ignore[reportPrivateUsage]
@@ -160,7 +198,19 @@ def test_real_minio_object_and_worker_create_an_active_revision() -> None:
 
     database = Database(TEST_DATABASE_URL)
     asyncio.run(
-        analyse_scan(database=database, storage=storage, settings=settings, scan_id=scan_id)
+        analyse_scan(
+            database=database,
+            storage=storage,
+            scan_id=scan_id,
+            evidence_provider=MockModelCapabilityAdapter(),
+            care_planning_provider=MockCarePlanningProvider(),
+            product_information_provider=MockProductInformationAdapter(),
+            hot_cache=NoOpHotCacheAdapter(),
+            policy=AnalysisExecutionPolicy(
+                hot_cache_ttl_seconds=settings.cache_hot_ttl_seconds,
+                product_cache_minutes=settings.product_cache_minutes,
+            ),
+        )
     )
     asyncio.run(database.close())
 
@@ -221,7 +271,8 @@ def test_real_api_upload_completion_enforces_user_and_tenant_ownership() -> None
         s3_secret_key="change-me-local-minio-test",
         s3_bucket="fabricassist-test",
     )
-    storage = S3Storage(settings)
+    storage = create_object_storage(settings)
+    assert isinstance(storage, S3ObjectStorageAdapter)
     database = Database(TEST_DATABASE_URL)
     app = create_app(settings, database)
 

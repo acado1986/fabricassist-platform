@@ -13,9 +13,15 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
+import {
+  addImageApiV1ScansScanIdImagesPost,
+  completeUploadApiV1ScansScanIdUploadsCompletePost,
+  createScanApiV1ScansPost,
+  productLookupApiV1ScansScanIdProductLookupPost,
+  requestAnalysisApiV1ScansScanIdAnalysePost,
+} from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
-import { getApiBaseUrl } from '../../config/environment';
 import { useTranslation } from '../../i18n/TranslationProvider';
 import { uploadBinaryFile } from '../../platform/BinaryUpload';
 import { CameraCapture } from '../../platform/CameraCapture';
@@ -30,11 +36,6 @@ type Role =
   | 'construction_detail'
   | 'other';
 type Selected = { role: Role; asset: ImagePicker.ImagePickerAsset };
-type UploadInstruction = {
-  image_id: string;
-  url: string;
-  headers: Record<string, string>;
-};
 const maximumImages = 8;
 const roles: Role[] = [
   'garment_overview',
@@ -48,7 +49,7 @@ const roles: Role[] = [
 ];
 
 export default function Scan(): ReactNode {
-  const { token } = useSession();
+  const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
   const [items, setItems] = useState<Selected[]>([]);
   const [role, setRole] = useState<Role>('garment_overview');
@@ -137,80 +138,56 @@ export default function Scan(): ReactNode {
     setBusy(true);
     setError(undefined);
     try {
-      const scanResponse = await fetch(`${getApiBaseUrl()}/api/v1/scans`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ requested_language: locale }),
+      const scanResult = await createScanApiV1ScansPost({
+        client: apiClient,
+        body: { requested_language: locale },
       });
-      if (!scanResponse.ok) throw new Error('create');
-      const scan = (await scanResponse.json()) as { scan_id: string };
+      if (!scanResult.data) throw new Error('create');
+      const scan = scanResult.data;
       for (const [index, item] of items.entries()) {
         const contentType =
           item.asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
-        const instructionResponse = await fetch(
-          `${getApiBaseUrl()}/api/v1/scans/${scan.scan_id}/images`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              role: item.role,
-              content_type: contentType,
-              display_order: index,
-            }),
+        const instructionResult = await addImageApiV1ScansScanIdImagesPost({
+          client: apiClient,
+          path: { scan_id: scan.scan_id },
+          body: {
+            role: item.role,
+            content_type: contentType,
+            display_order: index,
           },
-        );
-        if (!instructionResponse.ok) throw new Error('instruction');
-        const upload = (await instructionResponse.json()) as UploadInstruction;
+        });
+        if (!instructionResult.data) throw new Error('instruction');
+        const upload = instructionResult.data;
         const binaryResult = await uploadBinaryFile({
           fileUri: item.asset.uri,
           headers: upload.headers,
           url: upload.url,
         });
         if (!binaryResult.ok) throw new Error('upload');
-        const completion = await fetch(
-          `${getApiBaseUrl()}/api/v1/scans/${scan.scan_id}/uploads/complete`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+        const completion =
+          await completeUploadApiV1ScansScanIdUploadsCompletePost({
+            client: apiClient,
+            path: { scan_id: scan.scan_id },
+            body: {
               image_id: upload.image_id,
               content_type: contentType,
-            }),
-          },
-        );
-        if (!completion.ok) throw new Error('complete');
+            },
+          });
+        if (!completion.data) throw new Error('complete');
       }
       if (barcode.trim()) {
-        const lookup = await fetch(
-          `${getApiBaseUrl()}/api/v1/scans/${scan.scan_id}/product-lookup`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ barcode }),
-          },
-        );
-        if (!lookup.ok) throw new Error('barcode');
+        const lookup = await productLookupApiV1ScansScanIdProductLookupPost({
+          client: apiClient,
+          path: { scan_id: scan.scan_id },
+          body: { barcode: barcode.trim() },
+        });
+        if (!lookup.data) throw new Error('barcode');
       }
-      const analysis = await fetch(
-        `${getApiBaseUrl()}/api/v1/scans/${scan.scan_id}/analyse`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (!analysis.ok) throw new Error('analyse');
+      const analysis = await requestAnalysisApiV1ScansScanIdAnalysePost({
+        client: apiClient,
+        path: { scan_id: scan.scan_id },
+      });
+      if (!analysis.data) throw new Error('analyse');
       router.replace({ pathname: '/result', params: { scanId: scan.scan_id } });
     } catch {
       setError(translate('scanUploadFailed'));

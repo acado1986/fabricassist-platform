@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
@@ -33,17 +34,26 @@ class SessionResponse(BaseModel):
 
 
 def set_refresh_cookies(response: Response, refresh_token: str, settings: Settings) -> None:
-    secure = settings.environment == "production"
+    # A deployed web client may have a different HTTPS origin than the API.
+    # Derive cookie attributes from the configured API transport instead of a
+    # named environment, while retaining local HTTP development support.
+    secure = urlparse(settings.api_public_url).scheme == "https"
+    same_site = "none" if secure else "lax"
     response.set_cookie(
         "fabricassist_refresh",
         refresh_token,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=same_site,
         path="/api/v1/auth",
     )
     response.set_cookie(
-        "fabricassist_csrf", "1", httponly=False, secure=secure, samesite="lax", path="/api/v1/auth"
+        "fabricassist_csrf",
+        "1",
+        httponly=False,
+        secure=secure,
+        samesite=same_site,
+        path="/api/v1/auth",
     )
 
 

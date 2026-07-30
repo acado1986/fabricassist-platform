@@ -1,5 +1,5 @@
 from fabricassist.application.analysis import render_rich_result
-from fabricassist.application.products import PersistedProductLookup
+from fabricassist.application.product_information import PersistedProductLookup
 from fabricassist.domain.care import (
     CareValidationReport,
     Cleaning,

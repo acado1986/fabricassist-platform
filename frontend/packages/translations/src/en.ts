@@ -7,10 +7,10 @@ export const en = {
       'Your images stay private and are used only to prepare your care request.',
     loginTitle: 'Welcome back',
     loginDescription:
-      'Sign in to upload a care label and keep your garment scans together.',
+      'Sign in to analyse garments and keep your scans together.',
     registerTitle: 'Create your account',
     registerDescription:
-      'Start with a clear care-label photo. It only takes a minute.',
+      'Start with a clear garment or care-label photo. It only takes a minute.',
     emailLabel: 'Email address',
     emailPlaceholder: 'you@example.com',
     emailError: 'Enter a valid email address.',
@@ -21,6 +21,7 @@ export const en = {
     loginAction: 'Sign in',
     registerAction: 'Create account',
     loginError: 'We could not sign you in. Check your details and try again.',
+    loginWarming: 'Preparing secure sign-in…',
     registerError:
       'We could not create the account. The email may already be registered.',
     needAccount: 'New to FabricAssist?',
@@ -80,26 +81,53 @@ export const en = {
     selectedCareLabelImage: 'Selected care-label image',
     required: 'Photo option',
     imageFormats: 'JPEG, PNG or WebP · Maximum 12 MB',
-    uploadImages: 'Analyse care label',
+    uploadImages: 'Analyse garment',
     uploadingImages: 'Uploading securely…',
     cameraPermissionFailed:
       'Camera access is required to take a photo. You can still upload an image.',
-    scanComplete: 'Upload complete. Preparing your care-label analysis…',
+    scanComplete: 'Upload complete. Preparing your garment analysis…',
     analysisQueued: 'Your selected photo(s) are being analysed.',
     analysisFailed:
       'We could not analyse this image. Please try a clearer photo.',
     analysisProviderFailed:
       'The analysis service could not complete this request. Please try again in a moment.',
+    analysisFailedTitle: 'Analysis could not be completed.',
     viewResult: 'View care guidance',
+    viewUploadedImages: 'View uploaded images',
+    uploadedImagesTitle: 'Your uploaded images',
+    uploadedImagesDescription:
+      'Open an image to zoom in or download a private copy.',
+    uploadedImagesEmpty: 'There are no completed images for this analysis yet.',
+    uploadedImagesLoadFailed: 'We could not load your uploaded images.',
+    openUploadedImage: 'Open uploaded image {number}',
+    closeImageZoom: 'Close image zoom',
+    zoomedUploadedImage: 'Zoomed uploaded image',
+    downloadUploadedImage: 'Download image',
     scanCreateFailed: 'We could not prepare the upload. Please try again.',
     scanUploadFailed:
       'The image upload failed. Check your connection and try again.',
     scanValidationFailed:
       'We could not validate this image. Retake a clear, well-lit photo.',
     signOut: 'Sign out',
+    customerMenu: 'Menu',
+    closeMenu: 'Close menu',
+    scan: 'Scan garment',
+    history: 'History',
+    customerHistory: 'Customer history',
+    customerHistoryTitle: 'Your garment history',
+    customerHistoryDescription:
+      'Review garments you have analysed and their confirmed service history.',
+    customerHistoryEmpty: 'You have no garment history yet.',
+    customerHistoryLoadFailed: 'We could not load your garment history.',
+    previousAnalyses: 'Previous analyses',
+    previousAnalysesEmpty: 'You have no previous analyses yet.',
+    previousAnalysis: 'Care analysis',
+    viewPreviousResult: 'View care result',
+    scanHistoryLoadFailed: 'We could not load your previous analyses.',
+    yourGarments: 'Your garments',
     resultTitle: 'Your care guidance',
     resultDescription:
-      'This guidance is built from the care-label evidence we could verify.',
+      'This guidance is built from the evidence we could verify.',
     resultLoading: 'Preparing your care guidance…',
     resultLoadingCopy:
       'We are reading your evidence and validating safe care guidance.',
@@ -127,7 +155,13 @@ export const en = {
     sameModelAnalysedBefore:
       'A garment with this verified product identifier was analysed before.',
     confirmSameGarment: 'This is the same physical garment',
-    identityCandidateConfirmed: 'This scan is now linked to the confirmed garment.',
+    identityCandidateConfirmed:
+      'This scan is now linked to the confirmed garment.',
+    identityCandidateRejected:
+      'This is not the same garment. You can review another match.',
+    reviewCandidateGarment: 'Review this garment first',
+    returnToIdentityDecision: 'Return to identity decision',
+    rejectSameGarment: 'No, this is not the same garment',
     identityCandidateThumbnail: 'Previously analysed garment photo',
     chatTitle: 'Follow-up questions',
     chatPlaceholder: 'Ask about this garment',
@@ -141,6 +175,7 @@ export const en = {
     garmentHistoryTitle: 'Garment history',
     garmentHistoryDescription:
       'Identity and confirmed service history for this physical garment.',
+    garmentThumbnail: 'Garment photo',
     analysedBefore: 'Analysed before',
     cleanedBefore: 'Cleaned before',
     garmentIdentifiers: 'FabricAssist identifier',
@@ -171,7 +206,7 @@ export const en = {
     richProfessional: 'Professional care',
     richUncertainty: 'Uncertainty',
     richValidation: 'Validation state',
-    backToScan: 'Analyse another label',
+    backToScan: 'Analyse another garment',
     requestReview: 'Request human review',
     reviewRequested: 'Review requested',
     reviewRequestFailed: 'Unable to request review for this analysis.',

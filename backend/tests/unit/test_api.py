@@ -3,14 +3,21 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from typing import cast
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
+from fabricassist.api.errors import unexpected_error_handler
 from fabricassist.api.main import create_app
 from fabricassist.api.routes.scans import CreateScanRequest, ImageRequest
+from fabricassist.application.jobs import JobDispatcher
+from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.application.policies import UploadPolicy
 from fabricassist.settings import Settings
 
 
@@ -35,6 +42,7 @@ def test_liveness_is_independent_of_database() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert response.headers["X-FabricAssist-Revision"] == "local"
 
 
 def test_readiness_succeeds_when_database_is_available() -> None:
@@ -55,6 +63,22 @@ def test_readiness_uses_stable_error_envelope_when_database_is_unavailable() -> 
     assert body["error"]["correlation_id"] == response.headers["X-Correlation-ID"]
 
 
+def test_bootstrap_probes_only_the_database_needed_for_login() -> None:
+    with TestClient(create_app(Settings(environment="test"), AvailableDatabase())) as client:
+        response = client.get("/api/v1/bootstrap")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_bootstrap_uses_stable_error_envelope_when_database_is_unavailable() -> None:
+    with TestClient(create_app(Settings(environment="test"), UnavailableDatabase())) as client:
+        response = client.get("/api/v1/bootstrap")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+
+
 def test_not_found_uses_stable_error_envelope() -> None:
     with TestClient(create_app(Settings(environment="test"), AvailableDatabase())) as client:
         response = client.get("/missing")
@@ -69,6 +93,48 @@ def test_correlation_id_is_propagated() -> None:
         response = client.get("/api/v1/health/live", headers={"X-Correlation-ID": correlation_id})
 
     assert response.headers["X-Correlation-ID"] == correlation_id
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_is_logged_without_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logged: list[tuple[str, dict[str, object]]] = []
+
+    def capture(message: str, *, extra: dict[str, object]) -> None:
+        logged.append((message, extra))
+
+    monkeypatch.setattr("fabricassist.api.errors.logger.error", capture)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/scans/example/images",
+            "headers": [],
+            "query_string": b"",
+            "server": ("testserver", 80),
+            "client": ("testclient", 123),
+            "scheme": "http",
+        }
+    )
+    request.state.correlation_id = "safe-correlation-id"
+
+    response = await unexpected_error_handler(
+        request, RuntimeError("https://secret-presigned-url.invalid")
+    )
+
+    assert response.status_code == 500
+    assert logged == [
+        (
+            "Unexpected API error",
+            {
+                "http_method": "POST",
+                "http_path": "/api/v1/scans/example/images",
+                "http_status": 500,
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
 
 
 def test_cors_preflight_accepts_analysis_idempotency_header() -> None:
@@ -124,6 +190,7 @@ class ImageLifecycleSession:
         self.responses = responses
         self.added: list[object] = []
         self.committed = False
+        self.commit_count = 0
 
     async def scalar(self, statement: object) -> object | None:
         return self.responses.pop(0)
@@ -133,14 +200,248 @@ class ImageLifecycleSession:
 
     async def commit(self) -> None:
         self.committed = True
+        self.commit_count += 1
 
     async def delete(self, value: object) -> None:
         self.added.append(value)
 
 
 class PresigningStorage:
-    def presign_put(self, *, key: str, content_type: str) -> tuple[str, dict[str, str], datetime]:
-        return "https://storage.invalid/upload", {"Content-Type": content_type}, datetime.now(UTC)
+    def presign_put(self, *, key: str, content_type: str):
+        from fabricassist.application.object_storage import PresignedUpload
+
+        return PresignedUpload(
+            "https://storage.invalid/upload",
+            {"Content-Type": content_type},
+            datetime.now(UTC),
+        )
+
+
+class GarmentThumbnailSession:
+    def __init__(self, image: object) -> None:
+        self.image = image
+        self.scalar_calls = 0
+
+    async def scalars(self, statement: object):
+        class Result:
+            def all(self) -> list[object]:
+                return []
+
+        return Result()
+
+    async def get(self, model: object, identifier: object) -> None:
+        return None
+
+    async def scalar(self, statement: object) -> object | None:
+        self.scalar_calls += 1
+        return self.image
+
+
+class DownloadStorage:
+    def presign_get(self, *, key: str, download_filename: str | None = None):
+        from fabricassist.application.object_storage import PresignedDownload
+
+        return PresignedDownload(
+            url=f"https://storage.invalid/private/{key}",
+            expires_at=datetime.now(UTC),
+        )
+
+
+class CapturingDownloadStorage(DownloadStorage):
+    def __init__(self) -> None:
+        self.filename: str | None = None
+
+    def presign_get(self, *, key: str, download_filename: str | None = None):
+        self.filename = download_filename
+        return super().presign_get(key=key, download_filename=download_filename)
+
+
+class ScanHistorySession:
+    def __init__(self, scan: object, image: object) -> None:
+        self.scan = scan
+        self.image = image
+
+    async def scalars(self, statement: object):
+        class Result:
+            def __init__(self, scan: object) -> None:
+                self.scan = scan
+
+            def all(self) -> list[object]:
+                return [self.scan]
+
+        return Result(self.scan)
+
+    async def scalar(self, statement: object) -> object | None:
+        return self.image
+
+
+@pytest.mark.asyncio
+async def test_scan_history_lists_owned_results_with_presigned_thumbnails() -> None:
+    from fabricassist.api.routes.scans import scan_history
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="completed",
+        requested_language="en",
+        active_result_id=uuid4(),
+        created_at=datetime.now(UTC),
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="garment_overview",
+        display_order=0,
+        object_key="private/tenant/scan/image.jpg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+
+    response = await scan_history(
+        ScanHistorySession(scan, image),  # type: ignore[arg-type]
+        user,
+        DownloadStorage(),  # type: ignore[arg-type]
+    )
+
+    assert response[0].scan_id == scan.id
+    assert response[0].result_available
+    assert (
+        response[0].thumbnail_url == "https://storage.invalid/private/private/tenant/scan/image.jpg"
+    )
+
+
+@pytest.mark.asyncio
+async def test_garment_response_exposes_only_presigned_thumbnail_url() -> None:
+    from fabricassist.api.routes.garments import response_for
+    from fabricassist.infrastructure.persistence.models import Garment, ScanImage
+
+    tenant_id = uuid4()
+    garment = Garment(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=uuid4(),
+        active_analysis_revision_id=None,
+        active_result_id=None,
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=uuid4(),
+        role="garment_overview",
+        display_order=0,
+        object_key="private/tenant/garment/image.jpg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+
+    response = await response_for(
+        GarmentThumbnailSession(image),  # type: ignore[arg-type]
+        garment,
+        DownloadStorage(),  # type: ignore[arg-type]
+    )
+
+    assert (
+        response.thumbnail_url == "https://storage.invalid/private/private/tenant/garment/image.jpg"
+    )
+    assert "object_key" not in response.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_image_preview_uses_attachment_filename_only_when_downloading() -> None:
+    from fabricassist.api.routes.scans import image_preview
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="completed",
+        requested_language="en",
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="care_label",
+        display_order=0,
+        object_key="private/tenant/scan/image.jpg",
+        mime_type="image/jpeg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        completed_at=datetime.now(UTC),
+    )
+    storage = CapturingDownloadStorage()
+
+    response = await image_preview(
+        scan.id,
+        image.id,
+        cast("AsyncSession", ImageLifecycleSession([scan, image])),
+        user,
+        cast("ObjectStorage", storage),
+        download=True,  # type: ignore[arg-type]
+    )
+
+    assert response.image_id == image.id
+    assert storage.filename == f"fabricassist-care_label-{image.id}.jpeg"
+
+
+@pytest.mark.asyncio
+async def test_list_scan_images_exposes_completed_owned_metadata_in_display_order() -> None:
+    from fabricassist.api.routes.scans import list_scan_images
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="completed",
+        requested_language="en",
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="care_label",
+        display_order=1,
+        object_key="private/tenant/scan/label.jpg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        completed_at=datetime.now(UTC),
+        width=640,
+        height=480,
+    )
+
+    class GallerySession:
+        async def scalar(self, statement: object) -> object | None:
+            return scan
+
+        async def scalars(self, statement: object):
+            class Result:
+                def all(self) -> list[object]:
+                    return [image]
+
+            return Result()
+
+    response = await list_scan_images(scan.id, GallerySession(), user)  # type: ignore[arg-type]
+
+    assert [item.image_id for item in response] == [image.id]
+    assert response[0].role.value == "care_label"
+    assert response[0].width == 640
 
 
 @pytest.mark.asyncio
@@ -193,7 +494,7 @@ async def test_duplicate_image_request_reuses_image_without_persisting_a_url() -
         session,  # type: ignore[arg-type]
         user,
         PresigningStorage(),  # type: ignore[arg-type]
-        Settings(environment="test"),
+        UploadPolicy(max_images_per_scan=8),
         "repeat",
     )
 
@@ -227,7 +528,7 @@ async def test_image_creation_uses_configured_limit_and_persists_one_photo() -> 
         session,  # type: ignore[arg-type]
         user,
         PresigningStorage(),  # type: ignore[arg-type]
-        Settings(environment="test", max_images_per_scan=1),
+        UploadPolicy(max_images_per_scan=1),
         None,
     )
 
@@ -245,13 +546,13 @@ async def test_image_creation_uses_configured_limit_and_persists_one_photo() -> 
             full_session,  # type: ignore[arg-type]
             user,
             PresigningStorage(),  # type: ignore[arg-type]
-            Settings(environment="test", max_images_per_scan=1),
+            UploadPolicy(max_images_per_scan=1),
             None,
         )
 
 
 @pytest.mark.asyncio
-async def test_image_removal_keeps_database_reference_when_object_deletion_fails() -> None:
+async def test_image_removal_commits_deletion_intent_before_object_io() -> None:
     from fabricassist.api.routes.scans import remove_image
     from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
 
@@ -280,19 +581,18 @@ async def test_image_removal_keeps_database_reference_when_object_deletion_fails
         upload_token=uuid4(),
         upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
     )
-    session = ImageLifecycleSession([scan, image])
+    session = ImageLifecycleSession([scan, image, None])
 
-    with pytest.raises(OSError, match="storage unavailable"):
-        await remove_image(
-            scan.id,
-            image.id,
-            session,  # type: ignore[arg-type]
-            user,
-            FailingStorage(),  # type: ignore[arg-type]
-        )
+    await remove_image(
+        scan.id,
+        image.id,
+        session,  # type: ignore[arg-type]
+        user,
+        FailingStorage(),  # type: ignore[arg-type]
+    )
 
-    assert session.added == []
-    assert not session.committed
+    assert image.deletion_requested_at is not None
+    assert session.committed
 
 
 @pytest.mark.asyncio
@@ -317,7 +617,17 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
     from starlette.requests import Request
 
     from fabricassist.api.routes.scans import request_analysis
+    from fabricassist.application.jobs import AnalysisJobMessage
     from fabricassist.infrastructure.persistence.models import Scan, User
+
+    class UnusedDispatcher:
+        async def dispatch_analysis(
+            self,
+            message: AnalysisJobMessage,
+            *,
+            correlation_id: str,
+        ) -> None:
+            del message, correlation_id
 
     tenant_id = uuid4()
     user = User(
@@ -338,10 +648,70 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
             Request({"type": "http"}),
             session,  # type: ignore[arg-type]
             user,
+            cast(JobDispatcher, UnusedDispatcher()),
         )
 
     assert error.value.status_code == 409
     assert not session.committed
+
+
+@pytest.mark.asyncio
+async def test_repeated_qstash_analysis_request_reuses_durable_operation() -> None:
+    from starlette.requests import Request
+
+    from fabricassist.api.routes.scans import request_analysis
+    from fabricassist.application.jobs import AnalysisJobMessage
+    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan, User
+
+    class RecordingDispatcher:
+        def __init__(self) -> None:
+            self.messages: list[AnalysisJobMessage] = []
+
+        async def dispatch_analysis(
+            self, message: AnalysisJobMessage, *, correlation_id: str
+        ) -> None:
+            assert correlation_id == "test-correlation"
+            self.messages.append(message)
+
+    dispatcher = RecordingDispatcher()
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="uploading",
+        requested_language="en",
+    )
+    session = ImageLifecycleSession([scan, 1, None])
+    request = Request({"type": "http"})
+    request.state.correlation_id = "test-correlation"
+    first = await request_analysis(
+        scan.id,
+        request,
+        session,  # type: ignore[arg-type]
+        user,
+        cast(JobDispatcher, dispatcher),
+        "repeat-analysis",
+    )
+    operation = next(value for value in session.added if isinstance(value, AnalysisJobOperation))
+    session.responses.extend([scan, 1, operation])
+    repeated = await request_analysis(
+        scan.id,
+        request,
+        session,  # type: ignore[arg-type]
+        user,
+        cast(JobDispatcher, dispatcher),
+        "repeat-analysis",
+    )
+
+    assert first == repeated
+    assert first.operation_key == "repeat-analysis"
+    assert len(dispatcher.messages) == 1
+    assert session.commit_count == 2
 
 
 @pytest.mark.asyncio
@@ -378,7 +748,7 @@ async def test_completed_image_can_be_removed_with_private_object_cleanup() -> N
         upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
         completed_at=datetime.now(UTC),
     )
-    session = ImageLifecycleSession([scan, image])
+    session = ImageLifecycleSession([scan, image, None])
     storage = DeletingStorage()
 
     response = await remove_image(
@@ -390,6 +760,7 @@ async def test_completed_image_can_be_removed_with_private_object_cleanup() -> N
     )
 
     assert response.status_code == 204
-    assert storage.keys == [image.object_key]
-    assert session.added == [image]
+    assert storage.keys == []
+    assert image.deletion_requested_at is not None
+    assert any(value.__class__.__name__ == "ObjectDeletionOutbox" for value in session.added)
     assert session.committed

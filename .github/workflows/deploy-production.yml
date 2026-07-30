@@ -1,0 +1,190 @@
+name: Deploy production
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+      - "!v*-*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Stable tag or exact commit to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      git_sha: ${{ steps.revision.outputs.git_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Validate stable release tag
+        if: github.event_name == 'push'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Production releases require an exact stable vMAJOR.MINOR.PATCH tag." >&2
+            exit 1
+          }
+      - name: Install toolchains
+        run: |
+          python3 -m pip install --user uv==0.11.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+      - name: Run deterministic production quality checks
+        run: |
+          make check
+          make check-production-config
+          make test-qstash
+          make test-migrations
+          make test-object-storage
+          make check-openapi-drift
+          make build-release-web
+          make check-deployment-workflows
+          make security-check
+      - name: Audit production frontend dependencies
+        run: pnpm --dir frontend audit --prod --audit-level high
+      - name: Build and scan production API image
+        run: |
+          docker build --pull \
+            --tag fabricassist-api:release \
+            --file backend/Dockerfile backend
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.59.1 image \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            fabricassist-api:release
+      - id: revision
+        name: Record selected revision
+        run: echo "git_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  migrate:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.quality.outputs.git_sha }}
+      - name: Install uv
+        run: |
+          python3 -m pip install --user uv==0.11.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Apply backward-compatible migrations
+        env:
+          FABRICASSIST_DATABASE_MIGRATION_URL: ${{ secrets.FABRICASSIST_DATABASE_MIGRATION_URL }}
+        run: ./infrastructure/scripts/run-release-migrations.sh
+
+  deploy-api:
+    needs: [quality, migrate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: production
+    steps:
+      - name: Deploy selected API revision to Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          SELECTED_SHA: ${{ needs.quality.outputs.git_sha }}
+        run: |
+          curl --fail --silent --show-error --get \
+            --data-urlencode "ref=${SELECTED_SHA}" \
+            "$RENDER_DEPLOY_HOOK_URL" > /dev/null
+      - name: Wait for API liveness and readiness
+        env:
+          FABRICASSIST_RELEASE_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+          SELECTED_SHA: ${{ needs.quality.outputs.git_sha }}
+        run: |
+          for attempt in $(seq 1 60); do
+            headers="$(mktemp)"
+            if curl --fail --silent --show-error \
+                --dump-header "$headers" \
+                --output /dev/null \
+                "$FABRICASSIST_RELEASE_API_URL/api/v1/health/live" \
+              && grep --ignore-case --quiet \
+                "^X-FabricAssist-Revision: ${SELECTED_SHA}" "$headers" \
+              && curl --fail --silent --show-error \
+                "$FABRICASSIST_RELEASE_API_URL/api/v1/health/ready" > /dev/null; then
+              rm -f "$headers"
+              exit 0
+            fi
+            rm -f "$headers"
+            sleep 10
+          done
+          echo "Selected production API revision did not become ready within 10 minutes." >&2
+          exit 1
+
+  deploy-web:
+    needs: [quality, migrate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.quality.outputs.git_sha }}
+      - name: Activate pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Export static production web application
+        env:
+          EXPO_PUBLIC_FABRICASSIST_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+          EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT: production
+        run: pnpm --dir frontend build:web
+      - name: Verify generated bundle contains no secret markers
+        run: make check-web-bundle-secrets
+      - name: Validate production Pages project
+        env:
+          PAGES_PROJECT: ${{ vars.FABRICASSIST_PAGES_PROJECT }}
+        run: test -n "$PAGES_PROJECT"
+      - name: Deploy frontend to Cloudflare Pages
+        id: deploy-pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy frontend/apps/client/dist
+            --project-name=${{ vars.FABRICASSIST_PAGES_PROJECT }}
+            --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record deployed Pages URL
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy-pages.outputs.deployment-url }}
+        run: |
+          echo "Cloudflare Pages production deployment: $DEPLOYMENT_URL" >> "$GITHUB_STEP_SUMMARY"
+
+  live-smoke:
+    needs: [deploy-api, deploy-web]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.quality.outputs.git_sha }}
+      - name: Run production smoke
+        env:
+          FABRICASSIST_RELEASE_API_URL: ${{ vars.FABRICASSIST_API_URL }}
+          FABRICASSIST_RELEASE_SMOKE_EMAIL: ${{ secrets.FABRICASSIST_SMOKE_EMAIL }}
+          FABRICASSIST_RELEASE_SMOKE_PASSWORD: ${{ secrets.FABRICASSIST_SMOKE_PASSWORD }}
+        run: make release-live-smoke

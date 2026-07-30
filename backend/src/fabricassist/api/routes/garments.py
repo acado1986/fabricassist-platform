@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import enqueue_deletion
+from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.domain.identity import IdentityClassification
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
@@ -26,7 +27,6 @@ from fabricassist.infrastructure.persistence.models import (
     ScanImage,
     User,
 )
-from fabricassist.infrastructure.storage.s3 import S3Storage
 
 router = APIRouter(prefix="/api/v1/garments", tags=["garments"])
 
@@ -49,6 +49,7 @@ class GarmentResponse(BaseModel):
     cleaned_before: bool
     identifiers: list[str] = Field(default_factory=list)
     last_analysis_at: str | None = None
+    thumbnail_url: str | None = None
     service_events: list[ServiceEventResponse]
 
 
@@ -64,6 +65,10 @@ class IdentityCandidateResponse(BaseModel):
 class ConfirmCandidateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     candidate_id: UUID
+
+
+class RejectCandidateRequest(ConfirmCandidateRequest):
+    pass
 
 
 class HistoryResponse(BaseModel):
@@ -85,7 +90,7 @@ async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
 
 
-async def get_storage() -> S3Storage:
+async def get_storage() -> ObjectStorage:
     raise RuntimeError("Storage dependency was not configured.")
 
 
@@ -102,7 +107,9 @@ async def owned_garment(session: AsyncSession, user: User, garment_id: UUID) -> 
     return garment
 
 
-async def response_for(session: AsyncSession, garment: Garment) -> GarmentResponse:
+async def response_for(
+    session: AsyncSession, garment: Garment, storage: ObjectStorage
+) -> GarmentResponse:
     events = list(
         (
             await session.scalars(
@@ -126,6 +133,18 @@ async def response_for(session: AsyncSession, garment: Garment) -> GarmentRespon
     revision = None
     if garment.active_analysis_revision_id is not None:
         revision = await session.get(AnalysisRevision, garment.active_analysis_revision_id)
+    image = await session.scalar(
+        select(ScanImage)
+        .join(Scan, Scan.id == ScanImage.scan_id)
+        .where(
+            Scan.tenant_id == garment.tenant_id,
+            Scan.user_id == garment.user_id,
+            Scan.garment_id == garment.id,
+            ScanImage.deleted_at.is_(None),
+        )
+        .order_by(ScanImage.created_at.desc())
+        .limit(1)
+    )
     return GarmentResponse(
         id=garment.id,
         analysed_before=garment.active_analysis_revision_id is not None,
@@ -134,6 +153,7 @@ async def response_for(session: AsyncSession, garment: Garment) -> GarmentRespon
         last_analysis_at=revision.created_at.isoformat()
         if revision and revision.created_at
         else None,
+        thumbnail_url=storage.presign_get(key=image.object_key).url if image else None,
         service_events=[ServiceEventResponse(id=e.id, kind=e.kind, note=e.note) for e in events],
     )
 
@@ -142,6 +162,7 @@ async def response_for(session: AsyncSession, garment: Garment) -> GarmentRespon
 async def list_garments(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> list[GarmentResponse]:
     garments = list(
         (
@@ -152,7 +173,7 @@ async def list_garments(
             )
         ).all()
     )
-    return [await response_for(session, garment) for garment in garments]
+    return [await response_for(session, garment, storage) for garment in garments]
 
 
 @router.get("/{garment_id}", response_model=GarmentResponse)
@@ -160,8 +181,9 @@ async def get_garment(
     garment_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> GarmentResponse:
-    return await response_for(session, await owned_garment(session, user, garment_id))
+    return await response_for(session, await owned_garment(session, user, garment_id), storage)
 
 
 @router.post("/{garment_id}/service-events", response_model=ServiceEventResponse, status_code=201)
@@ -191,6 +213,7 @@ async def garment_history(
     garment_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> HistoryResponse:
     garment = await owned_garment(session, user, garment_id)
     observations = list(
@@ -205,7 +228,7 @@ async def garment_history(
             )
         ).all()
     )
-    events = (await response_for(session, garment)).service_events
+    events = (await response_for(session, garment, storage)).service_events
     return HistoryResponse(
         garment_id=garment.id,
         observations=[
@@ -282,7 +305,7 @@ async def identity_candidates(
     scan_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[S3Storage, Depends(get_storage)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> list[IdentityCandidateResponse]:
     run_ids = select(GarmentIdentityMatchRun.id).where(
         GarmentIdentityMatchRun.tenant_id == user.tenant_id,
@@ -312,7 +335,7 @@ async def identity_candidates(
             .order_by(ScanImage.created_at.desc())
             .limit(1)
         )
-        thumbnail_url = storage.presign_get(key=image.object_key)[0] if image else None
+        thumbnail_url = storage.presign_get(key=image.object_key).url if image else None
         responses.append(
             IdentityCandidateResponse(
                 id=candidate.id,
@@ -332,6 +355,7 @@ async def confirm_identity_candidate(
     request: ConfirmCandidateRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> GarmentResponse:
     scan = await session.scalar(
         select(Scan).where(
@@ -342,6 +366,12 @@ async def confirm_identity_candidate(
         select(GarmentIdentityCandidate).where(
             GarmentIdentityCandidate.id == request.candidate_id,
             GarmentIdentityCandidate.tenant_id == user.tenant_id,
+            GarmentIdentityCandidate.match_run_id.in_(
+                select(GarmentIdentityMatchRun.id).where(
+                    GarmentIdentityMatchRun.scan_id == scan_id,
+                    GarmentIdentityMatchRun.tenant_id == user.tenant_id,
+                )
+            ),
         )
     )
     if (
@@ -362,7 +392,7 @@ async def confirm_identity_candidate(
     if existing is not None:
         if existing.garment_id != garment.id:
             raise HTTPException(409, "This scan already has a different confirmed garment.")
-        return await response_for(session, garment)
+        return await response_for(session, garment, storage)
     scan.garment_id = garment.id
     candidate.status = "confirmed"
     session.add(
@@ -377,4 +407,38 @@ async def confirm_identity_candidate(
         )
     )
     await session.commit()
-    return await response_for(session, garment)
+    return await response_for(session, garment, storage)
+
+
+@router.post("/identity-candidates/{scan_id}/reject", response_model=IdentityCandidateResponse)
+async def reject_identity_candidate(
+    scan_id: UUID,
+    request: RejectCandidateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> IdentityCandidateResponse:
+    """Record a declined candidate without affecting the new scan's garment."""
+
+    candidate = await session.scalar(
+        select(GarmentIdentityCandidate).where(
+            GarmentIdentityCandidate.id == request.candidate_id,
+            GarmentIdentityCandidate.tenant_id == user.tenant_id,
+            GarmentIdentityCandidate.match_run_id.in_(
+                select(GarmentIdentityMatchRun.id).where(
+                    GarmentIdentityMatchRun.scan_id == scan_id,
+                    GarmentIdentityMatchRun.tenant_id == user.tenant_id,
+                )
+            ),
+        )
+    )
+    if candidate is None or candidate.status != "pending":
+        raise HTTPException(404, "Pending identity candidate was not found.")
+    candidate.status = "rejected"
+    await session.commit()
+    return IdentityCandidateResponse(
+        id=candidate.id,
+        garment_id=candidate.garment_id,
+        classification=candidate.classification,
+        reasons=candidate.reasons,
+        status=candidate.status,
+    )

@@ -9,10 +9,10 @@ export const es: TranslationCatalog = {
       'Tus imágenes son privadas y solo se usan para preparar tu consulta de cuidado.',
     loginTitle: 'Te damos la bienvenida',
     loginDescription:
-      'Inicia sesión para subir una etiqueta y mantener juntas tus consultas.',
+      'Inicia sesión para analizar prendas y mantener juntas tus consultas.',
     registerTitle: 'Crea tu cuenta',
     registerDescription:
-      'Empieza con una foto clara de la etiqueta. Solo necesitas un minuto.',
+      'Empieza con una foto clara de la prenda o de la etiqueta. Solo necesitas un minuto.',
     emailLabel: 'Correo electrónico',
     emailPlaceholder: 'tu@ejemplo.com',
     emailError: 'Introduce un correo electrónico válido.',
@@ -24,6 +24,7 @@ export const es: TranslationCatalog = {
     registerAction: 'Crear cuenta',
     loginError:
       'No hemos podido iniciar sesión. Revisa tus datos e inténtalo de nuevo.',
+    loginWarming: 'Preparando el inicio de sesión seguro…',
     registerError:
       'No hemos podido crear la cuenta. Es posible que el correo ya esté registrado.',
     needAccount: '¿Eres nuevo en FabricAssist?',
@@ -84,27 +85,55 @@ export const es: TranslationCatalog = {
     selectedCareLabelImage: 'Imagen seleccionada de la etiqueta',
     required: 'Opción de foto',
     imageFormats: 'JPEG, PNG o WebP · Máximo 12 MB',
-    uploadImages: 'Analizar etiqueta de cuidado',
+    uploadImages: 'Analizar prenda',
     uploadingImages: 'Subiendo de forma segura…',
     cameraPermissionFailed:
       'Se necesita acceso a la cámara para hacer una foto. También puedes subir una imagen.',
     scanComplete:
-      'Carga completada. Estamos preparando el análisis de la etiqueta…',
+      'Carga completada. Estamos preparando el análisis de la prenda…',
     analysisQueued: 'Estamos analizando la(s) foto(s) seleccionada(s).',
     analysisFailed:
       'No pudimos analizar la imagen. Prueba con una foto más clara.',
     analysisProviderFailed:
       'El servicio de análisis no pudo completar esta solicitud. Inténtalo de nuevo en unos instantes.',
+    analysisFailedTitle: 'No se ha podido completar el análisis.',
     viewResult: 'Ver instrucciones de cuidado',
+    viewUploadedImages: 'Ver imágenes subidas',
+    uploadedImagesTitle: 'Tus imágenes subidas',
+    uploadedImagesDescription:
+      'Abre una imagen para ampliarla o descargar una copia privada.',
+    uploadedImagesEmpty: 'Aún no hay imágenes completadas para este análisis.',
+    uploadedImagesLoadFailed: 'No hemos podido cargar tus imágenes subidas.',
+    openUploadedImage: 'Abrir imagen subida {number}',
+    closeImageZoom: 'Cerrar ampliación de imagen',
+    zoomedUploadedImage: 'Imagen subida ampliada',
+    downloadUploadedImage: 'Descargar imagen',
     scanCreateFailed: 'No hemos podido preparar la carga. Inténtalo de nuevo.',
     scanUploadFailed:
       'La carga ha fallado. Revisa tu conexión e inténtalo de nuevo.',
     scanValidationFailed:
       'No hemos podido validar la imagen. Haz otra foto clara y bien iluminada.',
     signOut: 'Cerrar sesión',
+    customerMenu: 'Menú',
+    closeMenu: 'Cerrar menú',
+    scan: 'Analizar prenda',
+    history: 'Historial',
+    customerHistory: 'Historial del cliente',
+    customerHistoryTitle: 'Historial de tus prendas',
+    customerHistoryDescription:
+      'Revisa las prendas que has analizado y su historial de servicio confirmado.',
+    customerHistoryEmpty: 'Aún no tienes historial de prendas.',
+    customerHistoryLoadFailed:
+      'No hemos podido cargar tu historial de prendas.',
+    previousAnalyses: 'Análisis anteriores',
+    previousAnalysesEmpty: 'Aún no tienes análisis anteriores.',
+    previousAnalysis: 'Análisis de cuidado',
+    viewPreviousResult: 'Ver resultado de cuidado',
+    scanHistoryLoadFailed: 'No hemos podido cargar tus análisis anteriores.',
+    yourGarments: 'Tus prendas',
     resultTitle: 'Tus instrucciones de cuidado',
     resultDescription:
-      'Estas indicaciones se basan en la evidencia que pudimos verificar en la etiqueta.',
+      'Estas indicaciones se basan en la evidencia que pudimos verificar.',
     resultLoading: 'Preparando tus instrucciones de cuidado…',
     resultLoadingCopy:
       'Estamos leyendo la evidencia y validando unas indicaciones de cuidado seguras.',
@@ -127,13 +156,20 @@ export const es: TranslationCatalog = {
     likelySameGarment: 'Probablemente la misma prenda',
     likelySameGarmentDescription:
       'Ya se analizó exactamente la misma foto. Confirma solo si es la misma prenda física.',
-    sameGarmentAnalysedBefore: 'Es posible que esta prenda ya se haya analizado.',
+    sameGarmentAnalysedBefore:
+      'Es posible que esta prenda ya se haya analizado.',
     likelySameModelDescription:
       'Un identificador de producto verificado coincide con una prenda que analizaste antes. Puede ser otra unidad del mismo modelo.',
     sameModelAnalysedBefore:
       'Ya se analizó una prenda con este identificador de producto verificado.',
     confirmSameGarment: 'Es la misma prenda física',
-    identityCandidateConfirmed: 'Este análisis ya está vinculado a la prenda confirmada.',
+    identityCandidateConfirmed:
+      'Este análisis ya está vinculado a la prenda confirmada.',
+    identityCandidateRejected:
+      'No es la misma prenda. Puedes revisar otra coincidencia.',
+    reviewCandidateGarment: 'Revisar esta prenda primero',
+    returnToIdentityDecision: 'Volver a la decisión de identidad',
+    rejectSameGarment: 'No, no es la misma prenda',
     identityCandidateThumbnail: 'Foto de la prenda analizada anteriormente',
     chatTitle: 'Preguntas de seguimiento',
     chatPlaceholder: 'Pregunta sobre esta prenda',
@@ -148,6 +184,7 @@ export const es: TranslationCatalog = {
     garmentHistoryTitle: 'Historial de la prenda',
     garmentHistoryDescription:
       'Identidad e historial de servicios confirmados de esta prenda física.',
+    garmentThumbnail: 'Foto de la prenda',
     analysedBefore: 'Analizada anteriormente',
     cleanedBefore: 'Limpiada anteriormente',
     garmentIdentifiers: 'Identificador de FabricAssist',
@@ -178,7 +215,7 @@ export const es: TranslationCatalog = {
     richProfessional: 'Cuidado profesional',
     richUncertainty: 'Incertidumbre',
     richValidation: 'Estado de validación',
-    backToScan: 'Analizar otra etiqueta',
+    backToScan: 'Analizar otra prenda',
     requestReview: 'Solicitar revisión humana',
     reviewRequested: 'Revisión solicitada',
     reviewRequestFailed: 'No se pudo solicitar la revisión de este análisis.',

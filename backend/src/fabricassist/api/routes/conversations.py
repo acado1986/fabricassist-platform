@@ -11,6 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.job_orchestration import publish_conversation_message
+from fabricassist.application.jobs import (
+    ConversationJobDispatcher,
+    JobDispatchError,
+    PermanentJobDispatchError,
+)
 from fabricassist.infrastructure.persistence.models import (
     ConversationMessage,
     ConversationThread,
@@ -56,6 +62,10 @@ async def get_session() -> AsyncSession:
 
 async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
+
+
+async def get_job_dispatcher() -> ConversationJobDispatcher:
+    raise RuntimeError("Job dispatcher dependency was not configured.")
 
 
 def response(message: ConversationMessage) -> MessageResponse:
@@ -143,6 +153,7 @@ async def post_message(
     http_request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
+    dispatcher: Annotated[ConversationJobDispatcher, Depends(get_job_dispatcher)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> MessageResponse:
     scan = await scan_for(session, user, scan_id)
@@ -170,6 +181,22 @@ async def post_message(
             )
         )
         if prior:
+            if prior.dispatch_published_at is None:
+                if prior.dispatch_correlation_id == str(UUID(int=0)):
+                    prior.dispatch_correlation_id = str(http_request.state.correlation_id)
+                    await session.commit()
+                try:
+                    await publish_conversation_message(
+                        session=session,
+                        message=prior,
+                        dispatcher=dispatcher,
+                    )
+                except PermanentJobDispatchError as error:
+                    raise HTTPException(502, "Conversation publication was rejected.") from error
+                except JobDispatchError as error:
+                    raise HTTPException(
+                        503, "Conversation publication is temporarily unavailable."
+                    ) from error
             return response(prior)
     message = ConversationMessage(
         id=uuid4(),
@@ -183,14 +210,18 @@ async def post_message(
         idempotency_key=idempotency_key,
         analysis_revision_id=scan.active_analysis_revision_id,
         care_result_id=scan.active_result_id,
+        dispatch_correlation_id=str(http_request.state.correlation_id),
     )
     session.add(message)
     await session.commit()
-    from fabricassist.worker.celery_app import celery_app
-
-    celery_app.send_task(  # pyright: ignore[reportUnknownMemberType]
-        "fabricassist.answer_message",
-        args=[str(message.id)],
-        headers={"correlation_id": str(http_request.state.correlation_id)},
-    )
+    try:
+        await publish_conversation_message(
+            session=session,
+            message=message,
+            dispatcher=dispatcher,
+        )
+    except PermanentJobDispatchError as error:
+        raise HTTPException(502, "Conversation publication was rejected.") from error
+    except JobDispatchError as error:
+        raise HTTPException(503, "Conversation publication is temporarily unavailable.") from error
     return response(message)

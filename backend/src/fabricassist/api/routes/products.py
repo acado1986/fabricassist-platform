@@ -10,19 +10,20 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.application.products import (
-    get_product_provider,
+from fabricassist.application.policies import ProductLookupPolicy
+from fabricassist.application.product_information import (
+    ProductInformationError,
+    ProductInformationProvider,
     invalidate_product_lookup,
     lookup_and_record,
     product_lookup_from_run,
 )
-from fabricassist.domain.products import ProductLookupError, normalize_barcode
+from fabricassist.domain.products import normalize_barcode
 from fabricassist.infrastructure.persistence.models import (
     ProductLookupRun,
     Scan,
     User,
 )
-from fabricassist.settings import Settings
 
 router = APIRouter(prefix="/api/v1/scans", tags=["products"])
 
@@ -56,8 +57,12 @@ async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
 
 
-async def get_settings() -> Settings:
-    raise RuntimeError("Settings dependency was not configured.")
+async def get_product_information_provider() -> ProductInformationProvider:
+    raise RuntimeError("Product-information provider dependency was not configured.")
+
+
+async def get_product_lookup_policy() -> ProductLookupPolicy:
+    raise RuntimeError("Product-lookup policy dependency was not configured.")
 
 
 @router.post("/{scan_id}/product-lookup", response_model=LookupResponse)
@@ -66,7 +71,11 @@ async def product_lookup(
     request: LookupRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    settings: Annotated[Settings, Depends(get_settings)],
+    provider: Annotated[
+        ProductInformationProvider,
+        Depends(get_product_information_provider),
+    ],
+    policy: Annotated[ProductLookupPolicy, Depends(get_product_lookup_policy)],
 ) -> LookupResponse:
     scan = await session.scalar(
         select(Scan).where(
@@ -84,10 +93,10 @@ async def product_lookup(
             session=session,
             scan=scan,
             barcode=barcode,
-            provider=get_product_provider(settings),
-            cache_minutes=settings.product_cache_minutes,
+            provider=provider,
+            cache_minutes=policy.cache_minutes,
         )
-    except ProductLookupError as error:
+    except ProductInformationError as error:
         raise HTTPException(502, error.code) from error
     await session.commit()
     return LookupResponse(

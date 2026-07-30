@@ -10,6 +10,9 @@ import pytest
 from PIL import Image
 
 from fabricassist.application.analysis import analyse_scan
+from fabricassist.application.planning import MockCarePlanningProvider
+from fabricassist.application.policies import AnalysisExecutionPolicy
+from fabricassist.infrastructure.cache.noop import NoOpHotCacheAdapter
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
     CareResult,
@@ -19,7 +22,10 @@ from fabricassist.infrastructure.persistence.models import (
     Scan,
     ScanImage,
 )
-from fabricassist.settings import Settings
+from fabricassist.infrastructure.product_information.mock import (
+    MockProductInformationAdapter,
+)
+from fabricassist.infrastructure.vision.providers.mock import MockModelCapabilityAdapter
 
 
 class ScalarRows:
@@ -120,8 +126,15 @@ async def test_worker_creates_tenant_owned_revision_membership_and_activates_res
     await analyse_scan(
         database=FakeDatabase(session),  # type: ignore[arg-type]
         storage=FakeStorage(image_bytes()),  # type: ignore[arg-type]
-        settings=Settings(environment="test", vision_provider="mock"),
         scan_id=scan.id,
+        evidence_provider=MockModelCapabilityAdapter(),
+        care_planning_provider=MockCarePlanningProvider(),
+        product_information_provider=MockProductInformationAdapter(),
+        hot_cache=NoOpHotCacheAdapter(),
+        policy=AnalysisExecutionPolicy(
+            hot_cache_ttl_seconds=86_400,
+            product_cache_minutes=1_440,
+        ),
     )
 
     memberships = [value for value in session.added if isinstance(value, RevisionImage)]

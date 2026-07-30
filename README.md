@@ -28,6 +28,14 @@ staging infrastructure, supply-chain CI, backup/restore and failure drills,
 bounded load gates, and web/native release procedures. The garment-intelligence
 cutover is complete; there is no fixed two-photo or `decide_care()` fallback.
 
+Infrastructure is selected independently by capability at backend composition
+roots. Local/AWS defaults use Celery plus Valkey-backed hot cache, rate limiting,
+and concurrency; hosted alpha uses QStash plus explicit optional no-op adapters.
+`FABRICASSIST_CELERY_BROKER_URL` is independent from
+`FABRICASSIST_VALKEY_URL`, so RabbitMQ can replace the Celery broker without
+changing application code. PostgreSQL remains authoritative for job intent,
+checkpoints, results, and durable caches.
+
 ## Sources of truth
 
 Read these documents before making changes, in the precedence described by
@@ -36,6 +44,8 @@ Read these documents before making changes, in the precedence described by
 - [Product and technical requirements](docs/requirements.md)
 - [Architecture](docs/architecture.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
+- [Environment variable reference](docs/environment.md)
+- [Production deployment runbook](docs/production/deployment.md)
 - [Next-session garment-intelligence prompt](docs/prompts/IMPLEMENT_GARMENT_INTELLIGENCE.md)
 
 The three source documents intentionally remain under `docs/`; they must not be
@@ -88,6 +98,30 @@ make bootstrap
 `.env.example` contains development-only placeholders. Change every value marked
 for replacement before using any shared, staging, or production environment.
 Never commit `.env` or real credentials.
+
+See the complete [environment variable reference](docs/environment.md) for the
+purpose of each setting, the local Docker versus hosted-alpha topology, and the
+capability selectors. The examples are templates, not files to source directly.
+
+Capability selection examples:
+
+```bash
+# Local/AWS worker topology
+FABRICASSIST_JOB_DISPATCHER=celery
+FABRICASSIST_CELERY_BROKER_URL=redis://fabricassist-valkey:6379/0
+FABRICASSIST_HOT_CACHE_BACKEND=valkey
+FABRICASSIST_RATE_LIMITER_BACKEND=valkey
+FABRICASSIST_CONCURRENCY_GATE_BACKEND=valkey
+
+# Hosted alpha topology (QStash credentials remain protected secrets)
+FABRICASSIST_JOB_DISPATCHER=qstash
+FABRICASSIST_HOT_CACHE_BACKEND=noop
+FABRICASSIST_RATE_LIMITER_BACKEND=noop
+FABRICASSIST_CONCURRENCY_GATE_BACKEND=noop
+```
+
+Production startup rejects no-op rate limiting and concurrency. Routes, domain
+rules, and application services never select a concrete technology.
 
 ## Commands currently available
 
@@ -145,44 +179,71 @@ evidence remains authoritative.
 Set `FABRICASSIST_API_PUBLIC_URL` in `.env` for a non-local API host before
 building a client.
 
+For local Android development, copy `.env.android.example` to `.env.android`
+and run `make start-android`. For a phone connected over trusted Wi-Fi, replace
+the Android profile's `localhost` values with the workstation LAN IP and run:
+
+```bash
+ANDROID_EXPO_FLAGS=--lan make start-android
+```
+
+USB Android development uses `adb reverse`; wireless development uses direct
+LAN access and does not use `adb reverse`.
+
 ### Enable a real vision LLM
 
-The default `FABRICASSIST_VISION_PROVIDER=mock` makes no network calls and cannot
+The default `FABRICASSIST_EVIDENCE_PROVIDER=mock` makes no network calls and cannot
 recognize a label. To process real photos, add these values to your ignored `.env`
 and restart `make up`:
 
 ```bash
-FABRICASSIST_VISION_PROVIDER=openai_compatible
-FABRICASSIST_VISION_BASE_URL=https://your-provider.example/v1
-FABRICASSIST_VISION_API_KEY=your-secret
-FABRICASSIST_VISION_MODEL=your-vision-model
+FABRICASSIST_EVIDENCE_PROVIDER=gemini
+FABRICASSIST_CARE_PLANNER_PROVIDER=gemini
+FABRICASSIST_CHAT_PROVIDER=gemini
+FABRICASSIST_GEMINI_API_KEY=your-secret
+FABRICASSIST_GEMINI_MODEL=gemini-2.5-flash
 ```
 
 Never commit the API key. Provider evidence, proposed plans, and chat claims are
 schema validated and every actionable claim passes the deterministic validator.
+The Gemini adapter uses the official async Google Gen AI SDK, sends normalized
+JPEG bytes directly, requests JSON matching FabricAssist's Pydantic schema, and
+then validates both the schema and every source image ID locally.
 
-## Provider-neutral model interface
+## Independent model capability interfaces
 
-The current worker depends only on the `VisionEvidenceProvider` interface. The
-no-network mock and the configured OpenAI **Responses**-compatible HTTP adapter
-are infrastructure adapters selected by `FABRICASSIST_VISION_PROVIDER`; neither
-the worker nor the care rules contain vendor-specific logic. The adapter sends
-each normalized image as a data URL, requires strict JSON-schema evidence, and
-rejects facts whose source does not match a supplied image. Adding another
-provider means implementing and registering one adapter. Planned provider-neutral ports for
-evidence extraction, care planning, product information, and conversation are
-defined in the architecture and will retain strict schemas and validation gates.
+Application orchestration depends independently on `VisionEvidenceProvider`,
+`CarePlanningProvider`, and `ConversationProvider`. The no-network mock, Gemini,
+and OpenAI **Responses** adapters are selected by
+`FABRICASSIST_EVIDENCE_PROVIDER`, `FABRICASSIST_CARE_PLANNER_PROVIDER`, and
+`FABRICASSIST_CHAT_PROVIDER`; neither application services nor care rules contain
+SDK, endpoint, header, credential, or provider-selection logic. Each live adapter lives under
+`backend/src/fabricassist/infrastructure/vision/providers/`, returns the same
+typed contracts, and rejects facts whose source does not match a supplied image.
+The composition root converts typed settings into an adapter-specific
+configuration whose credential fields are excluded from representations.
+Adding another model capability means implementing its port, typed configuration,
+factory registration, and shared contract tests without changing application or
+domain validation.
+
+Evidence and conversation operations have safe default system prompts. An
+adapter may select a reviewed prompt profile tailored to that model while
+retaining the same safety constraints, schemas, source validation, prompt
+versioning, and deterministic release gate. Provider names and implementation
+notes are not sent inside prompt text.
 
 For an OpenAI Responses-compatible gateway (including an Azure API Management
 gateway that exposes `/v1/responses`), use the generic configuration below;
 gateway-specific headers remain local configuration rather than source code:
 
 ```bash
-FABRICASSIST_VISION_PROVIDER=openai_responses
-FABRICASSIST_VISION_BASE_URL=https://your-gateway.example/openai/v1
-FABRICASSIST_VISION_API_KEY=your-local-api-key
-FABRICASSIST_VISION_MODEL=your-vision-model-id
-FABRICASSIST_VISION_EXTRA_HEADERS_JSON={"X-Gateway-Subscription-Key":"your-local-secret"}
+FABRICASSIST_EVIDENCE_PROVIDER=openai_responses
+FABRICASSIST_CARE_PLANNER_PROVIDER=openai_responses
+FABRICASSIST_CHAT_PROVIDER=openai_responses
+FABRICASSIST_OPENAI_RESPONSES_BASE_URL=https://your-gateway.example/openai/v1
+FABRICASSIST_OPENAI_RESPONSES_API_KEY=your-local-api-key
+FABRICASSIST_OPENAI_RESPONSES_MODEL=your-vision-model-id
+FABRICASSIST_OPENAI_RESPONSES_EXTRA_HEADERS_JSON={"X-Gateway-Subscription-Key":"your-local-secret"}
 FABRICASSIST_VISION_MAX_INPUT_TOKENS=128000
 FABRICASSIST_VISION_MAX_OUTPUT_TOKENS=16000
 ```
@@ -205,10 +266,12 @@ docker compose up -d --build fabricassist-worker
 docker compose logs -f --tail=100 fabricassist-worker
 ```
 
-This emits `vision_model_request` with the prompt, model limits, and normalized
-image metadata, plus `vision_model_response` with the model's text output. It
-never logs image bytes, API keys, gateway headers, or endpoint URLs. Disable it
-again after debugging because model output can include care-label text.
+This emits provider/model/operation records with request metadata (text lengths,
+image byte counts, MIME types, and schema keys) and response metadata (whether
+text was returned, text length, finish reasons, and token counts). Gemini HTTP
+failures additionally include the status and a bounded provider diagnostic.
+It never logs prompts, response text, image bytes, API keys, gateway headers, or
+endpoint URLs. Disable it again after debugging.
 
 ## Local infrastructure
 
@@ -266,7 +329,24 @@ prior proposal. Customers can submit feedback or request review through
 `DELETE /api/v1/scans/{scan_id}` and `DELETE /api/v1/garments/{garment_id}`
 create idempotent PostgreSQL deletion requests. Private image objects are put in
 a durable outbox and only marked deleted after the storage adapter succeeds;
-retry the `fabricassist.process_retention` worker task after an object-store
-outage. Garment deletion removes personal conversation, service-history, and
+the API recovery loop retries transient failures automatically for both Celery
+and QStash deployments. `FABRICASSIST_DELETION_MAX_ATTEMPTS` bounds retries;
+the retention worker task remains available for explicit operational recovery.
+Garment deletion removes personal conversation, service-history, and
 product-lookup associations while generic product profiles can remain cached.
-Short-lived authenticated image previews are available only for retained images.
+Short-lived authenticated image previews are available only for retained
+images.
+
+Object storage is selected only through `FABRICASSIST_OBJECT_STORAGE_BACKEND`.
+The registered `s3` adapter receives redacted `S3ObjectStorageConfig` and
+preserves MinIO path-style, AWS workload-identity, and R2 virtual-host
+configurations. Product enrichment is independently selected with
+`FABRICASSIST_PRODUCT_INFORMATION_PROVIDER`; `mock` is the default and
+`http_json` applies HTTPS, host allow-list, DNS/private-address, redirect,
+response-size, content-type, and strict-schema checks.
+
+The Expo session provider configures one authenticated generated-client
+transport for FabricAssist API operations. It centralizes base URL, access-token
+injection, refresh, correlation IDs, and error envelopes. Screens do not call
+FabricAssist endpoints with direct `fetch`; presigned binary uploads remain in
+the web/native `BinaryUpload` adapter.

@@ -13,22 +13,7 @@ export default function RootLayout(): ReactNode {
             name="(auth)/register"
             options={{ headerShown: false }}
           />
-          <Stack.Screen
-            name="(customer)/scan"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="(customer)/result"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="(customer)/chat"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="(customer)/garments/[garmentId]"
-            options={{ headerShown: false }}
-          />
+          <Stack.Screen name="(customer)" options={{ headerShown: false }} />
           <Stack.Screen
             name="(operator)/review"
             options={{ headerShown: false }}

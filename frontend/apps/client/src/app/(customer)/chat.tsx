@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams } from 'expo-router';
 import {
@@ -11,18 +11,15 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
+import {
+  listMessagesApiV1ScansScanIdMessagesGet,
+  postMessageApiV1ScansScanIdMessagesPost,
+  type MessageResponse,
+} from '@fabricassist/api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
-import { getApiBaseUrl } from '../../config/environment';
 import { useTranslation } from '../../i18n/TranslationProvider';
-
-type Message = {
-  id: string;
-  role: string;
-  status: string;
-  text: string;
-  uncertainties: string[];
-};
 
 function newIdempotencyKey(): string {
   // `crypto.randomUUID()` is not available in every Android/Hermes runtime.
@@ -32,52 +29,50 @@ function newIdempotencyKey(): string {
 
 export default function Chat(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
-  const { token } = useSession();
+  const { apiClient, token } = useSession();
+  const queryClient = useQueryClient();
   const { translate } = useTranslation();
-  const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
-  const canSend = Boolean(text.trim() && token);
-  const load = useCallback(async (): Promise<void> => {
-    if (!scanId || !token) return;
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/v1/scans/${scanId}/messages`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    if (response.ok)
-      setMessages(((await response.json()) as { items: Message[] }).items);
-  }, [scanId, token]);
-  useEffect(() => {
-    void load();
-    const id = setInterval(() => void load(), 2000);
-    return () => clearInterval(id);
-  }, [load]);
+  const messageQueryKey = ['conversation-messages', scanId];
+  const { data: messages = [] } = useQuery<MessageResponse[]>({
+    queryKey: messageQueryKey,
+    enabled: Boolean(scanId && token),
+    refetchInterval: 2000,
+    queryFn: async () => {
+      const result = await listMessagesApiV1ScansScanIdMessagesGet({
+        client: apiClient,
+        path: { scan_id: scanId },
+      });
+      if (!result.data) throw result.error;
+      return result.data.items ?? [];
+    },
+  });
+  const postMessage = useMutation({
+    mutationFn: async (messageText: string) => {
+      const result = await postMessageApiV1ScansScanIdMessagesPost({
+        client: apiClient,
+        path: { scan_id: scanId },
+        headers: { 'Idempotency-Key': newIdempotencyKey() },
+        body: { text: messageText },
+      });
+      if (!result.data) throw result.error;
+      return result.data;
+    },
+    onSuccess: async () => {
+      setSendError(null);
+      setText('');
+      await queryClient.invalidateQueries({ queryKey: messageQueryKey });
+    },
+    onError: () => setSendError(translate('chatSendFailed')),
+  });
+  const canSend = Boolean(text.trim() && token && !postMessage.isPending);
   const send = async (): Promise<void> => {
     if (!text.trim() || !token) return;
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/v1/scans/${scanId}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Idempotency-Key': newIdempotencyKey(),
-          },
-          body: JSON.stringify({ text: text.trim() }),
-        },
-      );
-      if (!response.ok) {
-        setSendError(translate('chatSendFailed'));
-        return;
-      }
-      setSendError(null);
-      setText('');
-      void load();
+      await postMessage.mutateAsync(text.trim());
     } catch {
-      setSendError(translate('chatSendFailed'));
+      // The mutation's shared error handler renders localized feedback.
     }
   };
   return (

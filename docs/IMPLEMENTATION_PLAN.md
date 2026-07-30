@@ -248,7 +248,11 @@ as configuration before its implementation phase is accepted.
    `backend/src/fabricassist/domain/`. ADR-001 records this correction.
 3. **Environment-variable names (resolved):** application-owned settings use the
    `FABRICASSIST_` prefix, including `FABRICASSIST_DATABASE_URL` and
-   `FABRICASSIST_VISION_PROVIDER`. Narrowly documented standard variables are
+   `FABRICASSIST_EVIDENCE_PROVIDER`,
+   `FABRICASSIST_CARE_PLANNER_PROVIDER`,
+   `FABRICASSIST_CHAT_PROVIDER`,
+   `FABRICASSIST_OBJECT_STORAGE_BACKEND`, and
+   `FABRICASSIST_PRODUCT_INFORMATION_PROVIDER`. Narrowly documented standard variables are
    permitted only when a third-party process requires them.
 4. **Valkey render-cache example (resolved):** all cache keys use the versioned
    `fabricassist:` namespace; the precise Phase 17 key material remains subject
@@ -551,13 +555,13 @@ floating production tags.
 | Migrations | **Alembic 1.x** | Every schema change is a new revision; empty/current-schema upgrade and downgrade/rollback intent tested. |
 | Database | **PostgreSQL 17** | UUID identifiers, UTC timestamps, CITEXT email, JSONB audit/provider snapshots, typed safety fields and constraints. No MongoDB. |
 | Vector support | **pgvector** compatible with the PostgreSQL image | Extension enabled initially so schema compatibility is known; embedding tables and semantic reuse remain post-MVP/optional. |
-| Cache/coordination | **Valkey 8.x** using the Redis-compatible protocol | Hot caches, bounded locks, rate limits, Celery broker coordination. Never use Redis-branded services or treat Valkey as authoritative. |
-| Task queue | **Celery 5.x** behind a `JobDispatcher` port | Valkey broker initially; database scan state/checkpoints are authoritative. Ignore unnecessary Celery results; RabbitMQ remains a broker-only migration option. |
+| Cache/coordination | **Valkey 8.x** using the Redis-compatible protocol | Independently selected hot-cache, bounded-concurrency, and rate-limit adapters. Never treat Valkey as authoritative. |
+| Task queue | **Celery 5.x** or **QStash** behind a `JobDispatcher` port | Broker/delivery configuration is separate from general Valkey use; PostgreSQL job intent and checkpoints are authoritative. RabbitMQ remains a broker-only Celery migration option. |
 | Object storage | **S3-compatible port** with a **boto3** adapter | MinIO locally, S3 on AWS, provider-neutral key/metadata/presign semantics in the application port. |
 | Image processing | **Pillow** plus **opencv-python-headless** | Decode/bomb limits, EXIF orientation, sRGB normalization, dimensions, blur/brightness/glare, SHA-256, and pHash candidate generation. |
 | Barcode decoding | **OpenCV where sufficient, otherwise one small reviewed decoder** | Decode locally before AI/OCR fallback; validate supported formats/checksums. Select an extra package only after maintenance/license/native-image checks. |
 | Provider HTTP | **httpx** | Timeouts, bounded concurrency, request fingerprinting, OpenAI-compatible endpoint, no provider SDK in domain code. |
-| Product information | **Provider-neutral `ProductInformationProvider` over `httpx`** | Deterministic no-network mock by default; sourced real adapters later; explicit SSRF/outbound URL policy. |
+| Product information | **Provider-neutral `ProductInformationProvider`; `httpx` remains inside the HTTP JSON infrastructure adapter** | Deterministic no-network mock by default; sourced real adapters later; explicit SSRF/outbound URL policy. |
 | Authentication | **argon2-cffi**, **PyJWT**, standard `secrets`/`hmac` | Argon2id passwords, short-lived JWT access tokens, opaque rotating refresh families whose hashes only are stored. |
 | Testing | **pytest**, **pytest-asyncio**, **pytest-cov**, **Hypothesis** where invariants help | Unit, API, container integration, migration, provider contract, and table/property-based safety tests. No paid provider in defaults. |
 | Formatting/linting | **Ruff formatter and Ruff linter** | One Python style tool, enforced in root Make targets and CI. |
@@ -1348,7 +1352,12 @@ fetch a model or require a paid account.
   provider/outbound policy, maximum image count, conversation context bounds,
   JWT/refresh hash keys, retention/upload limits, OTEL, and log level under that
   prefix.
-- `FABRICASSIST_VISION_PROVIDER=mock` is the local/default test value.
+- `FABRICASSIST_EVIDENCE_PROVIDER=mock`,
+  `FABRICASSIST_CARE_PLANNER_PROVIDER=mock`, and
+  `FABRICASSIST_CHAT_PROVIDER=mock` are the local/default test values.
+- The API lifespan runs bounded PostgreSQL-authoritative recovery for
+  analysis/conversation publication and object deletion in both Celery and
+  QStash topologies; it requires no hosted scheduler in default tests.
 - Production settings reject local credentials, wildcard CORS, absent signing
   keys, and insecure storage/provider settings at startup.
 
