@@ -14,10 +14,12 @@ from starlette.requests import Request
 
 from fabricassist.api.errors import unexpected_error_handler
 from fabricassist.api.main import create_app
+from fabricassist.api.routes.garments import delete_garment
 from fabricassist.api.routes.scans import CreateScanRequest, ImageRequest
 from fabricassist.application.jobs import JobDispatcher
 from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.application.policies import UploadPolicy
+from fabricassist.infrastructure.persistence.models import Garment, User
 from fabricassist.settings import Settings
 
 
@@ -204,6 +206,66 @@ class ImageLifecycleSession:
 
     async def delete(self, value: object) -> None:
         self.added.append(value)
+
+
+@pytest.mark.asyncio
+async def test_garment_deletion_removes_identity_confirmations_before_the_garment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant_id = uuid4()
+    garment = Garment(id=uuid4(), tenant_id=tenant_id, user_id=uuid4())
+    user = User(
+        id=garment.user_id,
+        tenant_id=tenant_id,
+        email="customer@example.invalid",
+        password_hash="not-used-by-this-route",
+    )
+    deletion_id = uuid4()
+
+    class Session:
+        deleted: list[object]
+        executed: list[object]
+
+        def __init__(self) -> None:
+            self.deleted = []
+            self.executed = []
+
+        async def scalars(self, _statement: object):
+            class Result:
+                def all(self) -> list[object]:
+                    return []
+
+            return Result()
+
+        async def scalar(self, _statement: object) -> Garment:
+            return garment
+
+        async def execute(self, statement: object) -> None:
+            self.executed.append(statement)
+
+        async def delete(self, value: object) -> None:
+            self.deleted.append(value)
+
+        async def commit(self) -> None:
+            pass
+
+    async def enqueue(*_args: object, **_kwargs: object) -> object:
+        return type("Request", (), {"id": deletion_id, "status": "queued"})()
+
+    monkeypatch.setattr("fabricassist.api.routes.garments.enqueue_deletion", enqueue)
+    session = Session()
+    response = await delete_garment(
+        garment.id,
+        session,  # type: ignore[arg-type]
+        user,
+    )
+
+    assert response.id == deletion_id
+    assert response.status == "queued"
+    assert any(
+        "DELETE FROM garment_identity_confirmations" in str(item) for item in session.executed
+    )
+    assert session.deleted == [garment]
 
 
 class PresigningStorage:

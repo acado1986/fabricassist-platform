@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import enqueue_deletion
@@ -295,6 +295,12 @@ async def delete_garment(
         )
         for run in runs:
             await session.delete(run)
+    await session.execute(
+        delete(GarmentIdentityConfirmation).where(
+            GarmentIdentityConfirmation.tenant_id == user.tenant_id,
+            GarmentIdentityConfirmation.garment_id == garment.id,
+        )
+    )
     await session.delete(garment)
     await session.commit()
     return DeletionResponse(id=request.id, status=request.status)
