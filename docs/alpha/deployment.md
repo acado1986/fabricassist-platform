@@ -28,7 +28,11 @@ In GitHub, `alpha-quality.yml` additionally runs `make test-migrations`, `make t
 
 ## Deploy and record
 
-1. Merge the reviewed change, then create and push a new immutable alpha tag, for example `v0.1.0-alpha.1`. Never move or re-push it.
+1. Merge the reviewed change, then create and push a new immutable release tag.
+   Alpha prereleases use a tag such as `v0.1.0-alpha.29`; stable releases use a
+   tag such as `v1.0.0`. Both deploy to the current hosted
+   Render/Cloudflare/Neon/R2/QStash environment. Never move or re-push a
+   published tag.
 2. Let `deploy-alpha.yml` run, or dispatch it with a known exact tag/commit in `ref`. The workflow runs quality, migrates, deploys API and web from its recorded SHA, then executes hosted mock smoke.
 3. Record in the release log: selected SHA, tag, Alembic head, API origin, Pages origin, date/operator, and smoke outcome. Do not record secrets, presigned URLs, access tokens, or image data.
 4. Run the full post-deploy checklist in [smoke-tests.md](smoke-tests.md).

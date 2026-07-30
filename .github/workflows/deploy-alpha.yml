@@ -1,9 +1,9 @@
-name: Deploy alpha
+name: Deploy hosted release
 
 on:
   push:
     tags:
-      - "v*-alpha*"
+      - "v*"
   workflow_dispatch:
     inputs:
       ref:
@@ -16,7 +16,7 @@ permissions:
   deployments: write
 
 concurrency:
-  group: deploy-alpha-${{ inputs.ref || github.ref }}
+  group: deploy-hosted-${{ inputs.ref || github.ref }}
   cancel-in-progress: false
 
 jobs:

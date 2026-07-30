@@ -55,7 +55,8 @@ def main() -> None:
 
     deploy = load("deploy-alpha.yml")
     for marker in (
-        '"v*-alpha*"',
+        "name: Deploy hosted release",
+        '"v*"',
         "workflow_dispatch:",
         "description: Commit, branch, or tag to deploy",
         "ref: ${{ inputs.ref || github.ref }}",

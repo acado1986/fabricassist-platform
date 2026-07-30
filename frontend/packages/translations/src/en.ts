@@ -21,7 +21,7 @@ export const en = {
     loginAction: 'Sign in',
     registerAction: 'Create account',
     loginError: 'We could not sign you in. Check your details and try again.',
-    loginWarming: 'Starting the alpha service…',
+    loginWarming: 'Preparing secure sign-in…',
     registerError:
       'We could not create the account. The email may already be registered.',
     needAccount: 'New to FabricAssist?',
