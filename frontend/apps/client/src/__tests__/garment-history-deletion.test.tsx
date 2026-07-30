@@ -1,4 +1,3 @@
-import { Alert } from 'react-native';
 import type { ReactNode } from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import CustomerHistory from '../app/(customer)/history';
@@ -42,22 +41,17 @@ jest.mock('@tanstack/react-query', () => ({
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@expo/vector-icons/Feather', () => 'Feather');
 
-test('history list asks for confirmation before deleting a garment history', () => {
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+test('history list requires dialog confirmation before deleting a garment history', () => {
   const screen = render(<CustomerHistory />);
 
   fireEvent.press(screen.getByLabelText('deleteGarment'));
 
-  expect(alert).toHaveBeenCalledWith(
-    'deleteGarmentConfirmTitle',
-    'deleteGarmentConfirmDescription',
-    expect.arrayContaining([
-      expect.objectContaining({
-        style: 'destructive',
-        text: 'deleteGarmentConfirmAction',
-      }),
-    ]),
-  );
   expect(mockMutate).not.toHaveBeenCalled();
-  alert.mockRestore();
+  expect(screen.getByText('deleteGarmentConfirmDescription')).toBeTruthy();
+
+  fireEvent.press(screen.getByLabelText('deleteGarmentConfirmAction'));
+
+  expect(mockMutate).toHaveBeenCalledWith(
+    '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
+  );
 });

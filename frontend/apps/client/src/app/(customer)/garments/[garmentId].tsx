@@ -1,6 +1,5 @@
-import type { ComponentProps, ReactNode } from 'react';
+import { useState, type ComponentProps, type ReactNode } from 'react';
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -21,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '../../../auth/session';
 import { FoundationShell } from '../../../components/FoundationShell';
+import { GarmentDeletionConfirmation } from '../../../components/GarmentDeletionConfirmation';
 import { useTranslation } from '../../../i18n/TranslationProvider';
 
 export default function GarmentHistory(): ReactNode {
@@ -30,6 +30,7 @@ export default function GarmentHistory(): ReactNode {
   }>();
   const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const queryClient = useQueryClient();
   const deleteGarment = useMutation({
     mutationFn: async () => {
@@ -45,20 +46,6 @@ export default function GarmentHistory(): ReactNode {
       router.replace('/history');
     },
   });
-  const confirmDeletion = (): void => {
-    Alert.alert(
-      translate('deleteGarmentConfirmTitle'),
-      translate('deleteGarmentConfirmDescription'),
-      [
-        { style: 'cancel', text: translate('cameraCancel') },
-        {
-          style: 'destructive',
-          text: translate('deleteGarmentConfirmAction'),
-          onPress: () => deleteGarment.mutate(),
-        },
-      ],
-    );
-  };
   const { data: garment } = useQuery<GarmentResponse>({
     queryKey: ['garment', garmentId],
     enabled: Boolean(garmentId && token),
@@ -202,7 +189,7 @@ export default function GarmentHistory(): ReactNode {
               accessibilityLabel={translate('deleteGarment')}
               accessibilityRole="button"
               disabled={deleteGarment.isPending}
-              onPress={confirmDeletion}
+              onPress={() => setDeleteConfirmationOpen(true)}
               style={({ pressed }) => [
                 styles.deleteButton,
                 pressed && styles.analysisPressed,
@@ -237,6 +224,12 @@ export default function GarmentHistory(): ReactNode {
           </>
         ) : null}
       </ScrollView>
+      <GarmentDeletionConfirmation
+        isDeleting={deleteGarment.isPending}
+        onCancel={() => setDeleteConfirmationOpen(false)}
+        onConfirm={() => deleteGarment.mutate()}
+        visible={deleteConfirmationOpen}
+      />
     </FoundationShell>
   );
 }
