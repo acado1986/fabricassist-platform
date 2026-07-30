@@ -49,7 +49,9 @@ export function FoundationShell({
             <View style={styles.mark} accessibilityElementsHidden>
               <Text style={styles.markText}>FA</Text>
             </View>
-            <View>
+            <View
+              style={[styles.brandCopy, isCompact && styles.brandCopyCompact]}
+            >
               <Text style={styles.brand}>{translate('title')}</Text>
               <Text style={styles.tagline}>{translate('tagline')}</Text>
             </View>
@@ -185,9 +187,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  brandRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  brandRow: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minWidth: 0,
+  },
+  brandCopy: { flexShrink: 1, minWidth: 0 },
+  brandCopyCompact: { maxWidth: 172 },
   headerActions: {
     alignItems: 'center',
+    flexShrink: 0,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.small,
@@ -265,7 +276,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.4,
   },
-  tagline: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  tagline: {
+    color: colors.muted,
+    flexShrink: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
   content: {
     alignSelf: 'center',
     maxWidth: 520,

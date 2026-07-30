@@ -4,15 +4,15 @@ export const es: TranslationCatalog = {
   shell: {
     title: 'FabricAssist',
     foundation: 'Base de desarrollo',
-    tagline: 'Cuidado de prendas basado en evidencias',
+    tagline: 'Cuidado de prendas\nbasado en evidencias',
     privacyNote:
       'Tus imágenes son privadas y solo se usan para preparar tu consulta de cuidado.',
     loginTitle: 'Te damos la bienvenida',
     loginDescription:
-      'Inicia sesión para subir una etiqueta y mantener juntas tus consultas.',
+      'Inicia sesión para analizar prendas y mantener juntas tus consultas.',
     registerTitle: 'Crea tu cuenta',
     registerDescription:
-      'Empieza con una foto clara de la etiqueta. Solo necesitas un minuto.',
+      'Empieza con una foto clara de la prenda o de la etiqueta. Solo necesitas un minuto.',
     emailLabel: 'Correo electrónico',
     emailPlaceholder: 'tu@ejemplo.com',
     emailError: 'Introduce un correo electrónico válido.',
@@ -85,12 +85,12 @@ export const es: TranslationCatalog = {
     selectedCareLabelImage: 'Imagen seleccionada de la etiqueta',
     required: 'Opción de foto',
     imageFormats: 'JPEG, PNG o WebP · Máximo 12 MB',
-    uploadImages: 'Analizar etiqueta de cuidado',
+    uploadImages: 'Analizar prenda',
     uploadingImages: 'Subiendo de forma segura…',
     cameraPermissionFailed:
       'Se necesita acceso a la cámara para hacer una foto. También puedes subir una imagen.',
     scanComplete:
-      'Carga completada. Estamos preparando el análisis de la etiqueta…',
+      'Carga completada. Estamos preparando el análisis de la prenda…',
     analysisQueued: 'Estamos analizando la(s) foto(s) seleccionada(s).',
     analysisFailed:
       'No pudimos analizar la imagen. Prueba con una foto más clara.',
@@ -123,7 +123,7 @@ export const es: TranslationCatalog = {
     yourGarments: 'Tus prendas',
     resultTitle: 'Tus instrucciones de cuidado',
     resultDescription:
-      'Estas indicaciones se basan en la evidencia que pudimos verificar en la etiqueta.',
+      'Estas indicaciones se basan en la evidencia que pudimos verificar.',
     resultLoading: 'Preparando tus instrucciones de cuidado…',
     resultLoadingCopy:
       'Estamos leyendo la evidencia y validando unas indicaciones de cuidado seguras.',
@@ -200,7 +200,7 @@ export const es: TranslationCatalog = {
     richProfessional: 'Cuidado profesional',
     richUncertainty: 'Incertidumbre',
     richValidation: 'Estado de validación',
-    backToScan: 'Analizar otra etiqueta',
+    backToScan: 'Analizar otra prenda',
     requestReview: 'Solicitar revisión humana',
     reviewRequested: 'Revisión solicitada',
     reviewRequestFailed: 'No se pudo solicitar la revisión de este análisis.',

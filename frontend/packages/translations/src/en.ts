@@ -7,10 +7,10 @@ export const en = {
       'Your images stay private and are used only to prepare your care request.',
     loginTitle: 'Welcome back',
     loginDescription:
-      'Sign in to upload a care label and keep your garment scans together.',
+      'Sign in to analyse garments and keep your scans together.',
     registerTitle: 'Create your account',
     registerDescription:
-      'Start with a clear care-label photo. It only takes a minute.',
+      'Start with a clear garment or care-label photo. It only takes a minute.',
     emailLabel: 'Email address',
     emailPlaceholder: 'you@example.com',
     emailError: 'Enter a valid email address.',
@@ -81,11 +81,11 @@ export const en = {
     selectedCareLabelImage: 'Selected care-label image',
     required: 'Photo option',
     imageFormats: 'JPEG, PNG or WebP · Maximum 12 MB',
-    uploadImages: 'Analyse care label',
+    uploadImages: 'Analyse garment',
     uploadingImages: 'Uploading securely…',
     cameraPermissionFailed:
       'Camera access is required to take a photo. You can still upload an image.',
-    scanComplete: 'Upload complete. Preparing your care-label analysis…',
+    scanComplete: 'Upload complete. Preparing your garment analysis…',
     analysisQueued: 'Your selected photo(s) are being analysed.',
     analysisFailed:
       'We could not analyse this image. Please try a clearer photo.',
@@ -117,7 +117,7 @@ export const en = {
     yourGarments: 'Your garments',
     resultTitle: 'Your care guidance',
     resultDescription:
-      'This guidance is built from the care-label evidence we could verify.',
+      'This guidance is built from the evidence we could verify.',
     resultLoading: 'Preparing your care guidance…',
     resultLoadingCopy:
       'We are reading your evidence and validating safe care guidance.',
@@ -191,7 +191,7 @@ export const en = {
     richProfessional: 'Professional care',
     richUncertainty: 'Uncertainty',
     richValidation: 'Validation state',
-    backToScan: 'Analyse another label',
+    backToScan: 'Analyse another garment',
     requestReview: 'Request human review',
     reviewRequested: 'Review requested',
     reviewRequestFailed: 'Unable to request review for this analysis.',
