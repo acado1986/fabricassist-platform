@@ -121,6 +121,17 @@ class ImagePreviewResponse(BaseModel):
     expires_at: datetime
 
 
+class ScanImageResponse(BaseModel):
+    """Safe image metadata for the authenticated scan-image gallery."""
+
+    image_id: UUID
+    role: ImageRole
+    detected_role: ImageRole | None = None
+    display_order: int
+    width: int | None = None
+    height: int | None = None
+
+
 async def get_session() -> AsyncSession:
     raise RuntimeError("Database session dependency was not configured.")
 
@@ -551,6 +562,7 @@ async def image_preview(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     storage: Annotated[ObjectStorage, Depends(get_storage)],
+    download: bool = False,
 ) -> ImagePreviewResponse:
     scan = await owned_scan(session, user, scan_id)
     image = await session.scalar(
@@ -563,12 +575,52 @@ async def image_preview(
     )
     if image is None:
         raise HTTPException(404, "Image was not found.")
-    download = storage.presign_get(key=image.object_key)
+    extension = (image.mime_type or "image/jpeg").split("/", 1)[-1]
+    filename = f"fabricassist-{image.role}-{image.id}.{extension}"
+    presigned = storage.presign_get(
+        key=image.object_key, download_filename=filename if download else None
+    )
     return ImagePreviewResponse(
         image_id=image.id,
-        url=download.url,
-        expires_at=download.expires_at,
+        url=presigned.url,
+        expires_at=presigned.expires_at,
     )
+
+
+@router.get("/{scan_id}/images", response_model=list[ScanImageResponse])
+async def list_scan_images(
+    scan_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> list[ScanImageResponse]:
+    """List only owned, completed image metadata; URLs remain short lived."""
+
+    scan = await owned_scan(session, user, scan_id)
+    images = list(
+        (
+            await session.scalars(
+                select(ScanImage)
+                .where(
+                    ScanImage.scan_id == scan.id,
+                    ScanImage.tenant_id == user.tenant_id,
+                    ScanImage.completed_at.is_not(None),
+                    ScanImage.deleted_at.is_(None),
+                )
+                .order_by(ScanImage.display_order, ScanImage.created_at)
+            )
+        ).all()
+    )
+    return [
+        ScanImageResponse(
+            image_id=image.id,
+            role=ImageRole(image.role),
+            detected_role=ImageRole(image.detected_role) if image.detected_role else None,
+            display_order=image.display_order,
+            width=image.width,
+            height=image.height,
+        )
+        for image in images
+    ]
 
 
 @router.delete("/{scan_id}", response_model=DeletionResponse, status_code=202)

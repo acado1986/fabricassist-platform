@@ -67,6 +67,10 @@ class ConfirmCandidateRequest(BaseModel):
     candidate_id: UUID
 
 
+class RejectCandidateRequest(ConfirmCandidateRequest):
+    pass
+
+
 class HistoryResponse(BaseModel):
     garment_id: UUID
     observations: list[dict[str, object]]
@@ -362,6 +366,12 @@ async def confirm_identity_candidate(
         select(GarmentIdentityCandidate).where(
             GarmentIdentityCandidate.id == request.candidate_id,
             GarmentIdentityCandidate.tenant_id == user.tenant_id,
+            GarmentIdentityCandidate.match_run_id.in_(
+                select(GarmentIdentityMatchRun.id).where(
+                    GarmentIdentityMatchRun.scan_id == scan_id,
+                    GarmentIdentityMatchRun.tenant_id == user.tenant_id,
+                )
+            ),
         )
     )
     if (
@@ -398,3 +408,37 @@ async def confirm_identity_candidate(
     )
     await session.commit()
     return await response_for(session, garment, storage)
+
+
+@router.post("/identity-candidates/{scan_id}/reject", response_model=IdentityCandidateResponse)
+async def reject_identity_candidate(
+    scan_id: UUID,
+    request: RejectCandidateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> IdentityCandidateResponse:
+    """Record a declined candidate without affecting the new scan's garment."""
+
+    candidate = await session.scalar(
+        select(GarmentIdentityCandidate).where(
+            GarmentIdentityCandidate.id == request.candidate_id,
+            GarmentIdentityCandidate.tenant_id == user.tenant_id,
+            GarmentIdentityCandidate.match_run_id.in_(
+                select(GarmentIdentityMatchRun.id).where(
+                    GarmentIdentityMatchRun.scan_id == scan_id,
+                    GarmentIdentityMatchRun.tenant_id == user.tenant_id,
+                )
+            ),
+        )
+    )
+    if candidate is None or candidate.status != "pending":
+        raise HTTPException(404, "Pending identity candidate was not found.")
+    candidate.status = "rejected"
+    await session.commit()
+    return IdentityCandidateResponse(
+        id=candidate.id,
+        garment_id=candidate.garment_id,
+        classification=candidate.classification,
+        reasons=candidate.reasons,
+        status=candidate.status,
+    )

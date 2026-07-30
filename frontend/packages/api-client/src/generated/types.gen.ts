@@ -513,6 +513,16 @@ export type Observation = {
 };
 
 /**
+ * RejectCandidateRequest
+ */
+export type RejectCandidateRequest = {
+    /**
+     * Candidate Id
+     */
+    candidate_id: string;
+};
+
+/**
  * ResultResponse
  */
 export type ResultResponse = {
@@ -638,6 +648,32 @@ export type ScanHistoryResponse = {
      * Thumbnail Url
      */
     thumbnail_url?: string | null;
+};
+
+/**
+ * ScanImageResponse
+ *
+ * Safe image metadata for the authenticated scan-image gallery.
+ */
+export type ScanImageResponse = {
+    detected_role?: ImageRole | null;
+    /**
+     * Display Order
+     */
+    display_order: number;
+    /**
+     * Height
+     */
+    height?: number | null;
+    /**
+     * Image Id
+     */
+    image_id: string;
+    role: ImageRole;
+    /**
+     * Width
+     */
+    width?: number | null;
 };
 
 /**
@@ -982,6 +1018,36 @@ export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirm
 };
 
 export type ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponse = ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses[keyof ConfirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPostResponses];
+
+export type RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostData = {
+    body: RejectCandidateRequest;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/identity-candidates/{scan_id}/reject';
+};
+
+export type RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostError = RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostErrors[keyof RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostErrors];
+
+export type RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: IdentityCandidateResponse;
+};
+
+export type RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostResponse = RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostResponses[keyof RejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPostResponses];
 
 export type DeleteGarmentApiV1GarmentsGarmentIdDeleteData = {
     body?: never;
@@ -1490,6 +1556,38 @@ export type SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses = {
 
 export type SubmitFeedbackApiV1ScansScanIdFeedbackPostResponse = SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses[keyof SubmitFeedbackApiV1ScansScanIdFeedbackPostResponses];
 
+export type ListScanImagesApiV1ScansScanIdImagesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/images';
+};
+
+export type ListScanImagesApiV1ScansScanIdImagesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListScanImagesApiV1ScansScanIdImagesGetError = ListScanImagesApiV1ScansScanIdImagesGetErrors[keyof ListScanImagesApiV1ScansScanIdImagesGetErrors];
+
+export type ListScanImagesApiV1ScansScanIdImagesGetResponses = {
+    /**
+     * Response List Scan Images Api V1 Scans  Scan Id  Images Get
+     *
+     * Successful Response
+     */
+    200: Array<ScanImageResponse>;
+};
+
+export type ListScanImagesApiV1ScansScanIdImagesGetResponse = ListScanImagesApiV1ScansScanIdImagesGetResponses[keyof ListScanImagesApiV1ScansScanIdImagesGetResponses];
+
 export type AddImageApiV1ScansScanIdImagesPostData = {
     body: ImageRequest;
     headers?: {
@@ -1572,7 +1670,12 @@ export type ImagePreviewApiV1ScansScanIdImagesImageIdPreviewGetData = {
          */
         image_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Download
+         */
+        download?: boolean;
+    };
     url: '/api/v1/scans/{scan_id}/images/{image_id}/preview';
 };
 

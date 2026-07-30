@@ -858,6 +858,21 @@
         "title": "Observation",
         "type": "object"
       },
+      "RejectCandidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "format": "uuid",
+            "title": "Candidate Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id"
+        ],
+        "title": "RejectCandidateRequest",
+        "type": "object"
+      },
       "ResultResponse": {
         "properties": {
           "result": {
@@ -1066,6 +1081,62 @@
           "result_available"
         ],
         "title": "ScanHistoryResponse",
+        "type": "object"
+      },
+      "ScanImageResponse": {
+        "description": "Safe image metadata for the authenticated scan-image gallery.",
+        "properties": {
+          "detected_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_order": {
+            "title": "Display Order",
+            "type": "integer"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "image_id": {
+            "format": "uuid",
+            "title": "Image Id",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ImageRole"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "image_id",
+          "role",
+          "display_order"
+        ],
+        "title": "ScanImageResponse",
         "type": "object"
       },
       "ScanResponse": {
@@ -1659,6 +1730,60 @@
           }
         },
         "summary": "Confirm Identity Candidate",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/identity-candidates/{scan_id}/reject": {
+      "post": {
+        "description": "Record a declined candidate without affecting the new scan's garment.",
+        "operationId": "reject_identity_candidate_api_v1_garments_identity_candidates__scan_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityCandidateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Identity Candidate",
         "tags": [
           "garments"
         ]
@@ -2450,6 +2575,52 @@
       }
     },
     "/api/v1/scans/{scan_id}/images": {
+      "get": {
+        "description": "List only owned, completed image metadata; URLs remain short lived.",
+        "operationId": "list_scan_images_api_v1_scans__scan_id__images_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanImageResponse"
+                  },
+                  "title": "Response List Scan Images Api V1 Scans  Scan Id  Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Scan Images",
+        "tags": [
+          "scans"
+        ]
+      },
       "post": {
         "operationId": "add_image_api_v1_scans__scan_id__images_post",
         "parameters": [
@@ -2586,6 +2757,16 @@
               "format": "uuid",
               "title": "Image Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Download",
+              "type": "boolean"
             }
           }
         ],

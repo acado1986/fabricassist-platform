@@ -22,7 +22,10 @@ import { FoundationShell } from '../../../components/FoundationShell';
 import { useTranslation } from '../../../i18n/TranslationProvider';
 
 export default function GarmentHistory(): ReactNode {
-  const { garmentId } = useLocalSearchParams<{ garmentId: string }>();
+  const { garmentId, decisionScanId } = useLocalSearchParams<{
+    garmentId: string;
+    decisionScanId?: string;
+  }>();
   const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
   const { data: garment } = useQuery<GarmentResponse>({
@@ -164,6 +167,22 @@ export default function GarmentHistory(): ReactNode {
                 </Text>
               ))}
             </View>
+            {decisionScanId ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  router.push({
+                    pathname: '/result',
+                    params: { scanId: decisionScanId },
+                  })
+                }
+                style={styles.returnButton}
+              >
+                <Text style={styles.returnButtonText}>
+                  {translate('returnToIdentityDecision')}
+                </Text>
+              </Pressable>
+            ) : null}
           </>
         ) : null}
       </ScrollView>
@@ -261,4 +280,11 @@ const styles = StyleSheet.create({
   analysisDate: { color: colors.muted, fontSize: 12, marginTop: 2 },
   events: { gap: spacing.small, marginTop: spacing.small },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
+  returnButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: radii.small,
+    padding: spacing.medium,
+  },
+  returnButtonText: { color: colors.background, fontWeight: '800' },
 });

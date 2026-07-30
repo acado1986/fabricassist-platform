@@ -98,6 +98,16 @@ export const es: TranslationCatalog = {
       'El servicio de análisis no pudo completar esta solicitud. Inténtalo de nuevo en unos instantes.',
     analysisFailedTitle: 'No se ha podido completar el análisis.',
     viewResult: 'Ver instrucciones de cuidado',
+    viewUploadedImages: 'Ver imágenes subidas',
+    uploadedImagesTitle: 'Tus imágenes subidas',
+    uploadedImagesDescription:
+      'Abre una imagen para ampliarla o descargar una copia privada.',
+    uploadedImagesEmpty: 'Aún no hay imágenes completadas para este análisis.',
+    uploadedImagesLoadFailed: 'No hemos podido cargar tus imágenes subidas.',
+    openUploadedImage: 'Abrir imagen subida {number}',
+    closeImageZoom: 'Cerrar ampliación de imagen',
+    zoomedUploadedImage: 'Imagen subida ampliada',
+    downloadUploadedImage: 'Descargar imagen',
     scanCreateFailed: 'No hemos podido preparar la carga. Inténtalo de nuevo.',
     scanUploadFailed:
       'La carga ha fallado. Revisa tu conexión e inténtalo de nuevo.',
@@ -155,6 +165,11 @@ export const es: TranslationCatalog = {
     confirmSameGarment: 'Es la misma prenda física',
     identityCandidateConfirmed:
       'Este análisis ya está vinculado a la prenda confirmada.',
+    identityCandidateRejected:
+      'No es la misma prenda. Puedes revisar otra coincidencia.',
+    reviewCandidateGarment: 'Revisar esta prenda primero',
+    returnToIdentityDecision: 'Volver a la decisión de identidad',
+    rejectSameGarment: 'No, no es la misma prenda',
     identityCandidateThumbnail: 'Foto de la prenda analizada anteriormente',
     chatTitle: 'Preguntas de seguimiento',
     chatPlaceholder: 'Pregunta sobre esta prenda',

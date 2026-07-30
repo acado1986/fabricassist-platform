@@ -125,13 +125,16 @@ class S3ObjectStorageAdapter:
             raise self._translate(error) from error
         return PresignedUpload(url=url, headers={"Content-Type": content_type}, expires_at=expires)
 
-    def presign_get(self, *, key: str) -> PresignedDownload:
+    def presign_get(self, *, key: str, download_filename: str | None = None) -> PresignedDownload:
         expires = datetime.now(UTC) + timedelta(minutes=self._config.upload_url_minutes)
         try:
+            params: dict[str, str] = {"Bucket": self._config.bucket, "Key": key}
+            if download_filename:
+                params["ResponseContentDisposition"] = f'attachment; filename="{download_filename}"'
             url = str(
                 self._presign_client.generate_presigned_url(
                     "get_object",
-                    Params={"Bucket": self._config.bucket, "Key": key},
+                    Params=params,
                     ExpiresIn=self._config.upload_url_minutes * 60,
                     HttpMethod="GET",
                 )

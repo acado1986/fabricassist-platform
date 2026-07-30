@@ -93,6 +93,16 @@ export const en = {
       'The analysis service could not complete this request. Please try again in a moment.',
     analysisFailedTitle: 'Analysis could not be completed.',
     viewResult: 'View care guidance',
+    viewUploadedImages: 'View uploaded images',
+    uploadedImagesTitle: 'Your uploaded images',
+    uploadedImagesDescription:
+      'Open an image to zoom in or download a private copy.',
+    uploadedImagesEmpty: 'There are no completed images for this analysis yet.',
+    uploadedImagesLoadFailed: 'We could not load your uploaded images.',
+    openUploadedImage: 'Open uploaded image {number}',
+    closeImageZoom: 'Close image zoom',
+    zoomedUploadedImage: 'Zoomed uploaded image',
+    downloadUploadedImage: 'Download image',
     scanCreateFailed: 'We could not prepare the upload. Please try again.',
     scanUploadFailed:
       'The image upload failed. Check your connection and try again.',
@@ -147,6 +157,11 @@ export const en = {
     confirmSameGarment: 'This is the same physical garment',
     identityCandidateConfirmed:
       'This scan is now linked to the confirmed garment.',
+    identityCandidateRejected:
+      'This is not the same garment. You can review another match.',
+    reviewCandidateGarment: 'Review this garment first',
+    returnToIdentityDecision: 'Return to identity decision',
+    rejectSameGarment: 'No, this is not the same garment',
     identityCandidateThumbnail: 'Previously analysed garment photo',
     chatTitle: 'Follow-up questions',
     chatPlaceholder: 'Ask about this garment',

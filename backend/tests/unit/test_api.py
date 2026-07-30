@@ -236,13 +236,22 @@ class GarmentThumbnailSession:
 
 
 class DownloadStorage:
-    def presign_get(self, *, key: str):
+    def presign_get(self, *, key: str, download_filename: str | None = None):
         from fabricassist.application.object_storage import PresignedDownload
 
         return PresignedDownload(
             url=f"https://storage.invalid/private/{key}",
             expires_at=datetime.now(UTC),
         )
+
+
+class CapturingDownloadStorage(DownloadStorage):
+    def __init__(self) -> None:
+        self.filename: str | None = None
+
+    def presign_get(self, *, key: str, download_filename: str | None = None):
+        self.filename = download_filename
+        return super().presign_get(key=key, download_filename=download_filename)
 
 
 class ScanHistorySession:
@@ -340,6 +349,97 @@ async def test_garment_response_exposes_only_presigned_thumbnail_url() -> None:
         response.thumbnail_url == "https://storage.invalid/private/private/tenant/garment/image.jpg"
     )
     assert "object_key" not in response.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_image_preview_uses_attachment_filename_only_when_downloading() -> None:
+    from fabricassist.api.routes.scans import image_preview
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="completed",
+        requested_language="en",
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="care_label",
+        display_order=0,
+        object_key="private/tenant/scan/image.jpg",
+        mime_type="image/jpeg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        completed_at=datetime.now(UTC),
+    )
+    storage = CapturingDownloadStorage()
+
+    response = await image_preview(
+        scan.id,
+        image.id,
+        ImageLifecycleSession([scan, image]),
+        user,
+        storage,
+        download=True,  # type: ignore[arg-type]
+    )
+
+    assert response.image_id == image.id
+    assert storage.filename == f"fabricassist-care_label-{image.id}.jpeg"
+
+
+@pytest.mark.asyncio
+async def test_list_scan_images_exposes_completed_owned_metadata_in_display_order() -> None:
+    from fabricassist.api.routes.scans import list_scan_images
+    from fabricassist.infrastructure.persistence.models import Scan, ScanImage, User
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(), tenant_id=tenant_id, email="customer@example.com", password_hash="x" * 32
+    )
+    scan = Scan(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=user.id,
+        status="completed",
+        requested_language="en",
+    )
+    image = ScanImage(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        scan_id=scan.id,
+        role="care_label",
+        display_order=1,
+        object_key="private/tenant/scan/label.jpg",
+        upload_token=uuid4(),
+        upload_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        completed_at=datetime.now(UTC),
+        width=640,
+        height=480,
+    )
+
+    class GallerySession:
+        async def scalar(self, statement: object) -> object | None:
+            return scan
+
+        async def scalars(self, statement: object):
+            class Result:
+                def all(self) -> list[object]:
+                    return [image]
+
+            return Result()
+
+    response = await list_scan_images(scan.id, GallerySession(), user)  # type: ignore[arg-type]
+
+    assert [item.image_id for item in response] == [image.id]
+    assert response[0].role.value == "care_label"
+    assert response[0].width == 640
 
 
 @pytest.mark.asyncio

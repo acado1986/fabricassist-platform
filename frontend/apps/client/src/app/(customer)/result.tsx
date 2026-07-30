@@ -16,6 +16,7 @@ import {
   confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost,
   deleteScanApiV1ScansScanIdDelete,
   identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet,
+  rejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPost,
   scanDetailApiV1ScansScanIdGet,
   scanResultApiV1ScansScanIdResultGet,
   submitFeedbackApiV1ScansScanIdFeedbackPost,
@@ -90,6 +91,25 @@ export default function Result(): ReactNode {
     if (response.data) {
       setIdentityCandidates([]);
       setLifecycleMessage(translate('identityCandidateConfirmed'));
+    }
+  };
+  const rejectIdentityCandidate = async (
+    candidateId: string,
+  ): Promise<void> => {
+    if (!scanId || !token) return;
+    const response =
+      await rejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPost(
+        {
+          client: apiClient,
+          path: { scan_id: scanId },
+          body: { candidate_id: candidateId },
+        },
+      );
+    if (response.data) {
+      setIdentityCandidates((current) =>
+        current.filter((candidate) => candidate.id !== candidateId),
+      );
+      setLifecycleMessage(translate('identityCandidateRejected'));
     }
   };
   const requestReview = async (): Promise<void> => {
@@ -303,47 +323,91 @@ export default function Result(): ReactNode {
               title={translate('garmentChangeSummary')}
               values={result.change_summary ? [result.change_summary] : []}
             />
-            {identityCandidates.slice(0, 1).map((candidate) => (
-              <View key={candidate.id} style={styles.identityCandidate}>
-                {candidate.thumbnail_url ? (
-                  <Image
-                    accessibilityLabel={translate('identityCandidateThumbnail')}
-                    source={{ uri: candidate.thumbnail_url }}
-                    style={styles.identityThumbnail}
-                  />
-                ) : null}
-                <Text style={styles.heading}>
-                  {translate(
-                    candidate.classification === 'probable_instance'
-                      ? 'likelySameGarment'
-                      : 'likelySameModel',
-                  )}
-                </Text>
-                <Text>
-                  {translate(
-                    candidate.classification === 'probable_instance'
-                      ? 'likelySameGarmentDescription'
-                      : 'likelySameModelDescription',
-                  )}
-                </Text>
-                <Text style={styles.identityHistory}>
-                  {translate(
-                    candidate.classification === 'probable_instance'
-                      ? 'sameGarmentAnalysedBefore'
-                      : 'sameModelAnalysedBefore',
-                  )}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void confirmIdentityCandidate(candidate.id)}
-                  style={styles.identityButton}
-                >
-                  <Text style={styles.identityButtonText}>
-                    {translate('confirmSameGarment')}
+            {identityCandidates
+              .filter((candidate) => candidate.status === 'pending')
+              .map((candidate) => (
+                <View key={candidate.id} style={styles.identityCandidate}>
+                  {candidate.thumbnail_url ? (
+                    <Image
+                      accessibilityLabel={translate(
+                        'identityCandidateThumbnail',
+                      )}
+                      source={{ uri: candidate.thumbnail_url }}
+                      style={styles.identityThumbnail}
+                    />
+                  ) : null}
+                  <Text style={styles.heading}>
+                    {translate(
+                      candidate.classification === 'probable_instance'
+                        ? 'likelySameGarment'
+                        : 'likelySameModel',
+                    )}
                   </Text>
-                </Pressable>
+                  <Text>
+                    {translate(
+                      candidate.classification === 'probable_instance'
+                        ? 'likelySameGarmentDescription'
+                        : 'likelySameModelDescription',
+                    )}
+                  </Text>
+                  <Text style={styles.identityHistory}>
+                    {translate(
+                      candidate.classification === 'probable_instance'
+                        ? 'sameGarmentAnalysedBefore'
+                        : 'sameModelAnalysedBefore',
+                    )}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() =>
+                      router.push({
+                        pathname: `/garments/${candidate.garment_id}`,
+                        params: { decisionScanId: scanId },
+                      })
+                    }
+                    style={styles.identityReviewButton}
+                  >
+                    <Text style={styles.neutralButtonText}>
+                      {translate('reviewCandidateGarment')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void confirmIdentityCandidate(candidate.id)}
+                    style={styles.identityButton}
+                  >
+                    <Text style={styles.identityButtonText}>
+                      {translate('confirmSameGarment')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void rejectIdentityCandidate(candidate.id)}
+                    style={styles.identityRejectButton}
+                  >
+                    <Text style={styles.identityRejectText}>
+                      {translate('rejectSameGarment')}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: '/images', params: { scanId } })
+              }
+              style={({ pressed }) => [
+                styles.historyButton,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              <View style={styles.buttonContent}>
+                <Feather color={colors.text} name="image" size={18} />
+                <Text style={styles.neutralButtonText}>
+                  {translate('viewUploadedImages')}
+                </Text>
               </View>
-            ))}
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() =>
@@ -495,6 +559,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.medium,
     paddingVertical: spacing.small,
   },
+  identityReviewButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.small,
+  },
+  identityRejectButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.small,
+  },
+  identityRejectText: { color: colors.danger, fontWeight: '800' },
   identityButtonText: { color: colors.background, fontWeight: '800' },
   identityHistory: { color: colors.muted, fontWeight: '700' },
   warning: { backgroundColor: colors.dangerSoft },
