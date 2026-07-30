@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import {
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -9,9 +10,10 @@ import {
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
+  deleteGarmentApiV1GarmentsGarmentIdDelete,
   listGarmentsApiV1GarmentsGet,
   type GarmentResponse,
 } from '@fabricassist/api-client';
@@ -22,6 +24,34 @@ import { useTranslation } from '../../i18n/TranslationProvider';
 export default function CustomerHistory(): ReactNode {
   const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
+  const queryClient = useQueryClient();
+  const deleteGarment = useMutation({
+    mutationFn: async (garmentId: string) => {
+      const result = await deleteGarmentApiV1GarmentsGarmentIdDelete({
+        client: apiClient,
+        path: { garment_id: garmentId },
+      });
+      if (!result.data) throw result.error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['customer-history'] });
+      await queryClient.invalidateQueries({ queryKey: ['scan-history'] });
+    },
+  });
+  const confirmDeletion = (garmentId: string): void => {
+    Alert.alert(
+      translate('deleteGarmentConfirmTitle'),
+      translate('deleteGarmentConfirmDescription'),
+      [
+        { style: 'cancel', text: translate('cameraCancel') },
+        {
+          style: 'destructive',
+          text: translate('deleteGarmentConfirmAction'),
+          onPress: () => deleteGarment.mutate(garmentId),
+        },
+      ],
+    );
+  };
   const {
     data: garments,
     isError,
@@ -49,50 +79,80 @@ export default function CustomerHistory(): ReactNode {
         {garments?.map((garment) => {
           const identifier = garment.identifiers?.[0] ?? garment.id;
           return (
-            <Pressable
-              accessibilityLabel={translate('viewGarmentHistory')}
-              accessibilityRole="button"
-              key={garment.id}
-              onPress={() => router.push(`/garments/${garment.id}`)}
-              style={({ pressed }) => [
-                styles.garment,
-                pressed && styles.pressed,
-              ]}
-            >
-              {garment.thumbnail_url ? (
-                <Image
-                  accessibilityLabel={translate('garmentThumbnail')}
-                  source={{ uri: garment.thumbnail_url }}
-                  style={styles.thumbnail}
-                />
-              ) : (
-                <View style={styles.thumbnailPlaceholder}>
-                  <Feather color={colors.muted} name="shopping-bag" size={24} />
+            <View key={garment.id} style={styles.garment}>
+              <Pressable
+                accessibilityLabel={translate('viewGarmentHistory')}
+                accessibilityRole="button"
+                onPress={() => router.push(`/garments/${garment.id}`)}
+                style={({ pressed }) => [
+                  styles.garmentDetails,
+                  pressed && styles.pressed,
+                ]}
+              >
+                {garment.thumbnail_url ? (
+                  <Image
+                    accessibilityLabel={translate('garmentThumbnail')}
+                    source={{ uri: garment.thumbnail_url }}
+                    style={styles.thumbnail}
+                  />
+                ) : (
+                  <View style={styles.thumbnailPlaceholder}>
+                    <Feather
+                      color={colors.muted}
+                      name="shopping-bag"
+                      size={24}
+                    />
+                  </View>
+                )}
+                <View style={styles.garmentCopy}>
+                  <Text numberOfLines={1} style={styles.identifier}>
+                    {identifier}
+                  </Text>
+                  <Text style={styles.detail}>
+                    {translate('lastAnalysis')}:{' '}
+                    {formatTimestamp(
+                      garment.last_analysis_at,
+                      locale,
+                      translate('notAvailable'),
+                    )}
+                  </Text>
+                  <Text style={styles.detail}>
+                    {translate('analysedBefore')}:{' '}
+                    {garment.analysed_before
+                      ? translate('yes')
+                      : translate('no')}{' '}
+                    · {translate('cleanedBefore')}:{' '}
+                    {garment.cleaned_before
+                      ? translate('yes')
+                      : translate('no')}
+                  </Text>
                 </View>
-              )}
-              <View style={styles.garmentCopy}>
-                <Text numberOfLines={1} style={styles.identifier}>
-                  {identifier}
-                </Text>
-                <Text style={styles.detail}>
-                  {translate('lastAnalysis')}:{' '}
-                  {formatTimestamp(
-                    garment.last_analysis_at,
-                    locale,
-                    translate('notAvailable'),
-                  )}
-                </Text>
-                <Text style={styles.detail}>
-                  {translate('analysedBefore')}:{' '}
-                  {garment.analysed_before ? translate('yes') : translate('no')}{' '}
-                  · {translate('cleanedBefore')}:{' '}
-                  {garment.cleaned_before ? translate('yes') : translate('no')}
-                </Text>
-              </View>
-              <Feather color={colors.primary} name="chevron-right" size={20} />
-            </Pressable>
+                <Feather
+                  color={colors.primary}
+                  name="chevron-right"
+                  size={20}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityLabel={translate('deleteGarment')}
+                accessibilityRole="button"
+                disabled={deleteGarment.isPending}
+                onPress={() => confirmDeletion(garment.id)}
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Feather color={colors.danger} name="trash-2" size={20} />
+              </Pressable>
+            </View>
           );
         })}
+        {deleteGarment.isError ? (
+          <Text accessibilityLiveRegion="polite" style={styles.deleteError}>
+            {translate('deleteGarmentRequestFailed')}
+          </Text>
+        ) : null}
       </ScrollView>
     </FoundationShell>
   );
@@ -121,9 +181,13 @@ const styles = StyleSheet.create({
     borderRadius: radii.medium,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: spacing.medium,
-    justifyContent: 'space-between',
     padding: spacing.medium,
+  },
+  garmentDetails: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.medium,
   },
   garmentCopy: { flex: 1, gap: spacing.xsmall },
   thumbnail: { borderRadius: radii.small, height: 72, width: 72 },
@@ -138,4 +202,6 @@ const styles = StyleSheet.create({
   identifier: { color: colors.text, fontSize: 15, fontWeight: '700' },
   detail: { color: colors.muted, fontSize: 13, lineHeight: 18 },
   pressed: { opacity: 0.72 },
+  deleteButton: { padding: spacing.small },
+  deleteError: { color: colors.danger },
 });

@@ -125,6 +125,13 @@ export const es: TranslationCatalog = {
     customerHistoryEmpty: 'Aún no tienes historial de prendas.',
     customerHistoryLoadFailed:
       'No hemos podido cargar tu historial de prendas.',
+    deleteGarment: 'Eliminar historial de la prenda',
+    deleteGarmentConfirmTitle: '¿Eliminar este historial de prenda?',
+    deleteGarmentConfirmDescription:
+      'Se eliminarán la prenda, sus análisis, conversaciones, historial de servicio y fotos privadas. Esta acción no se puede deshacer.',
+    deleteGarmentConfirmAction: 'Eliminar historial',
+    deleteGarmentRequestFailed:
+      'No se ha podido eliminar este historial de prenda.',
     previousAnalyses: 'Análisis anteriores',
     previousAnalysesEmpty: 'Aún no tienes análisis anteriores.',
     previousAnalysis: 'Análisis de cuidado',

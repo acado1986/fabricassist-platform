@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
 import {
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -11,11 +12,12 @@ import Feather from '@expo/vector-icons/Feather';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
   getGarmentApiV1GarmentsGarmentIdGet,
+  deleteGarmentApiV1GarmentsGarmentIdDelete,
   scanHistoryApiV1ScansHistoryGet,
   type GarmentResponse,
   type ScanHistoryResponse,
 } from '@fabricassist/api-client';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '../../../auth/session';
 import { FoundationShell } from '../../../components/FoundationShell';
@@ -28,6 +30,35 @@ export default function GarmentHistory(): ReactNode {
   }>();
   const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
+  const queryClient = useQueryClient();
+  const deleteGarment = useMutation({
+    mutationFn: async () => {
+      const result = await deleteGarmentApiV1GarmentsGarmentIdDelete({
+        client: apiClient,
+        path: { garment_id: garmentId },
+      });
+      if (!result.data) throw result.error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['customer-history'] });
+      await queryClient.invalidateQueries({ queryKey: ['scan-history'] });
+      router.replace('/history');
+    },
+  });
+  const confirmDeletion = (): void => {
+    Alert.alert(
+      translate('deleteGarmentConfirmTitle'),
+      translate('deleteGarmentConfirmDescription'),
+      [
+        { style: 'cancel', text: translate('cameraCancel') },
+        {
+          style: 'destructive',
+          text: translate('deleteGarmentConfirmAction'),
+          onPress: () => deleteGarment.mutate(),
+        },
+      ],
+    );
+  };
   const { data: garment } = useQuery<GarmentResponse>({
     queryKey: ['garment', garmentId],
     enabled: Boolean(garmentId && token),
@@ -167,6 +198,26 @@ export default function GarmentHistory(): ReactNode {
                 </Text>
               ))}
             </View>
+            <Pressable
+              accessibilityLabel={translate('deleteGarment')}
+              accessibilityRole="button"
+              disabled={deleteGarment.isPending}
+              onPress={confirmDeletion}
+              style={({ pressed }) => [
+                styles.deleteButton,
+                pressed && styles.analysisPressed,
+              ]}
+            >
+              <Feather color={colors.danger} name="trash-2" size={18} />
+              <Text style={styles.deleteButtonText}>
+                {translate('deleteGarment')}
+              </Text>
+            </Pressable>
+            {deleteGarment.isError ? (
+              <Text accessibilityLiveRegion="polite" style={styles.deleteError}>
+                {translate('deleteGarmentRequestFailed')}
+              </Text>
+            ) : null}
             {decisionScanId ? (
               <Pressable
                 accessibilityRole="button"
@@ -287,4 +338,16 @@ const styles = StyleSheet.create({
     padding: spacing.medium,
   },
   returnButtonText: { color: colors.background, fontWeight: '800' },
+  deleteButton: {
+    alignItems: 'center',
+    borderColor: colors.danger,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.small,
+    justifyContent: 'center',
+    padding: spacing.medium,
+  },
+  deleteButtonText: { color: colors.danger, fontWeight: '800' },
+  deleteError: { color: colors.danger },
 });
