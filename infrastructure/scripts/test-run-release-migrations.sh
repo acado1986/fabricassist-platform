@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-runner="$repository_root/infrastructure/scripts/run-alpha-migrations.sh"
+runner="$repository_root/infrastructure/scripts/run-release-migrations.sh"
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "$temporary_directory"' EXIT
 
@@ -56,4 +56,4 @@ run_case() {
 
 run_case transient_then_success 0 3
 run_case deterministic_failure 7 1
-printf '%s\n' 'Alpha migration retry runner checks passed.'
+printf '%s\n' 'Release migration retry runner checks passed.'

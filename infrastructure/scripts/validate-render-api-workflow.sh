@@ -4,7 +4,7 @@ set -eu
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repository_root"
 
-workflow=.github/workflows/deploy-alpha.yml
+workflow=.github/workflows/deploy-prerelease.yml
 
 [ -f "$workflow" ] || {
   printf '%s\n' "Render workflow is missing: $workflow" >&2
@@ -25,7 +25,7 @@ for required in \
   'SELECTED_SHA: ${{ needs.quality.outputs.git_sha }}' \
   'curl --fail --silent --show-error --get' \
   '--data-urlencode "ref=${SELECTED_SHA}"' \
-  'FABRICASSIST_ALPHA_API_URL' \
+  'FABRICASSIST_RELEASE_API_URL' \
   '/api/v1/health/live' \
   '/api/v1/health/ready'; do
   require_line "$required"

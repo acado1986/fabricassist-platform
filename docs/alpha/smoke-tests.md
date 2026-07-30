@@ -4,7 +4,7 @@ Run the protected GitHub `Alpha live smoke` workflow after an environment is alr
 
 ## Automated hosted smoke
 
-The `deploy-alpha.yml` final job and `make alpha-live-smoke` check:
+The `deploy-prerelease.yml` final job and `make release-live-smoke` check:
 
 1. API liveness and readiness.
 2. Dedicated smoke-user login.

@@ -1,4 +1,4 @@
-name: Alpha live smoke
+name: Prerelease live smoke
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: alpha-live-smoke-${{ inputs.base_url || vars.FABRICASSIST_API_URL }}
+  group: prerelease-live-smoke-${{ inputs.base_url || vars.FABRICASSIST_API_URL }}
   cancel-in-progress: false
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Run diagnostic hosted mock-provider smoke
         env:
-          FABRICASSIST_ALPHA_API_URL: ${{ inputs.base_url || vars.FABRICASSIST_API_URL }}
-          FABRICASSIST_ALPHA_SMOKE_EMAIL: ${{ secrets.FABRICASSIST_ALPHA_SMOKE_EMAIL }}
-          FABRICASSIST_ALPHA_SMOKE_PASSWORD: ${{ secrets.FABRICASSIST_ALPHA_SMOKE_PASSWORD }}
-        run: make alpha-live-smoke
+          FABRICASSIST_RELEASE_API_URL: ${{ inputs.base_url || vars.FABRICASSIST_API_URL }}
+          FABRICASSIST_RELEASE_SMOKE_EMAIL: ${{ secrets.FABRICASSIST_ALPHA_SMOKE_EMAIL }}
+          FABRICASSIST_RELEASE_SMOKE_PASSWORD: ${{ secrets.FABRICASSIST_ALPHA_SMOKE_PASSWORD }}
+        run: make release-live-smoke

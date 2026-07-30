@@ -1,17 +1,16 @@
-name: Alpha quality
+name: Release quality
 
 on:
   pull_request:
   push:
     branches:
-      - feat/free-alpha-deployment
       - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: alpha-quality-${{ github.workflow }}-${{ github.ref }}
+  group: release-quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,13 +25,14 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           corepack enable
           corepack prepare pnpm@10.28.2 --activate
-      - name: Run deterministic alpha quality checks
+      - name: Run deterministic release quality checks
         run: |
           make check
           make check-alpha-config
+          make check-production-config
           make test-qstash
           make test-migrations
           make test-object-storage
           make check-openapi-drift
-          make build-alpha-web
-          make check-alpha-workflows
+          make build-release-web
+          make check-deployment-workflows

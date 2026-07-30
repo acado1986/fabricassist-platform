@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-alpha-web check-web-bundle-secrets check check-alpha-config check-render-config check-alpha-workflows alpha-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -105,7 +105,7 @@ check-openapi-drift: ## Regenerate OpenAPI/client and fail if checked-in artifac
 frontend-build: ## Build the Phase 3 Expo web artifact in Docker.
 	docker build --file frontend/Dockerfile frontend
 
-build-alpha-web: ## Export the Expo static web artifact and verify it has no secret markers.
+build-release-web: ## Export the Expo static web artifact and verify it has no secret markers.
 	pnpm --dir frontend build:web
 	$(MAKE) check-web-bundle-secrets
 
@@ -132,15 +132,33 @@ check-alpha-config: ## Validate typed alpha settings and safe alpha example conf
 		}; \
 	done
 
+check-production-config: ## Validate typed production settings and the safe production template.
+	cd backend && uv run python -c "from fabricassist.settings import DeploymentProfile, Settings; settings = Settings(_env_file='../.env.production.example'); assert settings.environment == 'production'; assert settings.deployment_profile == DeploymentProfile.PRODUCTION"
+	@! grep -Eq '^EXPO_PUBLIC_.*(TOKEN|KEY|SECRET|DATABASE|S3|QSTASH)' .env.production.example
+	@for expected in \
+		FABRICASSIST_JOB_DISPATCHER \
+		FABRICASSIST_HOT_CACHE_BACKEND \
+		FABRICASSIST_RATE_LIMITER_BACKEND \
+		FABRICASSIST_CONCURRENCY_GATE_BACKEND \
+		FABRICASSIST_VALKEY_URL \
+		FABRICASSIST_EVIDENCE_PROVIDER \
+		FABRICASSIST_CARE_PLANNER_PROVIDER \
+		FABRICASSIST_CHAT_PROVIDER \
+		FABRICASSIST_OBJECT_STORAGE_BACKEND; do \
+		grep -Eq "^$${expected}=" .env.production.example || { \
+			echo "missing production capability setting $${expected}" >&2; exit 1; \
+		}; \
+	done
+
 check-render-config: ## Validate the Render alpha API workflow and container contract.
 	@./infrastructure/scripts/validate-render-api-workflow.sh
 
-check-alpha-workflows: ## Validate Alpha CI, deployment, and live-smoke workflow contracts.
-	python3 infrastructure/scripts/validate-alpha-workflows.py
-	@./infrastructure/scripts/test-run-alpha-migrations.sh
+check-deployment-workflows: ## Validate alpha and production release workflow contracts.
+	python3 infrastructure/scripts/validate-deployment-workflows.py
+	@./infrastructure/scripts/test-run-release-migrations.sh
 
-alpha-live-smoke: ## Run the opt-in hosted alpha smoke using protected credentials.
-	python3 infrastructure/scripts/alpha-live-smoke.py
+release-live-smoke: ## Run an opt-in deployed-environment smoke using protected credentials.
+	python3 infrastructure/scripts/release-live-smoke.py
 
 test-qstash: ## Run synthetic QStash dispatcher adapter tests without network access.
 	cd backend && uv run pytest tests/unit/test_qstash.py

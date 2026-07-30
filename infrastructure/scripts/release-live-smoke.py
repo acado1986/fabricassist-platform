@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the hosted alpha API without printing credentials or upload URLs."""
+"""Exercise a deployed FabricAssist API without printing credentials or upload URLs."""
 
 from __future__ import annotations
 
@@ -116,10 +116,10 @@ def fixture_png() -> bytes:
 
 
 def main() -> int:
-    base_url = required("FABRICASSIST_ALPHA_API_URL").rstrip("/")
-    email = required("FABRICASSIST_ALPHA_SMOKE_EMAIL")
-    password = required("FABRICASSIST_ALPHA_SMOKE_PASSWORD")
-    timeout = int(os.environ.get("FABRICASSIST_ALPHA_SMOKE_TIMEOUT_SECONDS", "180"))
+    base_url = required("FABRICASSIST_RELEASE_API_URL").rstrip("/")
+    email = required("FABRICASSIST_RELEASE_SMOKE_EMAIL")
+    password = required("FABRICASSIST_RELEASE_SMOKE_PASSWORD")
+    timeout = int(os.environ.get("FABRICASSIST_RELEASE_SMOKE_TIMEOUT_SECONDS", "180"))
 
     request(base_url, "/api/v1/health/live")
     request(base_url, "/api/v1/health/ready")
@@ -243,7 +243,7 @@ def main() -> int:
         )
     finally:
         image_path.unlink(missing_ok=True)
-    print("FabricAssist alpha live smoke passed.")
+        print("FabricAssist release smoke passed.")
     return 0
 
 
@@ -251,5 +251,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (KeyError, TypeError, ValueError, RuntimeError) as error:
-        print(f"FabricAssist alpha live smoke failed: {error}", file=sys.stderr)
+        print(f"FabricAssist release smoke failed: {error}", file=sys.stderr)
         raise SystemExit(1) from error

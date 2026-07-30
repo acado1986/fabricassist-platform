@@ -202,7 +202,7 @@ present.
 Current baseline commands are `make check`, `make migration-test`,
 `make openapi`, `pnpm --dir frontend build:web`, and `git diff --check`.
 The plan's future commands `make check-alpha-config`, `make test-qstash`,
-`make test-object-storage`, `make test-migrations`, and `make build-alpha-web`
+`make test-object-storage`, `make test-migrations`, and `make build-release-web`
 do not exist yet. The repository uses the singular existing
 `make migration-test`, not `make test-migrations`.
 

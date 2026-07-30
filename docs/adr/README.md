@@ -11,4 +11,5 @@ garment identity/history, sourced product enrichment, and server-owned
 contextual conversation.
 
 ADR-013 records hosted alpha API placement. ADR-014 records capability-level
-adapter selection and the PostgreSQL transactional job outbox.
+adapter selection and the PostgreSQL transactional job outbox. ADR-015 records
+the production Render/Cloudflare/Neon/R2/QStash/Valkey release topology.

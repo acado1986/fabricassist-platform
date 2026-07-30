@@ -931,9 +931,9 @@ Separate inexpensive deterministic CI from credential-consuming deployment and l
 
 ```text
 .github/workflows/
-├── alpha-quality.yml
-├── deploy-alpha.yml
-└── alpha-live-smoke.yml
+├── release-quality.yml
+├── deploy-prerelease.yml
+└── prerelease-live-smoke.yml
 ```
 
 Reuse existing repository quality workflows when possible instead of duplicating them.
@@ -971,7 +971,7 @@ Recommended Make targets:
 make check
 make check-alpha-config
 make test-qstash
-make build-alpha-web
+make build-release-web
 ```
 
 ## 8.2 Alpha deployment workflow
@@ -1076,7 +1076,7 @@ Preferred options:
 
 ### Manual redeploy of a known ref
 
-Run `deploy-alpha.yml` through `workflow_dispatch` with a previous good tag or commit.
+Run `deploy-prerelease.yml` through `workflow_dispatch` with a previous good tag or commit.
 
 ### New rollback tag
 
@@ -1560,7 +1560,7 @@ Run all deterministic local checks:
 - make check;
 - make check-alpha-config;
 - make test-qstash;
-- make build-alpha-web;
+- make build-release-web;
 - git diff --check.
 
 Do not attempt to create real Neon, R2, QStash, Render, or Cloudflare resources
@@ -1652,7 +1652,7 @@ git status
 make check
 make check-alpha-config
 make test-qstash
-make build-alpha-web
+make build-release-web
 git diff --check
 ```
 

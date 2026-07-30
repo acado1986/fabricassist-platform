@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Phase 8 workflow structure without invoking GitHub or providers."""
+"""Validate release workflow structure without invoking GitHub or providers."""
 
 from __future__ import annotations
 
@@ -29,19 +29,20 @@ def require(content: str, marker: str, workflow: str) -> None:
 
 
 def main() -> None:
-    quality = load("alpha-quality.yml")
+    quality = load("release-quality.yml")
     for marker in (
+        "name: Release quality",
         "pull_request:",
-        "feat/free-alpha-deployment",
         "make check-alpha-config",
+        "make check-production-config",
         "make test-qstash",
         "make test-migrations",
         "make test-object-storage",
         "make check-openapi-drift",
-        "make build-alpha-web",
-        "make check-alpha-workflows",
+        "make build-release-web",
+        "make check-deployment-workflows",
     ):
-        require(quality, marker, "alpha-quality.yml")
+        require(quality, marker, "release-quality.yml")
     for forbidden in (
         "KOYEB_API_TOKEN",
         "CLOUDFLARE_API_TOKEN",
@@ -50,13 +51,13 @@ def main() -> None:
     ):
         if forbidden in quality:
             raise SystemExit(
-                f"alpha-quality.yml must not use external alpha credentials: {forbidden}"
+                f"release-quality.yml must not use external deployment credentials: {forbidden}"
             )
 
-    deploy = load("deploy-alpha.yml")
+    alpha_deploy = load("deploy-prerelease.yml")
     for marker in (
-        "name: Deploy hosted release",
-        '"v*"',
+        "name: Deploy prerelease",
+        '"v*-alpha*"',
         "workflow_dispatch:",
         "description: Commit, branch, or tag to deploy",
         "ref: ${{ inputs.ref || github.ref }}",
@@ -72,14 +73,41 @@ def main() -> None:
         "accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
         "gitHubToken: ${{ secrets.GITHUB_TOKEN }}",
         "steps.deploy-pages.outputs.deployment-url",
-        "run-alpha-migrations.sh",
+        "run-release-migrations.sh",
     ):
-        require(deploy, marker, "deploy-alpha.yml")
+        require(alpha_deploy, marker, "deploy-prerelease.yml")
     for forbidden in ("KOYEB_API_TOKEN", "koyeb-community/", "koyeb/action-"):
-        if forbidden in deploy:
-            raise SystemExit(f"deploy-alpha.yml must not use Koyeb: {forbidden}")
+        if forbidden in alpha_deploy:
+            raise SystemExit(f"deploy-prerelease.yml must not use Koyeb: {forbidden}")
 
-    migration_runner = SCRIPTS / "run-alpha-migrations.sh"
+    production_deploy = load("deploy-production.yml")
+    for marker in (
+        "name: Deploy production",
+        '"v[0-9]*.[0-9]*.[0-9]*"',
+        '"!v*-*"',
+        "Stable tag or exact commit to deploy",
+        "make check-production-config",
+        "make security-check",
+        "environment: production",
+        "FABRICASSIST_PAGES_PROJECT",
+        "EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT: production",
+        "FABRICASSIST_RELEASE_SMOKE_EMAIL",
+        "run-release-migrations.sh",
+        "needs: [deploy-api, deploy-web]",
+    ):
+        require(production_deploy, marker, "deploy-production.yml")
+    for forbidden in (
+        "environment: alpha",
+        "FABRICASSIST_ALPHA_",
+        "fabricassist-alpha",
+        "v*-alpha*",
+    ):
+        if forbidden in production_deploy:
+            raise SystemExit(
+                f"deploy-production.yml contains alpha-only marker: {forbidden}"
+            )
+
+    migration_runner = SCRIPTS / "run-release-migrations.sh"
     if not migration_runner.is_file():
         raise SystemExit(f"missing migration runner: {migration_runner}")
     runner = migration_runner.read_text()
@@ -90,16 +118,22 @@ def main() -> None:
         "alembic -c backend/alembic.ini upgrade head",
         "Migration failed with a non-transient error; not retrying.",
     ):
-        require(runner, marker, "run-alpha-migrations.sh")
+        require(runner, marker, "run-release-migrations.sh")
 
-    smoke = load("alpha-live-smoke.yml")
-    for marker in ("workflow_dispatch:", "base_url:", "make alpha-live-smoke"):
-        require(smoke, marker, "alpha-live-smoke.yml")
-    fixture_png = runpy.run_path(str(SCRIPTS / "alpha-live-smoke.py"))["fixture_png"]()
+    for workflow in ("prerelease-live-smoke.yml", "production-live-smoke.yml"):
+        smoke = load(workflow)
+        for marker in (
+            "workflow_dispatch:",
+            "base_url:",
+            "FABRICASSIST_RELEASE_API_URL",
+            "make release-live-smoke",
+        ):
+            require(smoke, marker, workflow)
+    fixture_png = runpy.run_path(str(SCRIPTS / "release-live-smoke.py"))["fixture_png"]()
     width, height = struct.unpack(">II", fixture_png[16:24])
     if width < 320 or height < 320:
-        raise SystemExit("alpha smoke fixture must satisfy backend image dimensions")
-    print("Alpha CI, deployment, and live-smoke workflow checks passed.")
+        raise SystemExit("release smoke fixture must satisfy backend image dimensions")
+    print("Prerelease and production deployment workflow checks passed.")
 
 
 if __name__ == "__main__":

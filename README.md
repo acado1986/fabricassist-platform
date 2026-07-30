@@ -45,6 +45,7 @@ Read these documents before making changes, in the precedence described by
 - [Architecture](docs/architecture.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Environment variable reference](docs/environment.md)
+- [Production deployment runbook](docs/production/deployment.md)
 - [Next-session garment-intelligence prompt](docs/prompts/IMPLEMENT_GARMENT_INTELLIGENCE.md)
 
 The three source documents intentionally remain under `docs/`; they must not be

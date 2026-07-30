@@ -1,10 +1,11 @@
 # FabricAssist environment reference
 
-The files [`.env.example`](../.env.example) and
-[`.env.alpha.example`](../.env.alpha.example) are safe templates. They contain
-placeholders only; copy one to an ignored `.env` file or enter the values in the
-API/worker provider dashboard. Never put secrets in `EXPO_PUBLIC_*` variables,
-the frontend bundle, Git, logs, or support tickets.
+The files [`.env.example`](../.env.example),
+[`.env.alpha.example`](../.env.alpha.example), and
+[`.env.production.example`](../.env.production.example) are safe templates.
+They contain placeholders only; copy one to an ignored `.env` file or enter the
+values in the API/worker provider dashboard. Never put secrets in
+`EXPO_PUBLIC_*` variables, the frontend bundle, Git, logs, or support tickets.
 
 ## Which template should I use?
 
@@ -12,6 +13,7 @@ the frontend bundle, Git, logs, or support tickets.
 | --- | --- | --- |
 | `.env.example` | Local Docker (also matches the AWS/Celery shape) | PostgreSQL, Valkey, MinIO, API, Celery worker |
 | `.env.alpha.example` | Hosted free alpha | Neon/PostgreSQL, R2, Render API, QStash |
+| `.env.production.example` | Production release | Neon/PostgreSQL, R2, Render API, QStash, TLS Valkey, Cloudflare Pages |
 
 The application reads variables with the `FABRICASSIST_` prefix. Settings are
 constructed at the API/worker composition root; routes and application services

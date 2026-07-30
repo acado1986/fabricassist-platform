@@ -4,6 +4,7 @@
 .env-*
 !.env.example
 !.env.alpha.example
+!.env.production.example
 !.env.android.example
 
 # Never retain provider dashboard exports or copied credentials in alpha docs.

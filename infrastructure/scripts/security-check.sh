@@ -9,7 +9,7 @@ cd "$root"
 tracked_env_files=$(
   git ls-files |
     grep -E '(^|/)\.env($|[.-])' |
-    grep -Ev '(^|/)\.env(\.alpha)?\.example$' |
+    grep -Ev '(^|/)\.env(\.[A-Za-z0-9_-]+)?\.example$' |
     while IFS= read -r file; do
       if [ -f "$file" ]; then
         printf '%s\n' "$file"

@@ -30,7 +30,7 @@ Run before a pull request or release dispatch. These commands do not contact the
 make check
 make check-alpha-config
 make test-qstash
-make build-alpha-web
+make build-release-web
 git diff --check
 ```
 

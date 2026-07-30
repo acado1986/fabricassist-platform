@@ -14,7 +14,7 @@ Start with the release SHA, timestamp, affected scan ID, and redacted workflow j
 | Invalid signed delivery loops | QStash response/status and message schema | Fix publisher schema/signature; permanently invalid messages must receive non-retry handling, not a transient retry |
 | Migration job fails | direct Neon migration URL/TLS and Alembic head | The runner retries transient database shutdowns four times. For other errors, fix forward and rerun; never auto-downgrade production-like alpha data |
 | Smoke ends `needs_review` | mock provider/evidence outcome | This can be expected; confirm terminal safe status and result reload, then use a separate controlled real-provider test if approved |
-| Secret marker in web bundle | `make build-alpha-web` output and frontend environment | Remove non-public value, rebuild, and rotate it if exposed; only the two documented Expo public variables are allowed |
+| Secret marker in web bundle | `make build-release-web` output and frontend environment | Remove non-public value, rebuild, and rotate it if exposed; only the two documented Expo public variables are allowed |
 
 ## First-login cold start
 
