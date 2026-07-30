@@ -9,12 +9,14 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from fabricassist.api.errors import unexpected_error_handler
 from fabricassist.api.main import create_app
 from fabricassist.api.routes.scans import CreateScanRequest, ImageRequest
 from fabricassist.application.jobs import JobDispatcher
+from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.application.policies import UploadPolicy
 from fabricassist.settings import Settings
 
@@ -384,9 +386,9 @@ async def test_image_preview_uses_attachment_filename_only_when_downloading() ->
     response = await image_preview(
         scan.id,
         image.id,
-        ImageLifecycleSession([scan, image]),
+        cast("AsyncSession", ImageLifecycleSession([scan, image])),
         user,
-        storage,
+        cast("ObjectStorage", storage),
         download=True,  # type: ignore[arg-type]
     )
 
