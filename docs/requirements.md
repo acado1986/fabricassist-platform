@@ -384,10 +384,13 @@ Requirements:
 - **FR-HIST-002:** A scan detail page must show current status, images when retained, final answer, and review state.
 - **FR-HIST-003:** Users must be able to delete a scan.
 - **FR-HIST-004:** Deletion must remove or schedule removal of object-storage files and personal associations.
-- **FR-HIST-005:** Derived anonymized metrics may be retained only according to documented tenant policy.
-- **FR-HIST-006:** The application must show `analysed_before` separately from
+- **FR-HIST-005:** Users must be able to delete a physical garment-history entry;
+  deletion removes the linked personal analyses, conversations, service history,
+  and schedules removal of every associated private image.
+- **FR-HIST-006:** Derived anonymized metrics may be retained only according to documented tenant policy.
+- **FR-HIST-007:** The application must show `analysed_before` separately from
   `cleaned_before`; only a confirmed performed-service event may claim cleaning.
-- **FR-HIST-007:** Evidence, plan, validation, conversation, and service revisions
+- **FR-HIST-008:** Evidence, plan, validation, conversation, and service revisions
   must be append-only or superseding and preserve the active-version pointer.
 
 ### 6.12 Administration and audit

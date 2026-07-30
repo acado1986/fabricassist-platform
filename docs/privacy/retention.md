@@ -12,3 +12,7 @@
 
 Deletion is eventually consistent through the PostgreSQL outbox. Operational
 metrics retain aggregates only; no customer image or message content is copied.
+Deleting a garment-history entry immediately removes it from the customer's
+history and removes its personal conversation, service, and analysis
+associations. Its private image objects are removed asynchronously by the same
+auditable outbox workflow; a retryable storage failure never restores the entry.

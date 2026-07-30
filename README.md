@@ -339,8 +339,10 @@ a durable outbox and only marked deleted after the storage adapter succeeds;
 the API recovery loop retries transient failures automatically for both Celery
 and QStash deployments. `FABRICASSIST_DELETION_MAX_ATTEMPTS` bounds retries;
 the retention worker task remains available for explicit operational recovery.
-Garment deletion removes personal conversation, service-history, and
-product-lookup associations while generic product profiles can remain cached.
+Customers can request this deletion from either the garment-history list or a
+garment-history detail page after an explicit confirmation. Garment deletion
+removes personal analysis, conversation, service-history, and product-lookup
+associations while generic product profiles can remain cached.
 Short-lived authenticated image previews are available only for retained
 images.
 

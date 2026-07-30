@@ -119,6 +119,12 @@ export const en = {
       'Review garments you have analysed and their confirmed service history.',
     customerHistoryEmpty: 'You have no garment history yet.',
     customerHistoryLoadFailed: 'We could not load your garment history.',
+    deleteGarment: 'Delete garment history',
+    deleteGarmentConfirmTitle: 'Delete this garment history?',
+    deleteGarmentConfirmDescription:
+      'This removes the garment, its analyses, conversations, service history, and private photos. This cannot be undone.',
+    deleteGarmentConfirmAction: 'Delete history',
+    deleteGarmentRequestFailed: 'Unable to delete this garment history.',
     previousAnalyses: 'Previous analyses',
     previousAnalysesEmpty: 'You have no previous analyses yet.',
     previousAnalysis: 'Care analysis',
