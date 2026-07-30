@@ -1,4 +1,4 @@
-# Render alpha API deployment
+# Render prerelease API deployment
 
 Phase 6 deploys the existing FastAPI API as one Render Docker web service. It
 does not deploy Celery, Valkey, a migration runner, or a second backend.

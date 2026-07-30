@@ -1,7 +1,7 @@
 # FabricAssist production deployment
 
 Production uses the same FabricAssist application architecture proven by the
-alpha, but it has separate protected resources and enables the distributed
+prerelease, but it has separate protected resources and enables the distributed
 controls required by the production settings profile.
 
 ## Production topology
@@ -16,7 +16,7 @@ TLS Valkey             Hot cache, rate limiting, and concurrency gates
 GitHub Actions         Ordered immutable release deployment
 ```
 
-Do not point production at the alpha database, bucket, smoke account, Render
+Do not silently point production at the prerelease database, bucket, smoke account, Render
 service, Pages project, or GitHub environment.
 
 ## One-time provider setup

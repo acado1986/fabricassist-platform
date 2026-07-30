@@ -53,7 +53,7 @@ Configure a lifecycle deletion rule for the private FabricAssist bucket:
 
 - prefix: `private/` (the deployed server-generated object-key root);
 - action: delete objects after the configured tenant retention window;
-- alpha default: **7 days**;
+- prerelease default: **7 days**;
 - do not transition objects to a public class or enable public access.
 
 This is a safety net for the existing PostgreSQL-authoritative deletion workflow,

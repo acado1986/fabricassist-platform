@@ -1,7 +1,8 @@
-# Alpha configuration
+# Prerelease configuration
 
-Phase 1 introduces typed configuration only. It does not publish to QStash,
-change local Celery/Valkey/MinIO behavior, or deploy a hosted service.
+The prerelease profile is a configuration-selected deployment of the canonical
+FabricAssist application. It does not fork the API, frontend, or domain model;
+only composition-root capability adapters differ from local and production.
 
 ## Safe template
 
@@ -11,18 +12,18 @@ Never expose database, R2, QStash, provider, JWT, or refresh-token secrets in
 `EXPO_PUBLIC_*` variables.
 
 For the meaning of every variable and the difference between local Docker and
-hosted alpha, see the repository-wide [environment reference](../environment.md).
+hosted prerelease, see the repository-wide [environment reference](../environment.md).
 
-## Required alpha settings
+## Required prerelease settings
 
 Set `FABRICASSIST_ENVIRONMENT=alpha`,
 `FABRICASSIST_DEPLOYMENT_PROFILE=alpha`, and
 `FABRICASSIST_JOB_DISPATCHER=qstash`. QStash selection requires a publish token,
-current signing key, next signing key, and an HTTPS destination URL. Alpha also
+current signing key, next signing key, and an HTTPS destination URL. Prerelease also
 requires explicit HTTPS CORS origins, a non-local PostgreSQL URL, an HTTPS
 non-MinIO S3 endpoint, and at most three images per scan.
 
-Alpha explicitly selects its bounded optional adapters:
+Prerelease explicitly selects its bounded optional adapters:
 
 ```text
 FABRICASSIST_HOT_CACHE_BACKEND=noop
@@ -37,10 +38,10 @@ FABRICASSIST_PRODUCT_INFORMATION_PROVIDER=mock
 
 `FABRICASSIST_VALKEY_URL` is not required when every Valkey-backed capability is
 disabled. `FABRICASSIST_CELERY_BROKER_URL` is unused when QStash is selected.
-These no-op choices are for the documented hosted-alpha quotas; production
+These no-op choices are for the documented hosted prerelease quotas; production
 startup rejects no-op rate limiting and concurrency.
 
-`FABRICASSIST_DATABASE_MIGRATION_URL` is required in alpha and is selected by
+`FABRICASSIST_DATABASE_MIGRATION_URL` is required in the prerelease profile and is selected by
 Alembic for direct administrative migration connections; see
 [`neon-database.md`](neon-database.md). Render builds only the existing API
 container and obtains these values from Render environment settings; see
@@ -68,7 +69,7 @@ Existing defaults remain `environment=development`,
 `deployment_profile=local`, `job_dispatcher=celery`, and Valkey capability
 adapters. Existing `make check` remains the local quality gate.
 
-Run alpha configuration checks without contacting a provider:
+Run prerelease configuration checks without contacting a provider:
 
 ```bash
 make check-alpha-config

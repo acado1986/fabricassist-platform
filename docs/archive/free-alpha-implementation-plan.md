@@ -208,7 +208,7 @@ Map the actual code before changing it. Do not assume that file paths in this pl
 Create:
 
 ```text
-docs/alpha/implementation-inventory.md
+docs/archive/free-alpha-implementation-inventory.md
 ```
 
 It must contain:
@@ -298,7 +298,7 @@ Expected locations, adjusted after Phase 0:
 backend/src/fabricassist/settings.py
 backend/tests/unit/test_settings.py
 .env.alpha.example
-docs/alpha/configuration.md
+docs/prerelease/configuration.md
 ```
 
 ## Tests
@@ -1317,7 +1317,7 @@ This reduces context drift and makes each change independently reversible.
 Save the plan inside the repository as:
 
 ```text
-docs/alpha/FREE_ALPHA_IMPLEMENTATION_PLAN.md
+docs/archive/free-alpha-implementation-plan.md
 ```
 
 Use this prompt for each phase:
@@ -1328,7 +1328,7 @@ Read these files first:
 - AGENTS.md
 - docs/architecture.md
 - docs/IMPLEMENTATION_PLAN.md
-- docs/alpha/FREE_ALPHA_IMPLEMENTATION_PLAN.md
+- docs/archive/free-alpha-implementation-plan.md
 - any nested AGENTS.md or AGENTS.override.md files that apply
 
 We are working in the existing Git worktree on branch
@@ -1374,13 +1374,13 @@ Stop after this phase.
 
 ```text
 Read AGENTS.md, docs/architecture.md, docs/IMPLEMENTATION_PLAN.md, and
-docs/alpha/FREE_ALPHA_IMPLEMENTATION_PLAN.md.
+docs/archive/free-alpha-implementation-plan.md.
 
 Perform only Phase 0, the existing implementation inventory.
 
 Do not modify production code, dependencies, migrations, workflows, or
 configuration. Inspect the repository and create only
-docs/alpha/implementation-inventory.md.
+docs/archive/free-alpha-implementation-inventory.md.
 
 The inventory must identify:
 - the real JobDispatcher boundary;
@@ -1408,7 +1408,7 @@ Review the inventory yourself before continuing.
 Implement only Phase 1, typed alpha configuration.
 
 Use the actual settings and dependency-injection patterns documented in
-docs/alpha/implementation-inventory.md.
+docs/archive/free-alpha-implementation-inventory.md.
 
 Do not implement QStash HTTP calls or internal endpoints yet.
 Do not change local or production defaults.
@@ -1717,7 +1717,7 @@ Keep the release tag. Do not keep a long-lived alpha branch.
 After copying this file to:
 
 ```text
-docs/alpha/FREE_ALPHA_IMPLEMENTATION_PLAN.md
+docs/archive/free-alpha-implementation-plan.md
 ```
 
 run:
@@ -1735,5 +1735,5 @@ Paste the **Phase 0 Codex prompt** first.
 Do not begin Phase 1 until you have reviewed:
 
 ```text
-docs/alpha/implementation-inventory.md
+docs/archive/free-alpha-implementation-inventory.md
 ```

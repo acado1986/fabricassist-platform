@@ -1,24 +1,24 @@
-# FabricAssist alpha rollback runbook
+# FabricAssist prerelease rollback runbook
 
 Rollback is a selected-ref redeployment, not a tag rewrite and not an automatic database downgrade.
 
 ## When to roll back
 
-Roll back when a release has a safety, authentication, tenant-isolation, storage, dispatch, or unrecoverable smoke failure that cannot be fixed forward within the alpha maintenance window. Pause new analysis dispatch only when a message or schema incompatibility makes execution unsafe; keep PostgreSQL as the source for pending state.
+Roll back when a release has a safety, authentication, tenant-isolation, storage, dispatch, or unrecoverable smoke failure that cannot be fixed forward within the prerelease maintenance window. Pause new analysis dispatch only when a message or schema incompatibility makes execution unsafe; keep PostgreSQL as the source for pending state.
 
 ## Procedure
 
 1. Identify the last good release SHA/tag and its recorded migration head.
 2. Check whether queued QStash message schemas are compatible with that ref. Old messages must safely execute, no-op, or move to reviewed state; do not discard durable checkpoint information.
-3. Manually dispatch `Deploy alpha` with the known-good tag or exact commit in `ref`. Alternatively create a **new** rollback tag that points at the good commit, for example:
+3. Manually dispatch `Deploy prerelease` with the known-good tag or exact commit in `ref`. Alternatively create a **new** rollback tag that points at the good commit, for example:
 
    ```bash
    git tag -a v0.1.0-alpha.2-rollback <previous-good-commit> \
-     -m "Rollback alpha to previous good release"
+     -m "Rollback prerelease to previous good release"
    git push origin v0.1.0-alpha.2-rollback
    ```
 
-4. Allow its normal order: quality → migration compatibility check → API and web deployment → hosted smoke. Do not move or re-push an existing release tag and do not run automatic Alembic downgrade.
+4. Allow its normal order: quality → migration compatibility check → API and web deployment → prerelease smoke. Do not move or re-push an existing release tag and do not run automatic Alembic downgrade.
 5. Verify API liveness/readiness, exact Pages/API CORS, signed QStash delivery, and the diagnostic live smoke. Record the rollback SHA/tag, reason, migration head, and results.
 
 ## Database and object safety

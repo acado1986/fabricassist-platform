@@ -1,6 +1,6 @@
-# FabricAssist free alpha runbooks
+# FabricAssist prerelease runbooks
 
-This directory is the operator guide for the FabricAssist free alpha. It describes the repository's exact configuration and release procedures; it does not replace Neon, Cloudflare, Upstash, or Render product documentation.
+This directory is the operator guide for the FabricAssist prerelease. It describes the repository's exact configuration and release procedures; it does not replace Neon, Cloudflare, Upstash, or Render product documentation.
 
 ## Read in this order
 
@@ -10,11 +10,15 @@ This directory is the operator guide for the FabricAssist free alpha. It describ
 3. Execute [smoke tests](smoke-tests.md) after deployment.
 4. Use [troubleshooting](troubleshooting.md) for a failed check or outage, and [rollback](rollback.md) for a release reversal.
 
-`implementation-inventory.md` records the pre-alpha baseline. The earlier provider notes (`neon-database.md`, `r2-storage.md`, `render-api.md`, and `deployment-ci.md`) remain useful implementation references; these runbooks are the operational source of truth.
+[`../archive/free-alpha-implementation-inventory.md`](../archive/free-alpha-implementation-inventory.md)
+records the historical pre-prerelease baseline. The provider notes
+(`neon-database.md`, `r2-storage.md`, `render-api.md`, and `deployment-ci.md`)
+remain useful implementation references; these runbooks are the operational
+source of truth.
 
 ## Scope and guardrails
 
-- Alpha is configuration-selected with `FABRICASSIST_DEPLOYMENT_PROFILE=alpha`,
+- The prerelease is configuration-selected with `FABRICASSIST_DEPLOYMENT_PROFILE=alpha`,
   `FABRICASSIST_JOB_DISPATCHER=qstash`, and explicit no-op hot-cache,
   rate-limiter, and concurrency adapters; local defaults remain Celery, Valkey,
   PostgreSQL, and MinIO.

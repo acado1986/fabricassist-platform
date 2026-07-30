@@ -29,8 +29,9 @@ bounded load gates, and web/native release procedures. The garment-intelligence
 cutover is complete; there is no fixed two-photo or `decide_care()` fallback.
 
 Infrastructure is selected independently by capability at backend composition
-roots. Local/AWS defaults use Celery plus Valkey-backed hot cache, rate limiting,
-and concurrency; hosted alpha uses QStash plus explicit optional no-op adapters.
+roots. Local/self-hosted defaults use Celery plus Valkey-backed hot cache, rate
+limiting, and concurrency; the hosted prerelease profile uses QStash plus
+explicit optional no-op adapters.
 `FABRICASSIST_CELERY_BROKER_URL` is independent from
 `FABRICASSIST_VALKEY_URL`, so RabbitMQ can replace the Celery broker without
 changing application code. PostgreSQL remains authoritative for job intent,
@@ -46,6 +47,8 @@ Read these documents before making changes, in the precedence described by
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Environment variable reference](docs/environment.md)
 - [Production deployment runbook](docs/production/deployment.md)
+- [Prerelease operations](docs/prerelease/README.md)
+- [Documentation index](docs/README.md)
 - [Next-session garment-intelligence prompt](docs/prompts/IMPLEMENT_GARMENT_INTELLIGENCE.md)
 
 The three source documents intentionally remain under `docs/`; they must not be
@@ -67,6 +70,9 @@ duplicated at the repository root.
 │   ├── architecture.md
 │   ├── IMPLEMENTATION_PLAN.md
 │   ├── adr/
+│   ├── prerelease/
+│   ├── production/
+│   ├── archive/
 │   ├── prompts/
 │   └── runbooks/
 └── .github/workflows/
@@ -100,8 +106,9 @@ for replacement before using any shared, staging, or production environment.
 Never commit `.env` or real credentials.
 
 See the complete [environment variable reference](docs/environment.md) for the
-purpose of each setting, the local Docker versus hosted-alpha topology, and the
-capability selectors. The examples are templates, not files to source directly.
+purpose of each setting, the local Docker versus hosted prerelease and
+production topologies, and the capability selectors. The examples are
+templates, not files to source directly.
 
 Capability selection examples:
 
@@ -113,7 +120,7 @@ FABRICASSIST_HOT_CACHE_BACKEND=valkey
 FABRICASSIST_RATE_LIMITER_BACKEND=valkey
 FABRICASSIST_CONCURRENCY_GATE_BACKEND=valkey
 
-# Hosted alpha topology (QStash credentials remain protected secrets)
+# Hosted prerelease topology (QStash credentials remain protected secrets)
 FABRICASSIST_JOB_DISPATCHER=qstash
 FABRICASSIST_HOT_CACHE_BACKEND=noop
 FABRICASSIST_RATE_LIMITER_BACKEND=noop

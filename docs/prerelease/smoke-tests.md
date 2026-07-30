@@ -1,8 +1,8 @@
-# FabricAssist alpha smoke and acceptance runbook
+# FabricAssist prerelease smoke and acceptance runbook
 
-Run the protected GitHub `Alpha live smoke` workflow after an environment is already deployed, after recovery, and after rollback. Its optional `base_url` is diagnostic only; it does not deploy a candidate.
+Run the protected GitHub `Prerelease live smoke` workflow after an environment is already deployed, after recovery, and after rollback. Its optional `base_url` is diagnostic only; it does not deploy a candidate.
 
-## Automated hosted smoke
+## Automated prerelease smoke
 
 The `deploy-prerelease.yml` final job and `make release-live-smoke` check:
 
@@ -22,7 +22,7 @@ plan. The smoke script does not print credentials or presigned URLs.
 
 ## Manual end-to-end acceptance
 
-From the deployed Pages origin, use the dedicated alpha account to verify:
+From the deployed Pages origin, use the dedicated prerelease account to verify:
 
 - registration/sign-in; draft scan; one garment and one care-label image; direct private R2 uploads; and API completion confirmation;
 - analysis with an idempotency key; a QStash identifier-only message; durable Neon checkpoint progression; frontend polling; and result after browser refresh;
@@ -33,7 +33,7 @@ Record each scenario's timestamp, release SHA, and pass/fail outcome. Do not att
 
 ## Resilience drill matrix
 
-Before accepting a release, perform or schedule these controlled alpha drills:
+Before accepting a release, perform or schedule these controlled prerelease drills:
 
 | Drill | Expected FabricAssist behavior | Recovery evidence |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ Before accepting a release, perform or schedule these controlled alpha drills:
 | R2 failure | upload/verification fails safely | no completed image reference without object |
 | Invalid signature | internal endpoint rejects it | no checkpoint/work created |
 | Permanent invalid message | explicit non-retry response | QStash does not redeliver indefinitely |
-| Three users / three images | max-three alpha limit and tenant isolation hold | no cross-tenant access or duplicate work |
+| Three users / three images | max-three prerelease limit and tenant isolation hold | no cross-tenant access or duplicate work |
 | Local regression | local Celery/Valkey/MinIO flow passes | `make check` result recorded |
 
 Use synthetic data and a maintenance window for destructive/retry drills. If a drill fails, leave the release unaccepted and use the relevant recovery path in [troubleshooting](troubleshooting.md) or [rollback](rollback.md).

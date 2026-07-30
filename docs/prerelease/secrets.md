@@ -1,4 +1,4 @@
-# FabricAssist alpha secrets and protected values
+# FabricAssist prerelease secrets and protected values
 
 Create values manually in provider dashboards and GitHub's protected `alpha` environment. Never paste their values into a shell history, issue, commit, or workflow log.
 
@@ -21,7 +21,7 @@ Required GitHub **variable** (not secret, but verify it is the final HTTPS API o
 FABRICASSIST_API_URL
 ```
 
-The migration secret is used only by the protected `migrate` job. The smoke credentials must be a dedicated alpha account with no personal data.
+The migration secret is used only by the protected `migrate` job. The smoke credentials must be a dedicated prerelease account with no personal data.
 
 ## Render runtime variable names
 
@@ -49,8 +49,8 @@ FABRICASSIST_QSTASH_NEXT_SIGNING_KEY
 FABRICASSIST_QSTASH_DESTINATION_URL
 ```
 
-For the R2-backed alpha, set `FABRICASSIST_S3_REGION=auto` and
-`FABRICASSIST_S3_FORCE_PATH_STYLE=false`. The API now rejects an alpha
+For the R2-backed prerelease, set `FABRICASSIST_S3_REGION=auto` and
+`FABRICASSIST_S3_FORCE_PATH_STYLE=false`. The API now rejects a prerelease
 configuration that omits either R2 credential instead of starting successfully
 and failing later while preparing an upload.
 

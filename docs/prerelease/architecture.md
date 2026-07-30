@@ -1,6 +1,9 @@
-# FabricAssist alpha architecture
+# FabricAssist prerelease architecture
 
-The alpha is the existing FabricAssist modular monolith, not a hosted fork. The API remains the `fabricassist-api` FastAPI container; local `fabricassist-worker` continues to run the Celery implementation. Only the infrastructure adapter selected at the composition boundary changes.
+The prerelease is the existing FabricAssist modular monolith, not a hosted
+fork. The API remains the `fabricassist-api` FastAPI container; local
+`fabricassist-worker` continues to run the Celery implementation. Only the
+infrastructure adapter selected at the composition boundary changes.
 
 ```text
 Cloudflare Pages (Expo static app)
@@ -12,7 +15,7 @@ Cloudflare Pages (Expo static app)
 
 ## Release profile
 
-| Concern | Alpha selection | Local/future compatibility |
+| Concern | Prerelease selection | Local/future compatibility |
 | --- | --- | --- |
 | Dispatcher | `qstash`; signed `/internal/jobs/qstash` delivery | Celery dispatcher and worker stay supported |
 | Database | Neon pooled runtime URL; direct Alembic URL | Existing SQLAlchemy/PostgreSQL path |
@@ -22,7 +25,7 @@ Cloudflare Pages (Expo static app)
 
 QStash payloads contain a schema version plus identifiers only. The internal endpoint verifies raw request bytes and the exact configured destination using current/next signing keys. PostgreSQL keeps durable stage/checkpoint state and the executor handles duplicate deliveries; neither QStash nor R2 is a system of record.
 
-The alpha QStash adapter persists two bounded transport checkpoints:
+The prerelease QStash adapter persists two bounded transport checkpoints:
 `validate_uploaded_images` and `execute_analysis`. The first commits the upload
 gate and publishes the second through QStash. The second invokes the same
 application-level `analyse_scan` use case used by Celery, then commits the

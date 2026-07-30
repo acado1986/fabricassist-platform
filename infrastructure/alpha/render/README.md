@@ -6,4 +6,4 @@ Configure the existing `backend/Dockerfile` as a Docker web service with
 uses only the protected `RENDER_DEPLOY_HOOK_URL` to trigger an exact selected
 SHA; it must never be stored in this repository.
 
-See `docs/alpha/render-api.md` for the FabricAssist operational contract.
+See `docs/prerelease/render-api.md` for the FabricAssist operational contract.

@@ -12,7 +12,7 @@ values in the API/worker provider dashboard. Never put secrets in
 | Template | Runtime topology | Required services |
 | --- | --- | --- |
 | `.env.example` | Local Docker (also matches the AWS/Celery shape) | PostgreSQL, Valkey, MinIO, API, Celery worker |
-| `.env.alpha.example` | Hosted free alpha | Neon/PostgreSQL, R2, Render API, QStash |
+| `.env.alpha.example` | Hosted prerelease profile | Neon/PostgreSQL, R2, Render API, QStash |
 | `.env.production.example` | Production release | Neon/PostgreSQL, R2, Render API, QStash, TLS Valkey, Cloudflare Pages |
 
 The application reads variables with the `FABRICASSIST_` prefix. Settings are
@@ -23,7 +23,7 @@ do not select providers. Environment variables override values from an ignored
 ## Accepted values and defaults
 
 The backend settings model accepts the following values. Numeric limits are
-inclusive. Alpha applies the smaller pool and image limits shown below.
+inclusive. The prerelease profile applies the smaller pool and image limits shown below.
 
 | Variable | Accepted values / format | Default |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ inclusive. Alpha applies the smaller pool and image limits shown below.
 | `FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` | Integer `1..365` | `7` |
 | `FABRICASSIST_UPLOAD_MAX_BYTES` | Positive integer bytes | `12582912` (12 MiB) |
 | `FABRICASSIST_UPLOAD_URL_MINUTES` | Integer `1..60` | `10` |
-| `FABRICASSIST_MAX_IMAGES_PER_SCAN` | Integer `1..20` (`1..3` alpha) | `8` (`3` alpha) |
+| `FABRICASSIST_MAX_IMAGES_PER_SCAN` | Integer `1..20` (`1..3` prerelease) | `8` (`3` prerelease) |
 | `FABRICASSIST_ANALYSIS_LEASE_MINUTES` | Integer `1..30` | `5` |
 | `FABRICASSIST_VISION_TIMEOUT_SECONDS` | Integer `5..120` | `120` |
 | `FABRICASSIST_VISION_MAX_INPUT_TOKENS` | Integer `1024..128000` | `128000` |
@@ -71,11 +71,11 @@ inclusive. Alpha applies the smaller pool and image limits shown below.
 | `FABRICASSIST_PRODUCT_HTTP_JSON_TIMEOUT_SECONDS` | Integer `1..30` | `10` |
 | `FABRICASSIST_PRODUCT_HTTP_JSON_MAX_RESPONSE_BYTES` | Integer `1024..1048576` | `262144` (256 KiB) |
 | `FABRICASSIST_PRODUCT_CACHE_MINUTES` | Integer `1..43200` | `1440` |
-| `FABRICASSIST_DATABASE_POOL_SIZE` | Integer `1..20` | `5` (`2` alpha) |
-| `FABRICASSIST_DATABASE_MAX_OVERFLOW` | Integer `0..20` | `10` (`1` alpha) |
-| `FABRICASSIST_DATABASE_POOL_RECYCLE_SECONDS` | Integer `-1..3600` (`-1` disables) | `-1` (`300` alpha) |
-| `FABRICASSIST_DATABASE_CONNECT_ATTEMPTS` | Integer `1..5` | `1` (`3` alpha) |
-| `FABRICASSIST_DATABASE_CONNECT_RETRY_SECONDS` | Number `0..30` | `0` (`1` alpha) |
+| `FABRICASSIST_DATABASE_POOL_SIZE` | Integer `1..20` | `5` (`2` prerelease) |
+| `FABRICASSIST_DATABASE_MAX_OVERFLOW` | Integer `0..20` | `10` (`1` prerelease) |
+| `FABRICASSIST_DATABASE_POOL_RECYCLE_SECONDS` | Integer `-1..3600` (`-1` disables) | `-1` (`300` prerelease) |
+| `FABRICASSIST_DATABASE_CONNECT_ATTEMPTS` | Integer `1..5` | `1` (`3` prerelease) |
+| `FABRICASSIST_DATABASE_CONNECT_RETRY_SECONDS` | Number `0..30` | `0` (`1` prerelease) |
 | `FABRICASSIST_CACHE_HOT_TTL_SECONDS` | Integer `60..604800` | `86400` |
 
 URL, slug, origin, bucket, model, and provider fields are strings subject to
@@ -88,17 +88,17 @@ String and secret fields use these formats:
   placeholder outside development.
 - `FABRICASSIST_DEFAULT_TENANT_SLUG`: non-empty slug, at least 3 characters.
 - `FABRICASSIST_APP_BASE_URL`, `FABRICASSIST_API_PUBLIC_URL`, and
-  `FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT`: URLs; alpha/production public URLs
+  `FABRICASSIST_OTEL_EXPORTER_OTLP_ENDPOINT`: URLs; prerelease/production public URLs
   must use HTTPS. The OTLP URL may be empty.
-- `FABRICASSIST_CORS_ALLOWED_ORIGINS`: comma-separated explicit origins; alpha
+- `FABRICASSIST_CORS_ALLOWED_ORIGINS`: comma-separated explicit origins; prerelease
   and production require HTTPS origins and reject `*`.
 - `FABRICASSIST_DATABASE_URL` and `FABRICASSIST_DATABASE_MIGRATION_URL`:
-  PostgreSQL URLs. Alpha requires `sslmode=require` and a separate migration URL.
+  PostgreSQL URLs. The prerelease profile requires `sslmode=require` and a separate migration URL.
 - `FABRICASSIST_VALKEY_URL` and `FABRICASSIST_CELERY_BROKER_URL`: Redis/Valkey
   or AMQP broker URLs; the latter is required only for Celery.
 - `FABRICASSIST_S3_ENDPOINT_URL`, `FABRICASSIST_S3_PUBLIC_ENDPOINT_URL`,
   `FABRICASSIST_S3_REGION`, `FABRICASSIST_S3_BUCKET`: S3-compatible connection
-  values. Alpha requires HTTPS, `region=auto`, and non-local bucket values.
+  values. The prerelease profile requires HTTPS, `region=auto`, and non-local bucket values.
 - `FABRICASSIST_QSTASH_TOKEN`, `FABRICASSIST_QSTASH_CURRENT_SIGNING_KEY`,
   `FABRICASSIST_QSTASH_NEXT_SIGNING_KEY`, and
   `FABRICASSIST_QSTASH_DESTINATION_URL`: required for `qstash`; destination must
@@ -119,13 +119,13 @@ String and secret fields use these formats:
 These variables choose replaceable infrastructure capabilities. They are not
 interchangeable:
 
-| Variable | Local default | Alpha value | What it controls |
+| Variable | Local default | Prerelease value | What it controls |
 | --- | --- | --- | --- |
 | `FABRICASSIST_JOB_DISPATCHER` | `celery` | `qstash` | Durable analysis/conversation delivery. |
 | `FABRICASSIST_CELERY_BROKER_URL` | Valkey Redis URL | unused | Celery's independent broker; it may be replaced by RabbitMQ without changing Valkey cache settings. |
 | `FABRICASSIST_HOT_CACHE_BACKEND` | `valkey` | `noop` | Optional transient evidence hot-cache acceleration. PostgreSQL remains authoritative. |
 | `FABRICASSIST_RATE_LIMITER_BACKEND` | `valkey` | `noop` | Request rate-limit counters. Production must use a real limiter. |
-| `FABRICASSIST_CONCURRENCY_GATE_BACKEND` | `valkey` | `noop` | Distributed analysis/conversation execution slots. Alpha uses `noop` because it has no Valkey service. |
+| `FABRICASSIST_CONCURRENCY_GATE_BACKEND` | `valkey` | `noop` | Distributed analysis/conversation execution slots. The prerelease profile uses `noop` because it has no Valkey service. |
 | `FABRICASSIST_OBJECT_STORAGE_BACKEND` | `s3` | `s3` | S3-compatible private object storage: MinIO locally, AWS S3 or R2 remotely. |
 | `FABRICASSIST_EVIDENCE_PROVIDER` | `mock` | `mock` | Structured image evidence extraction. |
 | `FABRICASSIST_CARE_PLANNER_PROVIDER` | `mock` | `mock` | Typed care-plan proposal. |
@@ -141,9 +141,9 @@ credentials and model settings.
 ### Runtime and API
 
 - `FABRICASSIST_ENVIRONMENT` and `FABRICASSIST_DEPLOYMENT_PROFILE` identify the
-  safety policy (`development/local`, `alpha`, or `production`).
+  safety policy (`development/local`, `alpha` prerelease, or `production`).
 - `FABRICASSIST_API_PUBLIC_URL`, `FABRICASSIST_APP_BASE_URL`, and
-  `FABRICASSIST_CORS_ALLOWED_ORIGINS` describe browser/device origins. Alpha and
+  `FABRICASSIST_CORS_ALLOWED_ORIGINS` describe browser/device origins. Prerelease and
   production must use HTTPS and explicit origins.
 - `FABRICASSIST_ACCESS_TOKEN_SECRET` signs access tokens. It is a secret and
   must be replaced outside isolated local development.
@@ -152,7 +152,7 @@ credentials and model settings.
 
 - `FABRICASSIST_DATABASE_URL` is the runtime PostgreSQL connection.
 - `FABRICASSIST_DATABASE_MIGRATION_URL` is the direct administrative migration
-  connection used by alpha migrations.
+  connection used by prerelease migrations.
 - `FABRICASSIST_VALKEY_URL` is used only by selected Valkey adapters.
 - `FABRICASSIST_CELERY_BROKER_URL` is independent from `VALKEY_URL`.
 
@@ -209,11 +209,11 @@ photographed-label safety rules.
 cp .env.example .env
 make up
 
-# Hosted alpha: configure .env.alpha.example values in Render/GitHub secrets;
+# Hosted prerelease: configure .env.alpha.example values in Render/GitHub secrets;
 # do not run `source .env.alpha.example` because it is a documentation template.
 make check-alpha-config
 ```
 
-After changing adapter selectors, restart the API and worker. For alpha, save
+After changing adapter selectors, restart the API and worker. For the prerelease profile, save
 the values in Render before running the protected live smoke; changing the
 repository example alone does not change Render's environment.
