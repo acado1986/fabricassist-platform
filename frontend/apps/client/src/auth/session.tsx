@@ -1,6 +1,7 @@
 import {
   createAuthenticatedApiClient,
   createClient,
+  bootstrapApiV1BootstrapGet,
   loginApiV1AuthLoginPost,
   logoutApiV1AuthLogoutPost,
   refreshApiV1AuthRefreshPost,
@@ -17,6 +18,7 @@ type SessionContextValue = {
   refreshAccessToken: () => Promise<string | null>;
   apiClient: FabricAssistApiClient;
   token: string | null;
+  bootstrapLogin: () => Promise<void>;
   signIn: (email: string, password: string, register: boolean) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -78,6 +80,16 @@ export function SessionProvider({
     await storeToken(result.data.access_token);
     router.replace('/scan');
   }
+  async function bootstrapLogin(): Promise<void> {
+    try {
+      await bootstrapApiV1BootstrapGet({
+        client: anonymousClient.current,
+      });
+    } catch {
+      // This is an opportunistic latency optimization. Sign-in remains the
+      // authoritative request and retains its normal visible error handling.
+    }
+  }
   async function refreshAccessToken(): Promise<string | null> {
     return performRefresh();
   }
@@ -96,7 +108,14 @@ export function SessionProvider({
   }
   return (
     <SessionContext.Provider
-      value={{ apiClient, token, signIn, signOut, refreshAccessToken }}
+      value={{
+        apiClient,
+        token,
+        signIn,
+        signOut,
+        refreshAccessToken,
+        bootstrapLogin,
+      }}
     >
       {children}
     </SessionContext.Provider>

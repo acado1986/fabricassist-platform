@@ -24,6 +24,7 @@ export const es: TranslationCatalog = {
     registerAction: 'Crear cuenta',
     loginError:
       'No hemos podido iniciar sesión. Revisa tus datos e inténtalo de nuevo.',
+    loginWarming: 'Iniciando el servicio alpha…',
     registerError:
       'No hemos podido crear la cuenta. Es posible que el correo ya esté registrado.',
     needAccount: '¿Eres nuevo en FabricAssist?',

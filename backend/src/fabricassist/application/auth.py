@@ -13,6 +13,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from fabricassist.infrastructure.persistence.models import RefreshSession, Tenant, User
 from fabricassist.settings import Settings
@@ -86,7 +87,9 @@ async def authenticate(
     user = await session.scalar(
         select(User).where(User.tenant_id == tenant.id, User.email == email)
     )
-    if user is None or not user.is_active or not verify_password(user.password_hash, password):
+    if user is None or not user.is_active:
+        return None
+    if not await run_in_threadpool(verify_password, user.password_hash, password):
         return None
     return user
 

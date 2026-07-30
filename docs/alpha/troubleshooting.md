@@ -15,6 +15,21 @@ Start with the release SHA, timestamp, affected scan ID, and redacted workflow j
 | Smoke ends `needs_review` | mock provider/evidence outcome | This can be expected; confirm terminal safe status and result reload, then use a separate controlled real-provider test if approved |
 | Secret marker in web bundle | `make build-alpha-web` output and frontend environment | Remove non-public value, rebuild, and rotate it if exposed; only the two documented Expo public variables are allowed |
 
+## First-login cold start
+
+The login screen calls `GET /api/v1/bootstrap` once, without credentials, while
+the customer enters their details. The endpoint warms the API and probes only
+the Neon runtime connection; it does not contact QStash, R2, Gemini, or product
+providers. A brief “Starting the alpha service…” message is informational: the
+sign-in button remains available and the login request is still authoritative.
+
+If first login remains slow after this warm-up, confirm that
+`FABRICASSIST_DATABASE_URL` is the pooled Neon TLS URL and that
+`FABRICASSIST_DATABASE_MIGRATION_URL` is the direct TLS URL. The existing alpha
+profile already uses the constrained `2 + 1` database pool and 300-second
+recycle. Measure database lookup and password-verification latency before
+changing Argon2 parameters.
+
 ## Escalation and acceptance
 
 After any recovery, run liveness/readiness and the manual diagnostic live smoke workflow. Re-run the affected resilience drill. If safety, tenant isolation, or message compatibility is uncertain, keep the release unaccepted and follow [rollback.md](rollback.md) rather than guessing.

@@ -332,6 +332,20 @@ def create_app(
             raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Service dependencies are unavailable.")
         return {"status": "ok"}
 
+    @app.get("/api/v1/bootstrap", tags=["health"])
+    async def bootstrap(
+        database_dependency: DatabasePort = Depends(get_database),  # noqa: B008
+    ) -> dict[str, str]:
+        """Warm only the API and database dependencies needed for sign-in.
+
+        It has no request body, authentication state, or user-specific response.
+        In particular, it does not contact the job dispatcher, object storage,
+        vision, or product-information providers.
+        """
+        if not await database_dependency.is_available():
+            raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Service dependencies are unavailable.")
+        return {"status": "ok"}
+
     @app.get(
         "/api/v1/metrics",
         tags=["operations"],

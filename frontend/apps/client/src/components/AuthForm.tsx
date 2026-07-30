@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'expo-router';
@@ -25,9 +25,11 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 export function AuthForm({ mode }: { mode: 'login' | 'register' }): ReactNode {
-  const { signIn } = useSession();
+  const { signIn, bootstrapLogin } = useSession();
   const { translate } = useTranslation();
   const [serverError, setServerError] = useState(false);
+  const bootstrapStarted = useRef(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(false);
   const {
     control,
     handleSubmit,
@@ -44,6 +46,13 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }): ReactNode {
       setServerError(true),
     );
   }
+
+  useEffect(() => {
+    if (register || bootstrapStarted.current) return;
+    bootstrapStarted.current = true;
+    setIsBootstrapping(true);
+    void bootstrapLogin().finally(() => setIsBootstrapping(false));
+  }, [bootstrapLogin, register]);
 
   return (
     <FoundationShell
@@ -100,6 +109,11 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }): ReactNode {
           <Text style={styles.error}>{translate('passwordError')}</Text>
         ) : null}
       </View>
+      {isBootstrapping ? (
+        <Text accessibilityLiveRegion="polite" style={styles.hint}>
+          {translate('loginWarming')}
+        </Text>
+      ) : null}
       {serverError ? (
         <View style={styles.errorBanner}>
           <Text style={styles.error}>

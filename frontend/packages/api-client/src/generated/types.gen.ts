@@ -883,6 +883,26 @@ export type RegisterApiV1AuthRegisterPostResponses = {
 
 export type RegisterApiV1AuthRegisterPostResponse = RegisterApiV1AuthRegisterPostResponses[keyof RegisterApiV1AuthRegisterPostResponses];
 
+export type BootstrapApiV1BootstrapGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bootstrap';
+};
+
+export type BootstrapApiV1BootstrapGetResponses = {
+    /**
+     * Response Bootstrap Api V1 Bootstrap Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type BootstrapApiV1BootstrapGetResponse = BootstrapApiV1BootstrapGetResponses[keyof BootstrapApiV1BootstrapGetResponses];
+
 export type ListGarmentsApiV1GarmentsGetData = {
     body?: never;
     path?: never;

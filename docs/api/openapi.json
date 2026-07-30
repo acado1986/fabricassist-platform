@@ -1513,6 +1513,32 @@
         ]
       }
     },
+    "/api/v1/bootstrap": {
+      "get": {
+        "description": "Warm only the API and database dependencies needed for sign-in.\n\nIt has no request body, authentication state, or user-specific response.\nIn particular, it does not contact the job dispatcher, object storage,\nvision, or product-information providers.",
+        "operationId": "bootstrap_api_v1_bootstrap_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Bootstrap Api V1 Bootstrap Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Bootstrap",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/api/v1/garments": {
       "get": {
         "operationId": "list_garments_api_v1_garments_get",

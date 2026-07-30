@@ -61,6 +61,22 @@ def test_readiness_uses_stable_error_envelope_when_database_is_unavailable() -> 
     assert body["error"]["correlation_id"] == response.headers["X-Correlation-ID"]
 
 
+def test_bootstrap_probes_only_the_database_needed_for_login() -> None:
+    with TestClient(create_app(Settings(environment="test"), AvailableDatabase())) as client:
+        response = client.get("/api/v1/bootstrap")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_bootstrap_uses_stable_error_envelope_when_database_is_unavailable() -> None:
+    with TestClient(create_app(Settings(environment="test"), UnavailableDatabase())) as client:
+        response = client.get("/api/v1/bootstrap")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+
+
 def test_not_found_uses_stable_error_envelope() -> None:
     with TestClient(create_app(Settings(environment="test"), AvailableDatabase())) as client:
         response = client.get("/missing")
