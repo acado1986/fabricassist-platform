@@ -35,6 +35,7 @@ export default function CustomerHistory(): ReactNode {
       if (!result.data) throw result.error;
     },
     onSuccess: async () => {
+      setDeletionCandidate(undefined);
       await queryClient.invalidateQueries({ queryKey: ['customer-history'] });
       await queryClient.invalidateQueries({ queryKey: ['scan-history'] });
     },

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import CustomerHistory from '../app/(customer)/history';
 
 const mockMutate = jest.fn();
@@ -20,7 +20,14 @@ jest.mock('../components/FoundationShell', () => ({
 }));
 
 jest.mock('@tanstack/react-query', () => ({
-  useMutation: () => ({ isError: false, isPending: false, mutate: mockMutate }),
+  useMutation: (options: { onSuccess: () => Promise<void> }) => ({
+    isError: false,
+    isPending: false,
+    mutate: (garmentId: string) => {
+      mockMutate(garmentId);
+      void options.onSuccess();
+    },
+  }),
   useQuery: () => ({
     data: [
       {
@@ -41,7 +48,7 @@ jest.mock('@tanstack/react-query', () => ({
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@expo/vector-icons/Feather', () => 'Feather');
 
-test('history list requires dialog confirmation before deleting a garment history', () => {
+test('history list closes the dialog after confirmed garment deletion', async () => {
   const screen = render(<CustomerHistory />);
 
   fireEvent.press(screen.getByLabelText('deleteGarment'));
@@ -54,4 +61,7 @@ test('history list requires dialog confirmation before deleting a garment histor
   expect(mockMutate).toHaveBeenCalledWith(
     '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
   );
+  await waitFor(() => {
+    expect(screen.queryByText('deleteGarmentConfirmDescription')).toBeNull();
+  });
 });
