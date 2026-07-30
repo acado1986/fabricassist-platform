@@ -1,6 +1,5 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -19,11 +18,13 @@ import {
 } from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
+import { GarmentDeletionConfirmation } from '../../components/GarmentDeletionConfirmation';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
 export default function CustomerHistory(): ReactNode {
   const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
+  const [deletionCandidate, setDeletionCandidate] = useState<string>();
   const queryClient = useQueryClient();
   const deleteGarment = useMutation({
     mutationFn: async (garmentId: string) => {
@@ -38,20 +39,6 @@ export default function CustomerHistory(): ReactNode {
       await queryClient.invalidateQueries({ queryKey: ['scan-history'] });
     },
   });
-  const confirmDeletion = (garmentId: string): void => {
-    Alert.alert(
-      translate('deleteGarmentConfirmTitle'),
-      translate('deleteGarmentConfirmDescription'),
-      [
-        { style: 'cancel', text: translate('cameraCancel') },
-        {
-          style: 'destructive',
-          text: translate('deleteGarmentConfirmAction'),
-          onPress: () => deleteGarment.mutate(garmentId),
-        },
-      ],
-    );
-  };
   const {
     data: garments,
     isError,
@@ -137,7 +124,7 @@ export default function CustomerHistory(): ReactNode {
                 accessibilityLabel={translate('deleteGarment')}
                 accessibilityRole="button"
                 disabled={deleteGarment.isPending}
-                onPress={() => confirmDeletion(garment.id)}
+                onPress={() => setDeletionCandidate(garment.id)}
                 style={({ pressed }) => [
                   styles.deleteButton,
                   pressed && styles.pressed,
@@ -154,6 +141,14 @@ export default function CustomerHistory(): ReactNode {
           </Text>
         ) : null}
       </ScrollView>
+      <GarmentDeletionConfirmation
+        isDeleting={deleteGarment.isPending}
+        onCancel={() => setDeletionCandidate(undefined)}
+        onConfirm={() => {
+          if (deletionCandidate) deleteGarment.mutate(deletionCandidate);
+        }}
+        visible={Boolean(deletionCandidate)}
+      />
     </FoundationShell>
   );
 }
