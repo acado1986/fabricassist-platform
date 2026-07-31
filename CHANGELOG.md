@@ -21,6 +21,8 @@ Changes for the next release will be added here before a new version is tagged.
 - Retired the legacy hosted alpha/prerelease runtime profile; production is now
   the only active hosted deployment profile, with historical runbooks archived
   and staging explicitly deferred.
+- Added a manually triggered GitHub Actions workflow for production retention,
+  avoiding a separate Render Cron service and documenting protected settings.
 
 ## [1.2.0] — 2026-07-31
 

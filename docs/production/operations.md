@@ -114,9 +114,19 @@ same SHA. Only `EXPO_PUBLIC_FABRICASSIST_API_URL` and
 `EXPO_PUBLIC_FABRICASSIST_ENVIRONMENT=production` may enter the web bundle.
 
 Do not add a Render pre-deploy migration command. Do not put credentials in
-Docker build arguments. A retention/cleanup pass may be run with
-`backend/scripts/run_retention.py` by an approved external scheduler; the
-business use case remains scheduler-independent.
+Docker build arguments. A retention/cleanup pass may be run manually from the
+**Run retention** GitHub Actions workflow
+(`.github/workflows/run-retention.yml`). This avoids adding a separate Render
+Cron service while keeping production credentials in protected GitHub settings.
+The workflow uses the same scheduler-independent
+`backend/scripts/run_retention.py` entry point.
+
+Configure these repository Actions secrets: `FABRICASSIST_DATABASE_URL`,
+`FABRICASSIST_S3_ENDPOINT_URL`, `FABRICASSIST_S3_ACCESS_KEY`,
+`FABRICASSIST_S3_SECRET_KEY`, and `FABRICASSIST_S3_BUCKET`. Configure the
+repository Actions variable `FABRICASSIST_MERGED_GARMENT_RETENTION_DAYS` (for
+example, `30`). Run it from **GitHub → Actions → Run retention → Run workflow**.
+FabricAssist loads only `FABRICASSIST_`-prefixed settings.
 
 ## Release smoke and resilience checks
 
