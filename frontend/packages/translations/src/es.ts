@@ -132,6 +132,15 @@ export const es: TranslationCatalog = {
     deleteGarmentConfirmAction: 'Eliminar historial',
     deleteGarmentRequestFailed:
       'No se ha podido eliminar este historial de prenda.',
+    selectGarments: 'Seleccionar prendas',
+    finishGarmentSelection: 'Terminar selección',
+    selectGarmentForDeletion: 'Seleccionar prenda para eliminar',
+    selectedGarmentsCount: '{count} seleccionadas',
+    deleteSelectedGarments: 'Eliminar seleccionadas',
+    deleteGarmentsConfirmTitle: '¿Eliminar los historiales seleccionados?',
+    deleteGarmentsConfirmDescription:
+      'Se eliminarán {count} prendas, sus análisis, conversaciones, historial de servicio y fotos privadas. Esta acción no se puede deshacer.',
+    deleteGarmentsConfirmAction: 'Eliminar historiales seleccionados',
     previousAnalyses: 'Análisis anteriores',
     previousAnalysesEmpty: 'Aún no tienes análisis anteriores.',
     previousAnalysis: 'Análisis de cuidado',

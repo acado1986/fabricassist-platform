@@ -24,18 +24,24 @@ import { useTranslation } from '../../i18n/TranslationProvider';
 export default function CustomerHistory(): ReactNode {
   const { apiClient, token } = useSession();
   const { locale, translate } = useTranslation();
-  const [deletionCandidate, setDeletionCandidate] = useState<string>();
+  const [deletionCandidates, setDeletionCandidates] = useState<string[]>([]);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectedGarmentIds, setSelectedGarmentIds] = useState<string[]>([]);
   const queryClient = useQueryClient();
   const deleteGarment = useMutation({
-    mutationFn: async (garmentId: string) => {
-      const result = await deleteGarmentApiV1GarmentsGarmentIdDelete({
-        client: apiClient,
-        path: { garment_id: garmentId },
-      });
-      if (!result.data) throw result.error;
+    mutationFn: async (garmentIds: string[]) => {
+      for (const garmentId of garmentIds) {
+        const result = await deleteGarmentApiV1GarmentsGarmentIdDelete({
+          client: apiClient,
+          path: { garment_id: garmentId },
+        });
+        if (!result.data) throw result.error;
+      }
     },
     onSuccess: async () => {
-      setDeletionCandidate(undefined);
+      setDeletionCandidates([]);
+      setSelectedGarmentIds([]);
+      setIsSelecting(false);
       await queryClient.invalidateQueries({ queryKey: ['customer-history'] });
       await queryClient.invalidateQueries({ queryKey: ['scan-history'] });
     },
@@ -59,6 +65,59 @@ export default function CustomerHistory(): ReactNode {
       description={translate('customerHistoryDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        {!isLoading && !isError && garments?.length ? (
+          <View style={styles.selectionToolbar}>
+            <Pressable
+              accessibilityLabel={translate(
+                isSelecting ? 'finishGarmentSelection' : 'selectGarments',
+              )}
+              accessibilityRole="button"
+              disabled={deleteGarment.isPending}
+              onPress={() => {
+                setIsSelecting((current) => !current);
+                setSelectedGarmentIds([]);
+              }}
+              style={({ pressed }) => [
+                styles.selectionButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.selectionButtonText}>
+                {translate(
+                  isSelecting ? 'finishGarmentSelection' : 'selectGarments',
+                )}
+              </Text>
+            </Pressable>
+            {isSelecting ? (
+              <>
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={styles.selectionCount}
+                >
+                  {translate('selectedGarmentsCount').replace(
+                    '{count}',
+                    String(selectedGarmentIds.length),
+                  )}
+                </Text>
+                <Pressable
+                  accessibilityLabel={translate('deleteSelectedGarments')}
+                  accessibilityRole="button"
+                  disabled={
+                    deleteGarment.isPending || selectedGarmentIds.length === 0
+                  }
+                  onPress={() => setDeletionCandidates(selectedGarmentIds)}
+                  style={({ pressed }) => [
+                    styles.deleteSelectedButton,
+                    pressed && styles.pressed,
+                    selectedGarmentIds.length === 0 && styles.disabled,
+                  ]}
+                >
+                  <Feather color={colors.background} name="trash-2" size={18} />
+                </Pressable>
+              </>
+            ) : null}
+          </View>
+        ) : null}
         {isLoading ? <Text>{translate('resultLoading')}</Text> : null}
         {isError ? <Text>{translate('customerHistoryLoadFailed')}</Text> : null}
         {!isLoading && !isError && garments?.length === 0 ? (
@@ -66,14 +125,31 @@ export default function CustomerHistory(): ReactNode {
         ) : null}
         {garments?.map((garment) => {
           const identifier = garment.identifiers?.[0] ?? garment.id;
+          const isSelected = selectedGarmentIds.includes(garment.id);
           return (
             <View key={garment.id} style={styles.garment}>
               <Pressable
-                accessibilityLabel={translate('viewGarmentHistory')}
+                accessibilityLabel={translate(
+                  isSelecting
+                    ? 'selectGarmentForDeletion'
+                    : 'viewGarmentHistory',
+                )}
                 accessibilityRole="button"
-                onPress={() => router.push(`/garments/${garment.id}`)}
+                accessibilityState={{ selected: isSelected }}
+                onPress={() => {
+                  if (isSelecting) {
+                    setSelectedGarmentIds((current) =>
+                      current.includes(garment.id)
+                        ? current.filter((id) => id !== garment.id)
+                        : [...current, garment.id],
+                    );
+                    return;
+                  }
+                  router.push(`/garments/${garment.id}`);
+                }}
                 style={({ pressed }) => [
                   styles.garmentDetails,
+                  isSelected && styles.garmentSelected,
                   pressed && styles.pressed,
                 ]}
               >
@@ -116,23 +192,31 @@ export default function CustomerHistory(): ReactNode {
                   </Text>
                 </View>
                 <Feather
-                  color={colors.primary}
-                  name="chevron-right"
+                  color={isSelected ? colors.primary : colors.muted}
+                  name={
+                    isSelecting
+                      ? isSelected
+                        ? 'check-square'
+                        : 'square'
+                      : 'chevron-right'
+                  }
                   size={20}
                 />
               </Pressable>
-              <Pressable
-                accessibilityLabel={translate('deleteGarment')}
-                accessibilityRole="button"
-                disabled={deleteGarment.isPending}
-                onPress={() => setDeletionCandidate(garment.id)}
-                style={({ pressed }) => [
-                  styles.deleteButton,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Feather color={colors.danger} name="trash-2" size={20} />
-              </Pressable>
+              {!isSelecting ? (
+                <Pressable
+                  accessibilityLabel={translate('deleteGarment')}
+                  accessibilityRole="button"
+                  disabled={deleteGarment.isPending}
+                  onPress={() => setDeletionCandidates([garment.id])}
+                  style={({ pressed }) => [
+                    styles.deleteButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Feather color={colors.danger} name="trash-2" size={20} />
+                </Pressable>
+              ) : null}
             </View>
           );
         })}
@@ -143,12 +227,15 @@ export default function CustomerHistory(): ReactNode {
         ) : null}
       </ScrollView>
       <GarmentDeletionConfirmation
+        garmentCount={deletionCandidates.length}
         isDeleting={deleteGarment.isPending}
-        onCancel={() => setDeletionCandidate(undefined)}
+        onCancel={() => setDeletionCandidates([])}
         onConfirm={() => {
-          if (deletionCandidate) deleteGarment.mutate(deletionCandidate);
+          if (deletionCandidates.length > 0) {
+            deleteGarment.mutate(deletionCandidates);
+          }
         }}
-        visible={Boolean(deletionCandidate)}
+        visible={deletionCandidates.length > 0}
       />
     </FoundationShell>
   );
@@ -179,11 +266,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: spacing.medium,
   },
+  selectionToolbar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.small,
+  },
+  selectionButton: {
+    borderColor: colors.primary,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    paddingHorizontal: spacing.medium,
+    paddingVertical: spacing.small,
+  },
+  selectionButtonText: { color: colors.primary, fontWeight: '700' },
+  selectionCount: { color: colors.muted, flex: 1 },
+  deleteSelectedButton: {
+    alignItems: 'center',
+    backgroundColor: colors.danger,
+    borderRadius: radii.small,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
   garmentDetails: {
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
     gap: spacing.medium,
+  },
+  garmentSelected: {
+    backgroundColor: colors.background,
+    borderRadius: radii.small,
   },
   garmentCopy: { flex: 1, gap: spacing.xsmall },
   thumbnail: { borderRadius: radii.small, height: 72, width: 72 },
@@ -200,4 +313,5 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.72 },
   deleteButton: { padding: spacing.small },
   deleteError: { color: colors.danger },
+  disabled: { opacity: 0.55 },
 });
