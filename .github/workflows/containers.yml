@@ -40,7 +40,7 @@ jobs:
             -v "$PWD:/output" aquasec/trivy:0.59.1 image --format cyclonedx \
             --output "/output/fabricassist-${{ matrix.name }}.cdx.json" \
             "fabricassist-${{ matrix.name }}:ci"
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: sbom-${{ matrix.name }}
           path: fabricassist-${{ matrix.name }}.cdx.json
