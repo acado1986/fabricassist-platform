@@ -13,6 +13,10 @@ export type AnalysisResponse = {
      */
     operation_key: string;
     /**
+     * Run Id
+     */
+    run_id?: string | null;
+    /**
      * Scan Id
      */
     scan_id: string;
@@ -472,6 +476,10 @@ export type MessageResponse = {
      */
     role: string;
     /**
+     * Run Id
+     */
+    run_id?: string | null;
+    /**
      * Status
      */
     status: string;
@@ -621,6 +629,40 @@ export type ReviewResponse = {
 };
 
 /**
+ * RunResponse
+ */
+export type RunResponse = {
+    /**
+     * Completed At
+     */
+    completed_at?: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Error Code
+     */
+    error_code?: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Scan Id
+     */
+    scan_id: string;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * ScanHistoryResponse
  */
 export type ScanHistoryResponse = {
@@ -758,6 +800,16 @@ export type SessionResponse = {
      * Token Type
      */
     token_type?: string;
+};
+
+/**
+ * StartRunRequest
+ */
+export type StartRunRequest = {
+    /**
+     * Image Ids
+     */
+    image_ids: Array<string>;
 };
 
 /**
@@ -1169,6 +1221,41 @@ export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses = {
 
 export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponse = AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses[keyof AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses];
 
+export type HandleHttpGetApiV1GraphqlGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/graphql';
+};
+
+export type HandleHttpGetApiV1GraphqlGetErrors = {
+    /**
+     * Not found if GraphiQL or query via GET are not enabled.
+     */
+    404: unknown;
+};
+
+export type HandleHttpGetApiV1GraphqlGetResponses = {
+    /**
+     * The GraphiQL integrated development environment.
+     */
+    200: unknown;
+};
+
+export type HandleHttpPostApiV1GraphqlPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/graphql';
+};
+
+export type HandleHttpPostApiV1GraphqlPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type LiveApiV1HealthLiveGetData = {
     body?: never;
     path?: never;
@@ -1386,6 +1473,136 @@ export type ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses = 
 };
 
 export type ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponse = ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses[keyof ConfirmServiceEventApiV1ReviewsReviewIdServiceEventsPostResponses];
+
+export type GetRunApiV1RunsRunIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/v1/runs/{run_id}';
+};
+
+export type GetRunApiV1RunsRunIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRunApiV1RunsRunIdGetError = GetRunApiV1RunsRunIdGetErrors[keyof GetRunApiV1RunsRunIdGetErrors];
+
+export type GetRunApiV1RunsRunIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunResponse;
+};
+
+export type GetRunApiV1RunsRunIdGetResponse = GetRunApiV1RunsRunIdGetResponses[keyof GetRunApiV1RunsRunIdGetResponses];
+
+export type CancelRunApiV1RunsRunIdCancelPostData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/v1/runs/{run_id}/cancel';
+};
+
+export type CancelRunApiV1RunsRunIdCancelPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelRunApiV1RunsRunIdCancelPostError = CancelRunApiV1RunsRunIdCancelPostErrors[keyof CancelRunApiV1RunsRunIdCancelPostErrors];
+
+export type CancelRunApiV1RunsRunIdCancelPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunResponse;
+};
+
+export type CancelRunApiV1RunsRunIdCancelPostResponse = CancelRunApiV1RunsRunIdCancelPostResponses[keyof CancelRunApiV1RunsRunIdCancelPostResponses];
+
+export type RunEventsApiV1RunsRunIdEventsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Last-Event-Id
+         */
+        'Last-Event-ID'?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/v1/runs/{run_id}/events';
+};
+
+export type RunEventsApiV1RunsRunIdEventsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunEventsApiV1RunsRunIdEventsGetError = RunEventsApiV1RunsRunIdEventsGetErrors[keyof RunEventsApiV1RunsRunIdEventsGetErrors];
+
+export type RunEventsApiV1RunsRunIdEventsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type RetryRunApiV1RunsRunIdRetryPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/v1/runs/{run_id}/retry';
+};
+
+export type RetryRunApiV1RunsRunIdRetryPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetryRunApiV1RunsRunIdRetryPostError = RetryRunApiV1RunsRunIdRetryPostErrors[keyof RetryRunApiV1RunsRunIdRetryPostErrors];
+
+export type RetryRunApiV1RunsRunIdRetryPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RunResponse;
+};
+
+export type RetryRunApiV1RunsRunIdRetryPostResponse = RetryRunApiV1RunsRunIdRetryPostResponses[keyof RetryRunApiV1RunsRunIdRetryPostResponses];
 
 export type CreateScanApiV1ScansPostData = {
     body: CreateScanRequest;
@@ -1896,6 +2113,42 @@ export type ScanResultApiV1ScansScanIdResultGetResponses = {
 };
 
 export type ScanResultApiV1ScansScanIdResultGetResponse = ScanResultApiV1ScansScanIdResultGetResponses[keyof ScanResultApiV1ScansScanIdResultGetResponses];
+
+export type StartRunApiV1ScansScanIdRunsPostData = {
+    body: StartRunRequest;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Scan Id
+         */
+        scan_id: string;
+    };
+    query?: never;
+    url: '/api/v1/scans/{scan_id}/runs';
+};
+
+export type StartRunApiV1ScansScanIdRunsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StartRunApiV1ScansScanIdRunsPostError = StartRunApiV1ScansScanIdRunsPostErrors[keyof StartRunApiV1ScansScanIdRunsPostErrors];
+
+export type StartRunApiV1ScansScanIdRunsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RunResponse;
+};
+
+export type StartRunApiV1ScansScanIdRunsPostResponse = StartRunApiV1ScansScanIdRunsPostResponses[keyof StartRunApiV1ScansScanIdRunsPostResponses];
 
 export type CompleteUploadApiV1ScansScanIdUploadsCompletePostData = {
     body: CompleteUploadRequest;

@@ -1,6 +1,7 @@
 import {
   createAuthenticatedApiClient,
   createClient,
+  createGraphQLExecutor,
   bootstrapApiV1BootstrapGet,
   loginApiV1AuthLoginPost,
   logoutApiV1AuthLogoutPost,
@@ -25,6 +26,7 @@ import { restoreAccessToken } from './restoreSession';
 type SessionContextValue = {
   refreshAccessToken: () => Promise<string | null>;
   apiClient: FabricAssistApiClient;
+  graphql: ReturnType<typeof createGraphQLExecutor>;
   isSessionReady: boolean;
   token: string | null;
   bootstrapLogin: () => Promise<void>;
@@ -66,6 +68,13 @@ export function SessionProvider({
   const [apiClient] = useState(() =>
     createAuthenticatedApiClient({
       baseUrl: getApiBaseUrl(),
+      getAccessToken: () => tokenRef.current,
+      refreshAccessToken: performRefresh,
+    }),
+  );
+  const [graphql] = useState(() =>
+    createGraphQLExecutor({
+      endpoint: `${getApiBaseUrl()}/api/v1/graphql`,
       getAccessToken: () => tokenRef.current,
       refreshAccessToken: performRefresh,
     }),
@@ -134,6 +143,7 @@ export function SessionProvider({
     <SessionContext.Provider
       value={{
         apiClient,
+        graphql,
         isSessionReady,
         token,
         signIn,

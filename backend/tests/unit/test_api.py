@@ -193,12 +193,33 @@ class ImageLifecycleSession:
         self.added: list[object] = []
         self.committed = False
         self.commit_count = 0
+        self.completed_image = type("CompletedImage", (), {"id": uuid4()})()
 
     async def scalar(self, statement: object) -> object | None:
-        return self.responses.pop(0)
+        if self.responses:
+            return self.responses.pop(0)
+        return next(
+            (value for value in self.added if value.__class__.__name__ == "AnalysisJobOperation"),
+            None,
+        )
+
+    async def scalars(self, statement: object):
+        image = self.completed_image
+
+        class Result:
+            def all(self) -> list[object]:
+                return [image]
+
+        return Result()
 
     def add(self, value: object) -> None:
         self.added.append(value)
+
+    def add_all(self, values: list[object]) -> None:
+        self.added.extend(values)
+
+    async def flush(self) -> None:
+        pass
 
     async def commit(self) -> None:
         self.committed = True
@@ -723,7 +744,7 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation() -> No
 
     from fabricassist.api.routes.scans import request_analysis
     from fabricassist.application.jobs import AnalysisJobMessage
-    from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan, User
+    from fabricassist.infrastructure.persistence.models import AiRun, Scan, User
 
     class RecordingDispatcher:
         def __init__(self) -> None:
@@ -759,7 +780,7 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation() -> No
         cast(JobDispatcher, dispatcher),
         "repeat-analysis",
     )
-    operation = next(value for value in session.added if isinstance(value, AnalysisJobOperation))
+    operation = next(value for value in session.added if isinstance(value, AiRun))
     session.responses.extend([scan, 1, operation])
     repeated = await request_analysis(
         scan.id,
@@ -771,7 +792,7 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation() -> No
     )
 
     assert first == repeated
-    assert first.operation_key == "repeat-analysis"
+    assert first.operation_key == f"run:{operation.id}"
     assert len(dispatcher.messages) == 1
     assert session.commit_count == 2
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,6 +89,7 @@ async def enqueue_analysis(
     operation_key: str,
     correlation_id: str,
     dispatcher: JobDispatcher,
+    run_id: UUID | None = None,
 ) -> AnalysisJobOperation:
     """Persist job intent before publishing through the selected adapter.
 
@@ -113,6 +114,7 @@ async def enqueue_analysis(
             operation_key=operation_key,
             stage=INITIAL_ANALYSIS_STAGE,
             correlation_id=correlation_id,
+            run_id=run_id,
         )
         session.add(operation)
         scan.analysis_operation_key = operation_key

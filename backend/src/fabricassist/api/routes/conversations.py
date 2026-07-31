@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.ai_runs import create_conversation_run
 from fabricassist.application.job_orchestration import publish_conversation_message
 from fabricassist.application.jobs import (
     ConversationJobDispatcher,
@@ -41,6 +42,7 @@ class MessageResponse(BaseModel):
     care_result_id: UUID
     uncertainties: list[str] = Field(default_factory=list)
     follow_up_questions: list[str] = Field(default_factory=list)
+    run_id: UUID | None = None
 
 
 class MessagePage(BaseModel):
@@ -78,6 +80,7 @@ def response(message: ConversationMessage) -> MessageResponse:
         care_result_id=message.care_result_id,
         uncertainties=string_items(message.uncertainties),
         follow_up_questions=string_items(message.follow_up_questions),
+        run_id=message.run_id,
     )
 
 
@@ -213,6 +216,16 @@ async def post_message(
         dispatch_correlation_id=str(http_request.state.correlation_id),
     )
     session.add(message)
+    await session.flush()
+    run = await create_conversation_run(
+        session,
+        user=user,
+        scan_id=scan.id,
+        idempotency_key=idempotency_key or f"message:{message.id}",
+        correlation_id=str(http_request.state.correlation_id),
+        message_id=message.id,
+    )
+    message.run_id = run.id
     await session.commit()
     try:
         await publish_conversation_message(

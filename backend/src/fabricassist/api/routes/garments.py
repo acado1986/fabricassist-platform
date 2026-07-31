@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import enqueue_deletion
@@ -100,11 +101,35 @@ async def owned_garment(session: AsyncSession, user: User, garment_id: UUID) -> 
             Garment.id == garment_id,
             Garment.tenant_id == user.tenant_id,
             Garment.user_id == user.id,
+            Garment.archived_at.is_(None),
         )
     )
     if garment is None:
         raise HTTPException(404, "Garment was not found.")
     return garment
+
+
+async def archive_if_orphaned(
+    session: AsyncSession,
+    *,
+    garment: Garment,
+    excluding_scan_id: UUID,
+) -> bool:
+    """Hide a superseded garment only when no live scan still references it."""
+    references = await session.scalar(
+        select(func.count())
+        .select_from(Scan)
+        .where(
+            Scan.garment_id == garment.id,
+            Scan.id != excluding_scan_id,
+            Scan.status != "deleted",
+            Scan.tenant_id == garment.tenant_id,
+        )
+    )
+    if references:
+        return False
+    garment.archived_at = datetime.now(UTC)
+    return True
 
 
 async def response_for(
@@ -168,7 +193,9 @@ async def list_garments(
         (
             await session.scalars(
                 select(Garment).where(
-                    Garment.tenant_id == user.tenant_id, Garment.user_id == user.id
+                    Garment.tenant_id == user.tenant_id,
+                    Garment.user_id == user.id,
+                    Garment.archived_at.is_(None),
                 )
             )
         ).all()
@@ -399,7 +426,21 @@ async def confirm_identity_candidate(
         if existing.garment_id != garment.id:
             raise HTTPException(409, "This scan already has a different confirmed garment.")
         return await response_for(session, garment, storage)
+    previous_garment_id = scan.garment_id
     scan.garment_id = garment.id
+    if previous_garment_id is not None and previous_garment_id != garment.id:
+        previous_garment = await session.scalar(
+            select(Garment).where(
+                Garment.id == previous_garment_id,
+                Garment.tenant_id == user.tenant_id,
+            )
+        )
+        if previous_garment is not None:
+            await archive_if_orphaned(
+                session,
+                garment=previous_garment,
+                excluding_scan_id=scan.id,
+            )
     candidate.status = "confirmed"
     session.add(
         GarmentIdentityConfirmation(

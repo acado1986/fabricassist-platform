@@ -18,7 +18,7 @@ import {
   completeUploadApiV1ScansScanIdUploadsCompletePost,
   createScanApiV1ScansPost,
   productLookupApiV1ScansScanIdProductLookupPost,
-  requestAnalysisApiV1ScansScanIdAnalysePost,
+  startRunApiV1ScansScanIdRunsPost,
 } from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
@@ -144,6 +144,7 @@ export default function Scan(): ReactNode {
       });
       if (!scanResult.data) throw new Error('create');
       const scan = scanResult.data;
+      const imageIds: string[] = [];
       for (const [index, item] of items.entries()) {
         const contentType =
           item.asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
@@ -174,6 +175,7 @@ export default function Scan(): ReactNode {
             },
           });
         if (!completion.data) throw new Error('complete');
+        imageIds.push(upload.image_id);
       }
       if (barcode.trim()) {
         const lookup = await productLookupApiV1ScansScanIdProductLookupPost({
@@ -183,12 +185,17 @@ export default function Scan(): ReactNode {
         });
         if (!lookup.data) throw new Error('barcode');
       }
-      const analysis = await requestAnalysisApiV1ScansScanIdAnalysePost({
+      const analysis = await startRunApiV1ScansScanIdRunsPost({
         client: apiClient,
         path: { scan_id: scan.scan_id },
+        headers: { 'Idempotency-Key': `scan-run-${scan.scan_id}` },
+        body: { image_ids: imageIds },
       });
-      if (!analysis.data) throw new Error('analyse');
-      router.replace({ pathname: '/result', params: { scanId: scan.scan_id } });
+      if (!analysis.data) throw new Error('run');
+      router.replace({
+        pathname: '/result',
+        params: { scanId: scan.scan_id, runId: analysis.data.run_id },
+      });
     } catch {
       setError(translate('scanUploadFailed'));
     } finally {

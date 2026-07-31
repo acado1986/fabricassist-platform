@@ -1,0 +1,6 @@
+#import "../../graphql/fragments/scan.graphql"
+query ScanRunRecovery($id: UUID!) {
+  scan(id: $id) {
+    ...ScanSummary
+  }
+}

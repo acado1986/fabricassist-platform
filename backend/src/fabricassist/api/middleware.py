@@ -112,7 +112,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if (
             not self._settings.rate_limit_enabled
             or self._settings.environment == "test"
-            or request.method in {"GET", "HEAD", "OPTIONS"}
+            or (
+                request.method in {"GET", "HEAD", "OPTIONS"}
+                and not request.url.path.endswith("/events")
+            )
         ):
             return await call_next(request)
         subject = self._subject(request)
@@ -144,6 +147,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return "analysis", self._settings.rate_limit_analysis_per_minute
         if path.endswith("/messages"):
             return "chat", self._settings.rate_limit_chat_per_minute
+        if path.endswith("/events"):
+            return "stream", self._settings.rate_limit_global_per_minute
         return "mutation", self._settings.rate_limit_global_per_minute
 
     def _subject(self, request: Request) -> str:

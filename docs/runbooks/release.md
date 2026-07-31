@@ -1,5 +1,23 @@
 # Release gates
 
+## Current prerelease
+
+The current cumulative prerelease is `v0.1.0-alpha.30` (2026-07-31). Its
+release notes are maintained in the root [`CHANGELOG.md`](../../CHANGELOG.md).
+Create and push the immutable tag only after the working tree contains the
+intended release commit:
+
+```bash
+git tag -a v0.1.0-alpha.30 -m "release: FabricAssist 0.1.0-alpha.30"
+git push origin v0.1.0-alpha.30
+```
+
+Pushing an `v*-alpha*` tag starts the prerelease deployment workflow. It runs
+quality checks, migrations, Render API deployment, Cloudflare Pages deployment,
+and hosted smoke tests. Do not move or reuse a published tag. Stable production
+uses the separate exact `vMAJOR.MINOR.PATCH` workflow and requires all production
+approval gates below.
+
 Phase 19 code readiness is necessary but does not itself approve production.
 Record date, actor, artifact digest, command output, and exception owner for each
 gate:

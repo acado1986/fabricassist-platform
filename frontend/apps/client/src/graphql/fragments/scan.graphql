@@ -1,0 +1,10 @@
+fragment ScanSummary on ScanType {
+  id
+  status
+  requestedLanguage
+  progressPercent
+  analysisStage
+  errorCode
+  garmentId
+  createdAt
+}

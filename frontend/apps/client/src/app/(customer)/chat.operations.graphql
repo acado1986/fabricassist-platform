@@ -1,0 +1,14 @@
+query ScanMessages($scanId: UUID!, $first: Int!, $after: UUID) {
+  messages(scanId: $scanId, first: $first, after: $after) {
+    items {
+      id
+      role
+      status
+      text
+      createdAt
+    }
+    pageInfo {
+      nextCursor
+    }
+  }
+}

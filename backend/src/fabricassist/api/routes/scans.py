@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.ai_runs import AiRunStateError, create_analysis_run
 from fabricassist.application.analysis import TEMPLATE_VERSION, render_rich_result
 from fabricassist.application.job_orchestration import enqueue_analysis
 from fabricassist.application.jobs import JobDispatcher
@@ -90,6 +91,7 @@ class AnalysisResponse(BaseModel):
     scan_id: UUID
     status: str
     operation_key: str
+    run_id: UUID | None = None
 
 
 class ResultResponse(BaseModel):
@@ -369,10 +371,23 @@ async def complete_upload(
         raise HTTPException(404, "Image was not found.")
     if image.completed_at is None:
         metadata = storage.verify_image(image.object_key, request.content_type)
+        image_sha256 = hashlib.sha256(storage.read_object(image.object_key)).hexdigest()
+        duplicate = await session.scalar(
+            select(ScanImage.id).where(
+                ScanImage.scan_id == scan.id,
+                ScanImage.id != image.id,
+                ScanImage.completed_at.is_not(None),
+                ScanImage.sha256 == image_sha256,
+                ScanImage.deleted_at.is_(None),
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(409, "This image has already been uploaded to the scan.")
         image.mime_type = metadata.content_type
         image.byte_size = metadata.byte_size
         image.width = metadata.width
         image.height = metadata.height
+        image.sha256 = image_sha256
         image.completed_at = datetime.now(UTC)
         await session.commit()
     return await scan_detail(scan_id, session, user)
@@ -398,18 +413,42 @@ async def request_analysis(
     )
     if not count:
         raise HTTPException(409, "Complete at least one image before analysis.")
+    image_ids = list(
+        (
+            await session.scalars(
+                select(ScanImage.id).where(
+                    ScanImage.scan_id == scan.id,
+                    ScanImage.completed_at.is_not(None),
+                    ScanImage.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
     key = idempotency_key or f"scan:{scan.id}"
+    try:
+        run = await create_analysis_run(
+            session,
+            user=user,
+            scan_id=scan.id,
+            image_ids=image_ids,
+            idempotency_key=key,
+            correlation_id=str(http_request.state.correlation_id),
+        )
+    except AiRunStateError as error:
+        raise HTTPException(409, str(error)) from error
     operation = await enqueue_analysis(
         session=session,
         scan=scan,
-        operation_key=key,
+        operation_key=f"run:{run.id}",
         correlation_id=str(http_request.state.correlation_id),
         dispatcher=dispatcher,
+        run_id=run.id,
     )
     return AnalysisResponse(
         scan_id=scan.id,
         status=scan.status,
         operation_key=operation.operation_key,
+        run_id=run.id,
     )
 
 

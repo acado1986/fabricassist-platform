@@ -102,3 +102,7 @@ Environment approval remains mandatory.
   dispatch the workflow with a known-good immutable ref.
 - A smoke failure blocks release acceptance and requires investigation before
   customer traffic is directed to the new revision.
+
+## GraphQL and SSE
+
+The API container exposes GraphQL and SSE alongside REST. Validate Render/proxy buffering, timeout, CORS, and reconnect behavior using `docs/runbooks/sse.md` before enabling streaming as the default client transport.

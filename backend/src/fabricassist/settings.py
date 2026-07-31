@@ -173,6 +173,9 @@ class Settings(BaseSettings):
     qstash_next_signing_key: str = Field(default="", repr=False)
     qstash_destination_url: str = ""
     cache_hot_ttl_seconds: int = Field(default=86_400, ge=60, le=604_800)
+    graphql_max_depth: int = Field(default=8, ge=1, le=20)
+    graphql_max_tokens: int = Field(default=1_500, ge=100, le=20_000)
+    graphql_max_aliases: int = Field(default=20, ge=1, le=200)
 
     @model_validator(mode="before")
     @classmethod

@@ -13,3 +13,5 @@
 - [Start desktop browser locally](desktop-local.md)
 - [Start Android locally (USB or wireless)](android-start-local.md)
 - [Phase 19 approval record](../release-approvals.md)
+
+- [`sse.md`](sse.md) — validate and recover authenticated AI-run SSE.

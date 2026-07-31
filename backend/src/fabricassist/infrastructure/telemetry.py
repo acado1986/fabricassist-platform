@@ -87,6 +87,14 @@ DELETIONS: Final = Counter(
     "Private-object deletion outcomes.",
     ("outcome",),
 )
+SSE_CONNECTIONS: Final = Gauge(
+    "fabricassist_sse_connections",
+    "Active authenticated AI-run SSE connections.",
+)
+SSE_DISCONNECTS: Final = Counter(
+    "fabricassist_sse_disconnects_total",
+    "AI-run SSE disconnects before a terminal event.",
+)
 
 _configured_services: set[str] = set()
 

@@ -1,0 +1,142 @@
+type AiRunType {
+  id: UUID!
+  scanId: UUID!
+  operation: String!
+  status: String!
+  errorCode: String
+  createdAt: DateTime!
+  startedAt: DateTime
+  completedAt: DateTime
+}
+
+type AnalysisRevisionType {
+  id: UUID!
+  scanId: UUID!
+  status: String!
+  revisionNumber: Int!
+  createdAt: DateTime!
+}
+
+type ConversationMessageConnection {
+  items: [ConversationMessageType!]!
+  pageInfo: PageInfo!
+}
+
+type ConversationMessageType {
+  id: UUID!
+  role: String!
+  status: String!
+  text: String!
+  createdAt: DateTime!
+}
+
+input CreateScanInput {
+  requestedLanguage: String! = "en"
+}
+
+type CurrentUserType {
+  id: UUID!
+  email: String!
+  role: String!
+  preferredLanguage: String!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+type FeedbackType {
+  id: UUID!
+  requestReview: Boolean!
+}
+
+type GarmentConnection {
+  items: [GarmentType!]!
+  pageInfo: PageInfo!
+}
+
+input GarmentIdInput {
+  garmentId: UUID!
+}
+
+type GarmentType {
+  id: UUID!
+  displayName: String
+  archivedAt: DateTime
+  activeResultId: UUID
+  createdAt: DateTime!
+}
+
+type Mutation {
+  createScan(input: CreateScanInput!): ScanType!
+  renameGarment(input: RenameGarmentInput!): GarmentType!
+  archiveGarment(input: GarmentIdInput!): GarmentType!
+  unarchiveGarment(input: GarmentIdInput!): GarmentType!
+  deleteScan(input: ScanIdInput!): Boolean!
+  deleteGarment(input: GarmentIdInput!): Boolean!
+  submitFeedback(input: SubmitFeedbackInput!): FeedbackType!
+}
+
+type PageInfo {
+  nextCursor: String
+}
+
+type Query {
+  currentUser: CurrentUserType!
+  scans(first: Int! = 20, after: UUID = null): ScanConnection!
+  scan(id: UUID!): ScanType
+  garments(first: Int! = 20, after: UUID = null): GarmentConnection!
+  garment(id: UUID!): GarmentType
+  messages(scanId: UUID!, first: Int! = 30, after: UUID = null): ConversationMessageConnection!
+  analysisRevision(id: UUID!): AnalysisRevisionType
+  analysis(id: UUID!): AnalysisRevisionType
+  imageMetadata(scanId: UUID!): [ScanImageMetadataType!]!
+  run(id: UUID!): AiRunType
+  usage: UsageSummary!
+}
+
+input RenameGarmentInput {
+  garmentId: UUID!
+  displayName: String!
+}
+
+type ScanConnection {
+  items: [ScanType!]!
+  pageInfo: PageInfo!
+}
+
+input ScanIdInput {
+  scanId: UUID!
+}
+
+type ScanImageMetadataType {
+  id: UUID!
+  role: String!
+  displayOrder: Int!
+  width: Int
+  height: Int
+}
+
+type ScanType {
+  id: UUID!
+  status: String!
+  requestedLanguage: String!
+  progressPercent: Int!
+  analysisStage: String
+  errorCode: String
+  garmentId: UUID
+  createdAt: DateTime!
+}
+
+input SubmitFeedbackInput {
+  scanId: UUID!
+  rating: Int = null
+  comment: String = null
+  requestReview: Boolean! = false
+}
+
+scalar UUID
+
+type UsageSummary {
+  modelRunCount: Int!
+  estimatedCostUsd: String!
+}

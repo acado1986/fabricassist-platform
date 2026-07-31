@@ -14,6 +14,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.ai_runs import transition_run
 from fabricassist.application.analysis import analyse_scan
 from fabricassist.application.cache import HotCache
 from fabricassist.application.jobs import (
@@ -42,6 +43,7 @@ from fabricassist.application.product_information import ProductInformationProvi
 from fabricassist.application.vision import VisionEvidenceProvider, VisionProviderError
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
+    AiRun,
     AnalysisJobOperation,
     ConversationMessage,
     Scan,
@@ -183,6 +185,7 @@ async def execute_checkpoint(
             operation_key=message.operation_key,
             stage=next_stage,
             correlation_id=operation.correlation_id,
+            run_id=operation.run_id,
         )
         session.add(continuation)
         scan.analysis_stage = next_stage
@@ -208,6 +211,22 @@ async def execute_checkpoint(
     operation.status = "processing"
     scan.analysis_stage = message.stage
     scan.status = "processing"
+    if operation.run_id is not None:
+        run = await session.get(AiRun, operation.run_id, with_for_update=True)
+        if run is not None:
+            if run.status == "cancelled":
+                operation.status = "obsolete"
+                operation.completed_at = datetime.now(UTC)
+                operation.lease_expires_at = None
+                await session.commit()
+                return CheckpointResult(StageResult.NOOP)
+            await transition_run(
+                session,
+                run=run,
+                status="running",
+                event_type="run.started" if run.status == "pending" else "run.progress",
+                data={"stage": message.stage, "progress_percent": scan.progress_percent},
+            )
     await session.commit()
     try:
         async with asyncio.timeout(max(1, execution_policy.stage_budget_seconds - 5)):
@@ -257,6 +276,16 @@ async def execute_checkpoint(
         scan.analysis_stage = "failed"
         scan.analysis_error_code = error_code
         scan.progress_percent = 100
+        if operation.run_id is not None:
+            run = await session.get(AiRun, operation.run_id, with_for_update=True)
+            if run is not None:
+                await transition_run(
+                    session,
+                    run=run,
+                    status="failed",
+                    event_type="run.failed",
+                    error_code=error_code,
+                )
         await session.commit()
         logger.error(
             "Analysis execution failed permanently",
@@ -285,6 +314,16 @@ async def execute_checkpoint(
         scan.analysis_stage = "failed"
         scan.analysis_error_code = "ANALYSIS_INTERNAL_ERROR"
         scan.progress_percent = 100
+        if operation.run_id is not None:
+            run = await session.get(AiRun, operation.run_id, with_for_update=True)
+            if run is not None:
+                await transition_run(
+                    session,
+                    run=run,
+                    status="failed",
+                    event_type="run.failed",
+                    error_code="ANALYSIS_INTERNAL_ERROR",
+                )
         await session.commit()
         logger.exception(
             "Analysis execution failed unexpectedly",
@@ -294,6 +333,33 @@ async def execute_checkpoint(
     operation.status = "completed"
     operation.completed_at = datetime.now(UTC)
     operation.lease_expires_at = None
+    if operation.run_id is not None:
+        run = await session.get(AiRun, operation.run_id, with_for_update=True)
+        if run is not None and run.status != "cancelled":
+            await session.refresh(scan)
+            if scan.status == "completed":
+                await transition_run(
+                    session, run=run, status="completed", event_type="run.completed"
+                )
+            elif scan.status in {"failed", "needs_better_image", "needs_review"}:
+                await transition_run(
+                    session,
+                    run=run,
+                    status="failed",
+                    event_type="run.failed",
+                    error_code=scan.analysis_error_code or scan.status.upper(),
+                )
+            else:
+                await transition_run(
+                    session,
+                    run=run,
+                    status="running",
+                    event_type="run.progress",
+                    data={
+                        "stage": scan.analysis_stage or message.stage,
+                        "progress_percent": scan.progress_percent,
+                    },
+                )
     await session.commit()
     return CheckpointResult(StageResult.COMPLETE)
 

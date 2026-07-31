@@ -26,6 +26,7 @@ from fabricassist.api.errors import (
     unexpected_error_handler,
     validation_error_handler,
 )
+from fabricassist.api.graphql_schema import GraphQLContext, create_graphql_router
 from fabricassist.api.logging import configure_logging
 from fabricassist.api.middleware import (
     CorrelationIdMiddleware,
@@ -39,6 +40,7 @@ from fabricassist.api.routes import (
     internal_jobs,
     products,
     reviews,
+    runs,
     scans,
 )
 from fabricassist.application.auth import decode_access_token
@@ -175,6 +177,7 @@ def create_app(
             "Idempotency-Key",
             "X-CSRF-Token",
             "X-Correlation-ID",
+            "Last-Event-ID",
         ],
     )
     app.add_middleware(
@@ -281,6 +284,10 @@ def create_app(
     app.dependency_overrides[scans.get_storage] = get_storage
     app.dependency_overrides[scans.get_upload_policy] = lambda: upload_policy
     app.dependency_overrides[scans.get_job_dispatcher] = get_job_dispatcher
+    app.dependency_overrides[runs.get_session] = get_session
+    app.dependency_overrides[runs.get_current_user] = get_current_user
+    app.dependency_overrides[runs.get_job_dispatcher] = get_job_dispatcher
+    app.dependency_overrides[runs.get_database] = get_runtime_database
     app.dependency_overrides[products.get_session] = get_session
     app.dependency_overrides[products.get_current_user] = get_current_user
     app.dependency_overrides[products.get_product_information_provider] = (
@@ -311,11 +318,24 @@ def create_app(
     app.dependency_overrides[internal_jobs.get_conversation_policy] = get_conversation_policy
     app.include_router(auth.router)
     app.include_router(scans.router)
+    app.include_router(runs.router)
     app.include_router(garments.router)
     app.include_router(products.router)
     app.include_router(conversations.router)
     app.include_router(reviews.router)
     app.include_router(internal_jobs.router)
+
+    async def graphql_context(
+        user: User = Depends(get_current_user),  # noqa: B008
+        session: AsyncSession = Depends(get_session),  # noqa: B008
+    ) -> GraphQLContext:
+        return GraphQLContext(session=session, user=user)
+
+    app.include_router(
+        create_graphql_router(context_getter=graphql_context, settings=resolved_settings),
+        prefix="/api/v1/graphql",
+        tags=["graphql"],
+    )
 
     @app.get("/api/v1/health/live", tags=["health"])
     async def live(response: Response) -> dict[str, str]:

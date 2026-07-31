@@ -463,7 +463,8 @@ Requirements:
 
 ## 7. API requirements
 
-- The API must be REST/JSON over HTTPS.
+- The API must expose REST/JSON commands and GraphQL application reads over HTTPS; uploads and long-running AI commands remain REST.
+- SSE may deliver authenticated, replayable AI-run progress and only persisted validator-gated assistant chunks; it is never the authoritative result source.
 - FastAPI must expose an OpenAPI document.
 - The frontend API client and TypeScript types should be generated from OpenAPI.
 - API routes must be versioned under `/api/v1`.

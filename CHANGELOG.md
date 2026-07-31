@@ -1,0 +1,28 @@
+# Changelog
+
+All notable changes to FabricAssist are documented here.
+
+## [0.1.0-alpha.30] - 2026-07-31
+
+### Added
+
+- Mixed GraphQL, REST, and Server-Sent Events API support for AI runs and conversation updates.
+- Durable AI-run, image, and event persistence with the `20260731_0020` migration.
+- Frontend GraphQL operations and SSE client coverage for live run updates.
+- Garment revision orphan cleanup and confirmed history deletion behavior.
+- Explicit `make migrate-repair REVISION=...` recovery workflow for locally mis-stamped databases.
+
+### Changed
+
+- Synchronized generated OpenAPI and TypeScript API client artifacts with the current backend contract.
+- Expanded release, deployment, environment, migration, and SSE runbook documentation.
+- Updated dependency and security metadata used by the release workflows.
+
+### Deployment
+
+This prerelease is deployed by pushing the immutable tag `v0.1.0-alpha.30`. The
+tag-triggered workflow runs quality gates, applies migrations, deploys the API
+and web application, and executes hosted smoke tests. Production stable release
+remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
+
+[0.1.0-alpha.30]: https://github.com/acado1986/fabricassist-platform/releases/tag/v0.1.0-alpha.30

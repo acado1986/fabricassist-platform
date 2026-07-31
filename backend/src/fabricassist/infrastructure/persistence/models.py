@@ -194,6 +194,7 @@ class AnalysisJobOperation(Base):
     lease_expires_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     published_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    run_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("ai_runs.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -321,6 +322,8 @@ class Garment(Base):
     user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
     active_analysis_revision_id: Mapped[UUID | None] = mapped_column(Uuid)
     active_result_id: Mapped[UUID | None] = mapped_column(Uuid)
+    display_name: Mapped[str | None] = mapped_column(String(200))
+    archived_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -729,6 +732,7 @@ class ConversationMessage(Base):
     )
     validation_report: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error_code: Mapped[str | None] = mapped_column(String(100))
+    run_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("ai_runs.id", ondelete="SET NULL"))
     dispatch_correlation_id: Mapped[str] = mapped_column(
         String(36), nullable=False, default="00000000-0000-0000-0000-000000000000"
     )
@@ -1098,6 +1102,91 @@ class AuditEvent(Base):
     safe_metadata: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"
     )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class AiRun(Base):
+    """Durable client-visible lifecycle for one analysis or conversation command."""
+
+    __tablename__ = "ai_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'cancelled')",
+            name="ck_ai_runs_status",
+        ),
+        UniqueConstraint(
+            "tenant_id", "operation", "idempotency_key", name="uq_ai_runs_idempotency"
+        ),
+        Index("ix_ai_runs_tenant_user_created", "tenant_id", "user_id", "created_at"),
+        Index("ix_ai_runs_scan_status", "scan_id", "status", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    scan_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
+    )
+    operation: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    parent_run_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("ai_runs.id", ondelete="SET NULL")
+    )
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    started_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    correlation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AiRunImage(Base):
+    """The completed scan images explicitly associated with an AI run."""
+
+    __tablename__ = "ai_run_images"
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("ai_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    image_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("scan_images.id", ondelete="RESTRICT"), primary_key=True
+    )
+
+
+class AiRunEvent(Base):
+    """Replayable durable SSE event; heartbeats are intentionally not stored."""
+
+    __tablename__ = "ai_run_events"
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence", name="uq_ai_run_events_sequence"),
+        Index("ix_ai_run_events_run_sequence", "run_id", "sequence"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("ai_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )

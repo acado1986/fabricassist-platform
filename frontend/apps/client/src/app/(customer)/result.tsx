@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetch as expoFetch } from 'expo/fetch';
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
+  AppState,
   Image,
   Pressable,
   ScrollView,
@@ -21,10 +24,14 @@ import {
   scanResultApiV1ScansScanIdResultGet,
   submitFeedbackApiV1ScansScanIdFeedbackPost,
   type IdentityCandidateResponse,
+  streamRunEvents,
+  ScanRunRecoveryDocument,
+  type RunEvent,
 } from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { useTranslation } from '../../i18n/TranslationProvider';
+import { getApiBaseUrl } from '../../config/environment';
 
 type Source = {
   kind: string;
@@ -63,9 +70,13 @@ type RichResult = {
   } | null;
 };
 export default function Result(): ReactNode {
-  const { scanId } = useLocalSearchParams<{ scanId: string }>();
-  const { apiClient, token } = useSession();
+  const { scanId, runId } = useLocalSearchParams<{
+    scanId: string;
+    runId?: string;
+  }>();
+  const { apiClient, graphql, token } = useSession();
   const { locale, translate } = useTranslation();
+  const queryClient = useQueryClient();
   const [result, setResult] = useState<RichResult>();
   const [failed, setFailed] = useState(false);
   const [failureCode, setFailureCode] = useState<string>();
@@ -76,6 +87,19 @@ export default function Result(): ReactNode {
   const [identityCandidates, setIdentityCandidates] = useState<
     IdentityCandidateResponse[]
   >([]);
+  const [streamCompletion, setStreamCompletion] = useState(0);
+  const scanRecoveryQueryKey = useMemo(
+    () => ['graphql', 'scan-run-recovery', scanId] as const,
+    [scanId],
+  );
+  const { refetch: refetchCanonicalScan } = useQuery({
+    enabled: false,
+    queryKey: scanRecoveryQueryKey,
+    queryFn: ({ signal }) => {
+      if (!scanId) throw new Error('SCAN_UNAVAILABLE');
+      return graphql(ScanRunRecoveryDocument, { id: scanId }, signal);
+    },
+  });
   const confirmIdentityCandidate = async (
     candidateId: string,
   ): Promise<void> => {
@@ -146,6 +170,101 @@ export default function Result(): ReactNode {
     return translate('resultLoading');
   };
   useEffect(() => {
+    if (!runId || !token) return;
+    let active = true;
+    let terminal = false;
+    let lastEventId: string | undefined;
+    let lastSequence = 0;
+    let retryAttempt = 0;
+    let controller: AbortController | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleReconnect = (): void => {
+      if (!active || terminal) return;
+      const baseDelay = Math.min(1_000 * 2 ** retryAttempt, 15_000);
+      retryAttempt += 1;
+      const jitter = Math.floor(Math.random() * Math.max(1, baseDelay / 4));
+      retry = setTimeout(connect, baseDelay + jitter);
+    };
+    const refreshCanonicalState = (): void => {
+      void queryClient.invalidateQueries({ queryKey: scanRecoveryQueryKey });
+      void refetchCanonicalScan();
+      setStreamCompletion((value) => value + 1);
+    };
+    const connect = (): void => {
+      if (!active || terminal) return;
+      controller = new AbortController();
+      void streamRunEvents(
+        `${getApiBaseUrl()}/api/v1/runs/${runId}/events`,
+        token,
+        (frame) => {
+          if (!frame.data || frame.event === 'heartbeat') return;
+          try {
+            const event = JSON.parse(frame.data) as RunEvent;
+            if (event.sequence <= lastSequence) return;
+            lastSequence = event.sequence;
+            lastEventId = frame.id ?? String(event.sequence);
+            if (typeof event.data.progress_percent === 'number') {
+              setProgressPercent(event.data.progress_percent);
+            }
+            if (typeof event.data.stage === 'string')
+              setStage(event.data.stage);
+            if (frame.event === 'run.failed') {
+              setFailureCode(
+                typeof event.data.error_code === 'string'
+                  ? event.data.error_code
+                  : undefined,
+              );
+              setFailed(true);
+              terminal = true;
+            }
+            if (frame.event === 'run.cancelled') terminal = true;
+            if (frame.event === 'run.completed') {
+              terminal = true;
+              // Streamed state is ephemeral only. Refresh the generated typed
+              // GraphQL query before treating the scan as canonical.
+              refreshCanonicalState();
+            }
+          } catch {
+            // Polling remains the durable recovery path for malformed streams.
+          }
+        },
+        controller.signal,
+        lastEventId,
+        expoFetch,
+      )
+        .then(() => {
+          if (!terminal && !controller?.signal.aborted) scheduleReconnect();
+        })
+        .catch(() => {
+          if (!controller?.signal.aborted) scheduleReconnect();
+        });
+    };
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        retryAttempt = 0;
+        connect();
+      } else {
+        controller?.abort();
+      }
+    });
+    connect();
+    return () => {
+      active = false;
+      controller?.abort();
+      if (retry) clearTimeout(retry);
+      subscription.remove();
+    };
+  }, [
+    queryClient,
+    refetchCanonicalScan,
+    runId,
+    scanRecoveryQueryKey,
+    scanId,
+    token,
+  ]);
+
+  useEffect(() => {
     if (!scanId || !token) return;
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -210,7 +329,7 @@ export default function Result(): ReactNode {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
     };
-  }, [apiClient, locale, scanId, token]);
+  }, [apiClient, locale, scanId, streamCompletion, token]);
   return (
     <FoundationShell
       title={translate('resultTitle')}

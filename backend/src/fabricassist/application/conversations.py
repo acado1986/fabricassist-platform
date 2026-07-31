@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.ai_runs import append_run_event, transition_run
 from fabricassist.application.conversation_provider import ConversationProvider
 from fabricassist.application.policies import ConversationPolicy
 from fabricassist.domain.care import validate_care_plan
@@ -18,6 +19,7 @@ from fabricassist.domain.conversations import ConversationContext
 from fabricassist.domain.evidence import GarmentEvidenceDossier
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
+    AiRun,
     CareResult,
     ConversationMessage,
     ConversationSummary,
@@ -120,7 +122,20 @@ async def answer_message(
     if message is None or message.role != "user" or message.status == "completed":
         return
     message.status = "processing"
-    context = await build_context(session, message, policy)
+    if message.run_id is not None:
+        run = await session.get(AiRun, message.run_id, with_for_update=True)
+        if run is not None:
+            if run.status == "cancelled":
+                return
+            await transition_run(session, run=run, status="running", event_type="run.started")
+    try:
+        context = await build_context(session, message, policy)
+    except Exception:
+        await _fail_conversation_run(
+            session, message, error_code="CONVERSATION_CONTEXT_UNAVAILABLE"
+        )
+        await session.commit()
+        raise
     model_run = ModelRun(
         id=uuid4(),
         tenant_id=message.tenant_id,
@@ -137,7 +152,24 @@ async def answer_message(
     )
     session.add(model_run)
     await session.flush()
-    result = await conversation_provider.answer(context, message.text)
+    # Do not retain row locks or an open transaction while calling Gemini. It
+    # lets the cancellation command commit and gives the post-call check below
+    # a reliable winner when a cancellation races the provider response.
+    await session.commit()
+    try:
+        result = await conversation_provider.answer(context, message.text)
+    except Exception:
+        model_run.status = "failed"
+        await _fail_conversation_run(session, message, error_code="CONVERSATION_PROVIDER_ERROR")
+        await session.commit()
+        raise
+    if await _conversation_run_was_cancelled(session, message.run_id):
+        model_run.status = "cancelled"
+        message.status = "failed"
+        message.error_code = "RUN_CANCELLED"
+        message.completed_at = datetime.now(UTC)
+        await session.commit()
+        return
     proposal = result.proposal
     model_run.provider = result.provider
     model_run.model = result.model
@@ -174,6 +206,40 @@ async def answer_message(
         completed_at=datetime.now(UTC),
     )
     session.add(assistant)
+    await session.flush()
+    if message.run_id is not None:
+        run = await session.get(AiRun, message.run_id, with_for_update=True)
+        if run is not None and run.status != "cancelled":
+            if blocked:
+                await transition_run(
+                    session,
+                    run=run,
+                    status="failed",
+                    event_type="run.failed",
+                    error_code="CONVERSATION_BLOCKED",
+                )
+            else:
+                # Safe display chunks are emitted only after the proposal passed validation and this
+                # assistant message has a durable identifier in the transaction.
+                for index in range(0, len(proposal.text), 240):
+                    await append_run_event(
+                        session,
+                        run=run,
+                        event_type="message.delta",
+                        data={
+                            "message_id": str(assistant.id),
+                            "delta": proposal.text[index : index + 240],
+                        },
+                    )
+                await append_run_event(
+                    session,
+                    run=run,
+                    event_type="message.completed",
+                    data={"message_id": str(assistant.id)},
+                )
+                await transition_run(
+                    session, run=run, status="completed", event_type="run.completed"
+                )
     message.status = "completed"
     message.completed_at = datetime.now(UTC)
     message_count = await session.scalar(
@@ -202,6 +268,41 @@ async def answer_message(
             )
         )
     await session.commit()
+
+
+async def _fail_conversation_run(
+    session: AsyncSession,
+    message: ConversationMessage,
+    *,
+    error_code: str,
+) -> None:
+    """Persist a sanitized terminal outcome before a delivery retry surfaces an error."""
+    message.status = "failed"
+    message.completed_at = datetime.now(UTC)
+    if message.run_id is None:
+        return
+    run = await session.get(AiRun, message.run_id, with_for_update=True)
+    if run is not None and run.status != "cancelled":
+        await transition_run(
+            session,
+            run=run,
+            status="failed",
+            event_type="run.failed",
+            error_code=error_code,
+        )
+
+
+async def _conversation_run_was_cancelled(session: AsyncSession, run_id: UUID | None) -> bool:
+    """Reload cancellation state after external provider I/O without stale identity-map data."""
+    if run_id is None:
+        return False
+    run = await session.scalar(
+        select(AiRun)
+        .where(AiRun.id == run_id)
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    return run is not None and getattr(run, "status", None) == "cancelled"
 
 
 async def answer_message_by_id(

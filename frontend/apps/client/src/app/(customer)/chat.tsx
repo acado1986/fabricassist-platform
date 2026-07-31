@@ -12,9 +12,8 @@ import {
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
-  listMessagesApiV1ScansScanIdMessagesGet,
   postMessageApiV1ScansScanIdMessagesPost,
-  type MessageResponse,
+  ScanMessagesDocument,
 } from '@fabricassist/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '../../auth/session';
@@ -29,23 +28,22 @@ function newIdempotencyKey(): string {
 
 export default function Chat(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
-  const { apiClient, token } = useSession();
+  const { apiClient, graphql, token } = useSession();
   const queryClient = useQueryClient();
   const { translate } = useTranslation();
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
-  const messageQueryKey = ['conversation-messages', scanId];
-  const { data: messages = [] } = useQuery<MessageResponse[]>({
+  const messageQueryKey = ['graphql', 'conversation-messages', scanId];
+  const { data: messages = [] } = useQuery({
     queryKey: messageQueryKey,
     enabled: Boolean(scanId && token),
     refetchInterval: 2000,
     queryFn: async () => {
-      const result = await listMessagesApiV1ScansScanIdMessagesGet({
-        client: apiClient,
-        path: { scan_id: scanId },
+      const result = await graphql(ScanMessagesDocument, {
+        scanId,
+        first: 100,
       });
-      if (!result.data) throw result.error;
-      return result.data.items ?? [];
+      return result.messages.items;
     },
   });
   const postMessage = useMutation({

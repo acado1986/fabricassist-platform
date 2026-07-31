@@ -303,6 +303,18 @@ wheels = [
 ]
 
 [[package]]
+name = "cross-web"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4a/a0/bdb8370215987cc5bde497cb8b976b17ab14841566ecef2aab6ae3e6c7b0/cross_web-0.7.0.tar.gz", hash = "sha256:15fbc8b9a824a055db8127fd6e43e0773074f620fdecb6b2b587d3d0a2bdd459", size = 332407, upload-time = "2026-05-19T14:18:48.849Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/4a/78b52ec2edcbd9b123638f4e0421fd8699ebe653ebf63ac5f82abd2665bc/cross_web-0.7.0-py3-none-any.whl", hash = "sha256:ddea9be3c68b48eaf16561847a5831a559786949c544b3701432e00a4e8d19d9", size = 25207, upload-time = "2026-05-19T14:18:47.614Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "49.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -372,7 +384,7 @@ wheels = [
 
 [[package]]
 name = "fabricassist"
-version = "0.0.0"
+version = "0.1.0a30"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -395,6 +407,7 @@ dependencies = [
     { name = "pyjwt" },
     { name = "redis" },
     { name = "sqlalchemy" },
+    { name = "strawberry-graphql", extra = ["fastapi"] },
     { name = "uvicorn", extra = ["standard"] },
     { name = "zxing-cpp" },
 ]
@@ -411,13 +424,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.14,<1.15" },
-    { name = "argon2-cffi", specifier = ">=23.1,<24" },
+    { name = "alembic", specifier = ">=1.14,<1.19" },
+    { name = "argon2-cffi", specifier = ">=23.1,<26" },
     { name = "boto3", specifier = ">=1.35,<2" },
-    { name = "celery", extras = ["redis"], specifier = ">=5.4,<5.5" },
+    { name = "celery", extras = ["redis"], specifier = ">=5.4,<5.7" },
     { name = "email-validator", specifier = ">=2.2,<3" },
-    { name = "fastapi", specifier = ">=0.139,<0.140" },
-    { name = "google-genai", specifier = ">=1.0,<2" },
+    { name = "fastapi", specifier = ">=0.139,<0.141" },
+    { name = "google-genai", specifier = ">=1.0,<3" },
     { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "opentelemetry-api", specifier = ">=1.44,<1.45" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.44,<1.45" },
@@ -425,14 +438,15 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.65b0,<0.66" },
     { name = "opentelemetry-sdk", specifier = ">=1.44,<1.45" },
     { name = "pillow", specifier = ">=12.3,<13" },
-    { name = "prometheus-client", specifier = ">=0.21,<0.22" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<3.3" },
-    { name = "pydantic-settings", specifier = ">=2.7,<2.8" },
+    { name = "prometheus-client", specifier = ">=0.21,<0.27" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<3.4" },
+    { name = "pydantic-settings", specifier = ">=2.7,<2.15" },
     { name = "pyjwt", specifier = ">=2.10,<3" },
-    { name = "redis", specifier = ">=5.3,<6" },
+    { name = "redis", specifier = ">=5.3,<9" },
     { name = "sqlalchemy", specifier = ">=2.0.36,<2.1" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<0.35" },
-    { name = "zxing-cpp", specifier = ">=2.3,<3" },
+    { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.287,<0.290" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<0.52" },
+    { name = "zxing-cpp", specifier = ">=2.3,<4" },
 ]
 
 [package.metadata.requires-dev]
@@ -440,9 +454,9 @@ dev = [
     { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "httpx2", specifier = ">=2,<3" },
     { name = "pyright", specifier = ">=1.1.391,<1.2" },
-    { name = "pytest", specifier = ">=8.3,<8.4" },
-    { name = "pytest-asyncio", specifier = ">=0.25,<0.26" },
-    { name = "ruff", specifier = ">=0.9,<0.10" },
+    { name = "pytest", specifier = ">=8.3,<9.2" },
+    { name = "pytest-asyncio", specifier = ">=0.25,<1.5" },
+    { name = "ruff", specifier = ">=0.9,<0.17" },
 ]
 
 [[package]]
@@ -510,6 +524,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b5/c8/f439cffde755cffa462bfbb156278fa6f9d09119719af9814b858fd4f81f/googleapis_common_protos-1.75.0.tar.gz", hash = "sha256:53a062ff3c32552fbd62c11fe23768b78e4ddf0494d5e5fd97d3f4689c75fbbd", size = 151035, upload-time = "2026-05-07T08:04:49.423Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/c8/e2645aa8ed02fd4c7a2f59d68783b65b1f3cbdfe39a6308e156509d1fee8/googleapis_common_protos-1.75.0-py3-none-any.whl", hash = "sha256:961ed60399c457ceb0ee8f285a84c870aabc9c6a832b9d37bb281b5bebde43ed", size = 300631, upload-time = "2026-05-07T08:03:30.345Z" },
+]
+
+[[package]]
+name = "graphql-core"
+version = "3.2.11"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4d/90/f2aff026ab4aebd80eb71905106a0885f4cfde85dcf965543f45bed0d9ee/graphql_core-3.2.11.tar.gz", hash = "sha256:e7e156d10beb127cab5c89ff0da71416fc73d27c484a4757d3b2d35633774802", size = 528407, upload-time = "2026-06-05T13:45:22.915Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/15/b92b4e1d88d02c6eff9733c9eea21846ab435cc4d813d84ccc5d335955df/graphql_core-3.2.11-py3-none-any.whl", hash = "sha256:0b3e35ff41e9adba53021ab0cef475eb18f57c7f53f0f2ca55567fbf3c537ea0", size = 214879, upload-time = "2026-06-05T13:45:21.245Z" },
 ]
 
 [[package]]
@@ -1178,6 +1201,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-multipart"
+version = "0.0.32"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/42/55c32bb9b12693c092ad250a0e82edb5b31ddeda6eb772de5f308b3804ad/python_multipart-0.0.32.tar.gz", hash = "sha256:be54b7f3fa167bb83e4fcd936b887b708f4e57fe75911c02aebf53efaf8d938e", size = 46881, upload-time = "2026-06-04T16:18:58.647Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/04/e8135ebd1ad02c56ec633277529b2602ff99ff634be76cdba5744cf554fd/python_multipart-0.0.32-py3-none-any.whl", hash = "sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23", size = 30042, upload-time = "2026-06-04T16:18:57.319Z" },
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1325,6 +1357,28 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/bb/2799cc2ede3ed41131f8975621e7213dfc7ef4acbbaadfa440f32500c370/starlette-1.3.1-py3-none-any.whl", hash = "sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6", size = 73632, upload-time = "2026-06-12T09:23:10.017Z" },
+]
+
+[[package]]
+name = "strawberry-graphql"
+version = "0.289.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cross-web" },
+    { name = "graphql-core" },
+    { name = "packaging" },
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5c/22/fabe57809fddfaa931c1bf53fa95cc5233b0f3321a52c6d3460322be3ace/strawberry_graphql-0.289.8.tar.gz", hash = "sha256:af4156a17f3d6a5bfa85967e97dae674ba935342e6d8f37fc4638d0cd45ec12a", size = 216925, upload-time = "2026-01-27T17:41:52.58Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/9d/4e41e6628ef3ab194836a9abc8ff0e30ea8140404ca07e586a421968da6e/strawberry_graphql-0.289.8-py3-none-any.whl", hash = "sha256:4ebfdb7ac86524a98198cde1dfe46f64083a73ff6615e1260daca182a9c85cbd", size = 315532, upload-time = "2026-01-27T17:41:54.443Z" },
+]
+
+[package.optional-dependencies]
+fastapi = [
+    { name = "fastapi" },
+    { name = "python-multipart" },
 ]
 
 [[package]]

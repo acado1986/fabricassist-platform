@@ -139,7 +139,7 @@ flowchart LR
 
     Customer --> Expo
     Operator --> Expo
-    Expo -->|HTTPS REST| API
+    Expo -->|HTTPS GraphQL + REST + SSE| API
     Expo -->|Presigned upload| Objects
     API --> DB
     API --> Cache
@@ -1480,6 +1480,7 @@ Create Architecture Decision Records under `docs/adr/` for at least:
 - ADR-010: Physical garment identity/history separated from product identity.
 - ADR-011: Trusted, sourced product-information lookup behind adapters.
 - ADR-012: Server-owned contextual conversation state in PostgreSQL.
+- ADR-016: Mixed GraphQL reads, REST commands, and durable SSE run events.
 
 ## 27. Initial implementation order for Codex
 
@@ -1607,7 +1608,7 @@ The following should remain configurable or deferred until measurements exist:
 - Whether FabricAssist instance identifiers are printed QR, NFC, or another
   tenant workflow; the domain identifier contract is not deferred.
 - Automatic probable-match thresholds; initial non-exact matches require confirmation.
-- Conversation streaming transport; persisted async REST status is sufficient initially.
+- SSE hosting timeout/connection behavior and event-retention duration; persisted REST status remains the recovery fallback.
 - Self-hosted multimodal inference.
 - Multi-region deployment.
 - Paid consumer subscriptions and payments.

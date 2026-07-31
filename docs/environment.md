@@ -77,6 +77,9 @@ inclusive. The prerelease profile applies the smaller pool and image limits show
 | `FABRICASSIST_DATABASE_CONNECT_ATTEMPTS` | Integer `1..5` | `1` (`3` prerelease) |
 | `FABRICASSIST_DATABASE_CONNECT_RETRY_SECONDS` | Number `0..30` | `0` (`1` prerelease) |
 | `FABRICASSIST_CACHE_HOT_TTL_SECONDS` | Integer `60..604800` | `86400` |
+| `FABRICASSIST_GRAPHQL_MAX_DEPTH` | Integer `1..20` | `8` |
+| `FABRICASSIST_GRAPHQL_MAX_TOKENS` | Integer `100..20000` | `1500` |
+| `FABRICASSIST_GRAPHQL_MAX_ALIASES` | Integer `1..200` | `20` |
 
 URL, slug, origin, bucket, model, and provider fields are strings subject to
 deployment safety checks. Secrets (`*_SECRET`, `*_KEY`, tokens, and passwords)
