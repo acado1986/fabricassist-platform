@@ -26,7 +26,7 @@ jobs:
     outputs:
       git_sha: ${{ steps.revision.outputs.git_sha }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Install toolchains
@@ -55,7 +55,7 @@ jobs:
     timeout-minutes: 15
     environment: alpha
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.quality.outputs.git_sha }}
       - name: Install uv
@@ -112,7 +112,7 @@ jobs:
     environment: alpha
     steps:
       - name: Check out selected revision
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.quality.outputs.git_sha }}
       - name: Activate pnpm
@@ -151,7 +151,7 @@ jobs:
     timeout-minutes: 15
     environment: alpha
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.quality.outputs.git_sha }}
       - name: Run hosted mock-provider smoke

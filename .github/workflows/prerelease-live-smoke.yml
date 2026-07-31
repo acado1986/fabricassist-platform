@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 15
     environment: alpha
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Run diagnostic hosted mock-provider smoke
         env:
           FABRICASSIST_RELEASE_API_URL: ${{ inputs.base_url || vars.FABRICASSIST_API_URL }}
