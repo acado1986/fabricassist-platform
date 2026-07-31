@@ -141,6 +141,7 @@ rules, and application services never select a concrete technology.
 | `make smoke` | Verifies service health, private bucket access, and API liveness. |
 | `make reset-local CONFIRM=1` | Removes only FabricAssist local volumes after an explicit guard. |
 | `make migrate` / `make seed` | Applies schema migrations and creates the development tenant. |
+| `make migrate-repair REVISION=...` | Explicitly repairs a locally mis-stamped Alembic database, upgrades to head, and verifies the schema. |
 | `make migration-test` | Runs Phase 5 migrations against isolated Compose PostgreSQL. |
 | `make test` | Runs foundation checks plus backend and frontend unit tests. |
 | `make lint` | Runs configuration validation, Ruff/Pyright, Prettier, ESLint, and TypeScript. |
@@ -153,6 +154,18 @@ rules, and application services never select a concrete technology.
 | `make release-check` | Runs all non-cloud release gates available on the host. |
 
 `make migrate` applies all schema migrations through the running API container.
+
+If Alembic reports the database is at `head` but required tables are missing,
+use the explicit repair command with the last known-good revision:
+
+```bash
+make migrate-repair REVISION=20260729_0019
+```
+
+This stamps the local database to the supplied revision, reapplies migrations,
+and verifies the durable AI-run tables. It is a recovery command, not a
+replacement for normal `make migrate` usage. Do not use it without confirming
+the revision from the migration history and backing up any valuable local data.
 `make seed` creates the idempotent development tenant required by public local registration.
 `make migration-test` runs empty-upgrade, downgrade/upgrade, metadata, and seed
 idempotency checks against the isolated Compose PostgreSQL service.
