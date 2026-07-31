@@ -60,6 +60,7 @@ inclusive. The prerelease profile applies the smaller pool and image limits show
 | `FABRICASSIST_PUBLICATION_RECOVERY_BATCH_SIZE` | Integer `1..1000` | `100` |
 | `FABRICASSIST_DELETION_MAX_ATTEMPTS` | Integer `1..100` | `5` |
 | `FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` | Integer `1..365` | `7` |
+| `FABRICASSIST_MERGED_GARMENT_RETENTION_DAYS` | Integer `1..3650` | `30` |
 | `FABRICASSIST_UPLOAD_MAX_BYTES` | Positive integer bytes | `12582912` (12 MiB) |
 | `FABRICASSIST_UPLOAD_URL_MINUTES` | Integer `1..60` | `10` |
 | `FABRICASSIST_MAX_IMAGES_PER_SCAN` | Integer `1..20` (`1..3` prerelease) | `8` (`3` prerelease) |

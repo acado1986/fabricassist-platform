@@ -10,6 +10,12 @@ tag.
 
 Changes for the next release will be added here before a new version is tagged.
 
+### Fixed
+
+- Merged the temporary garment created before identity confirmation into the
+  confirmed garment and hid the resulting empty history entry with an auditable
+  tombstone and deferred cleanup.
+
 ## [1.2.0] — 2026-07-31
 
 ### Added
@@ -51,4 +57,3 @@ Changes for the next release will be added here before a new version is tagged.
 ### Added
 
 - Published the first stable FabricAssist release.
-

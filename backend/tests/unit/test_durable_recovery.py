@@ -16,7 +16,7 @@ from fabricassist.application.jobs import (
     PermanentJobDispatchError,
     RetryableJobDispatchError,
 )
-from fabricassist.application.lifecycle import process_object_deletions
+from fabricassist.application.lifecycle import cleanup_merged_garments, process_object_deletions
 from fabricassist.application.object_storage import (
     ObjectNotFoundError,
     PermanentObjectStorageError,
@@ -32,6 +32,7 @@ from fabricassist.infrastructure.persistence.models import (
     AnalysisJobOperation,
     ConversationMessage,
     DeletionRequest,
+    Garment,
     ObjectDeletionOutbox,
     ScanImage,
 )
@@ -276,6 +277,50 @@ async def test_object_deletion_recovery_is_commit_after_io_and_idempotent(
     assert request.status == expected_request_status
     assert completed == (1 if expected_job_status == "completed" else 0)
     assert (image.deleted_at is not None) == (expected_job_status == "completed")
+
+
+@pytest.mark.asyncio
+async def test_merged_garment_cleanup_deletes_only_expired_tombstones() -> None:
+    garment = Garment(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        user_id=uuid4(),
+        merged_into_id=uuid4(),
+        merged_at=datetime.now(UTC) - timedelta(days=31),
+    )
+
+    class Session:
+        def __init__(self) -> None:
+            self.deleted: list[object] = []
+            self.executed: list[object] = []
+            self.added: list[object] = []
+            self.commits = 0
+
+        async def scalars(self, _statement: object) -> Rows:
+            return Rows([garment])
+
+        async def execute(self, statement: object) -> None:
+            self.executed.append(statement)
+
+        async def delete(self, value: object) -> None:
+            self.deleted.append(value)
+
+        def add(self, value: object) -> None:
+            self.added.append(value)
+
+        async def commit(self) -> None:
+            self.commits += 1
+
+    session = Session()
+    cleaned = await cleanup_merged_garments(
+        session,  # type: ignore[arg-type]
+        grace_period_days=30,
+    )
+
+    assert cleaned == 1
+    assert session.deleted == [garment]
+    assert session.commits == 1
+    assert any("garment_identity_confirmations" in str(item) for item in session.executed)
 
 
 @pytest.mark.asyncio

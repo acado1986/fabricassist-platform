@@ -9,6 +9,10 @@
   are removed; physical-garment, scan, conversation, and service associations do
   not.
 - Model/provider retention must be set and approved in the subprocessor record.
+- Merged temporary garments are hidden immediately with a durable merge
+  tombstone and remain recoverable for `FABRICASSIST_MERGED_GARMENT_RETENTION_DAYS`
+  (30 days by default). The worker then permanently removes the tombstone after
+  verifying the merge references are no longer needed.
 
 Deletion is eventually consistent through the PostgreSQL outbox. Operational
 metrics retain aggregates only; no customer image or message content is copied.

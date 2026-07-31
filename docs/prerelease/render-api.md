@@ -1,7 +1,10 @@
 # Render prerelease API deployment
 
 Phase 6 deploys the existing FastAPI API as one Render Docker web service. It
-does not deploy Celery, Valkey, a migration runner, or a second backend.
+does not deploy Celery, Valkey, a migration runner, or a second backend. Any
+scheduled retention invocation must use the scheduler-independent
+`/app/scripts/run_retention.py` command from a Render Cron Job or another
+external scheduler.
 
 ## Build and runtime contract
 

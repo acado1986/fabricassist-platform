@@ -190,6 +190,7 @@ async def create_scan(
                     Garment.id == identifier.garment_id,
                     Garment.tenant_id == user.tenant_id,
                     Garment.user_id == user.id,
+                    Garment.merged_into_id.is_(None),
                 )
             )
             if garment is not None:

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift check-version frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed retention migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift check-version frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -51,6 +51,9 @@ migrate: ## Apply the Alembic schema baseline through the API Compose service.
 
 seed: ## Seed the idempotent non-loginable development tenant and admin.
 	docker compose exec -T fabricassist-api python /app/scripts/seed.py
+
+retention: ## Run one scheduler-independent retention and merged-garment cleanup pass.
+	cd backend && uv run python scripts/run_retention.py
 
 migration-test: ## Run Alembic/storage integration tests against isolated Compose services.
 	docker compose --profile test up -d fabricassist-postgres-test fabricassist-minio-test fabricassist-minio-test-init

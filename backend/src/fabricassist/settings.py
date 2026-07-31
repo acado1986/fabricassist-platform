@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     publication_recovery_batch_size: int = Field(default=100, ge=1, le=1_000)
     deletion_max_attempts: int = Field(default=5, ge=1, le=100)
     default_image_retention_days: int = Field(default=7, ge=1, le=365)
+    merged_garment_retention_days: int = Field(default=30, ge=1, le=3_650)
     s3_endpoint_url: str = "http://fabricassist-minio:9000"
     s3_public_endpoint_url: str = "http://localhost:9000"
     s3_region: str = "us-east-1"

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fabricassist.application.identity import merge_confirmed_garment
 from fabricassist.application.lifecycle import enqueue_deletion
 from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.domain.identity import IdentityClassification
@@ -94,14 +95,16 @@ async def get_storage() -> ObjectStorage:
     raise RuntimeError("Storage dependency was not configured.")
 
 
-async def owned_garment(session: AsyncSession, user: User, garment_id: UUID) -> Garment:
-    garment = await session.scalar(
-        select(Garment).where(
-            Garment.id == garment_id,
-            Garment.tenant_id == user.tenant_id,
-            Garment.user_id == user.id,
-        )
+async def owned_garment(
+    session: AsyncSession, user: User, garment_id: UUID, *, for_update: bool = False
+) -> Garment:
+    statement = select(Garment).where(
+        Garment.id == garment_id,
+        Garment.tenant_id == user.tenant_id,
+        Garment.user_id == user.id,
+        Garment.merged_into_id.is_(None),
     )
+    garment = await session.scalar(statement.with_for_update() if for_update else statement)
     if garment is None:
         raise HTTPException(404, "Garment was not found.")
     return garment
@@ -168,7 +171,9 @@ async def list_garments(
         (
             await session.scalars(
                 select(Garment).where(
-                    Garment.tenant_id == user.tenant_id, Garment.user_id == user.id
+                    Garment.tenant_id == user.tenant_id,
+                    Garment.user_id == user.id,
+                    Garment.merged_into_id.is_(None),
                 )
             )
         ).all()
@@ -320,9 +325,12 @@ async def identity_candidates(
     candidates = list(
         (
             await session.scalars(
-                select(GarmentIdentityCandidate).where(
+                select(GarmentIdentityCandidate)
+                .join(Garment, Garment.id == GarmentIdentityCandidate.garment_id)
+                .where(
                     GarmentIdentityCandidate.tenant_id == user.tenant_id,
                     GarmentIdentityCandidate.match_run_id.in_(run_ids),
+                    Garment.merged_into_id.is_(None),
                 )
             )
         ).all()
@@ -364,9 +372,9 @@ async def confirm_identity_candidate(
     storage: Annotated[ObjectStorage, Depends(get_storage)],
 ) -> GarmentResponse:
     scan = await session.scalar(
-        select(Scan).where(
-            Scan.id == scan_id, Scan.tenant_id == user.tenant_id, Scan.user_id == user.id
-        )
+        select(Scan)
+        .where(Scan.id == scan_id, Scan.tenant_id == user.tenant_id, Scan.user_id == user.id)
+        .with_for_update()
     )
     candidate = await session.scalar(
         select(GarmentIdentityCandidate).where(
@@ -391,7 +399,7 @@ async def confirm_identity_candidate(
         }
     ):
         raise HTTPException(404, "Identity candidate was not found.")
-    garment = await owned_garment(session, user, candidate.garment_id)
+    garment = await owned_garment(session, user, candidate.garment_id, for_update=True)
     existing = await session.scalar(
         select(GarmentIdentityConfirmation).where(GarmentIdentityConfirmation.scan_id == scan.id)
     )
@@ -399,7 +407,13 @@ async def confirm_identity_candidate(
         if existing.garment_id != garment.id:
             raise HTTPException(409, "This scan already has a different confirmed garment.")
         return await response_for(session, garment, storage)
-    scan.garment_id = garment.id
+    await merge_confirmed_garment(
+        session,
+        scan=scan,
+        target=garment,
+        candidate=candidate,
+        actor=user,
+    )
     candidate.status = "confirmed"
     session.add(
         GarmentIdentityConfirmation(

@@ -313,7 +313,10 @@ class RulesetVersion(Base):
 
 class Garment(Base):
     __tablename__ = "garments"
-    __table_args__ = (Index("ix_garments_tenant_id", "tenant_id"),)
+    __table_args__ = (
+        Index("ix_garments_tenant_id", "tenant_id"),
+        Index("ix_garments_merged_into_id", "merged_into_id"),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
@@ -321,6 +324,10 @@ class Garment(Base):
     user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
     active_analysis_revision_id: Mapped[UUID | None] = mapped_column(Uuid)
     active_result_id: Mapped[UUID | None] = mapped_column(Uuid)
+    merged_into_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="RESTRICT")
+    )
+    merged_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )

@@ -104,7 +104,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260729_0019"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0020"
 
     reset_database(engine)
     command.upgrade(config, "20260729_0018")
@@ -124,6 +124,12 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     assert {
         "ix_analysis_job_operations_unpublished",
     } <= {index["name"] for index in current.get_indexes("analysis_job_operations")}
+    assert {"merged_into_id", "merged_at"} <= {
+        column["name"] for column in current.get_columns("garments")
+    }
+    assert "ix_garments_merged_into_id" in {
+        index["name"] for index in current.get_indexes("garments")
+    }
     command.downgrade(config, "20260729_0018")
     downgraded = inspect(engine)
     assert "dispatch_correlation_id" not in {
@@ -133,7 +139,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260729_0019"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0020"
     engine.dispose()
 
 

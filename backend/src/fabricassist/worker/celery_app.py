@@ -27,5 +27,11 @@ celery_app.conf.update(
     task_time_limit=900,
     task_soft_time_limit=840,
     broker_connection_retry_on_startup=True,
+    beat_schedule={
+        "fabricassist-retention-daily": {
+            "task": "fabricassist.process_retention",
+            "schedule": 86_400.0,
+        }
+    },
 )
 celery_app.autodiscover_tasks(["fabricassist.worker"])
