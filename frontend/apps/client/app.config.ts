@@ -4,7 +4,7 @@ const config: ExpoConfig = {
   name: 'FabricAssist',
   slug: 'fabricassist',
   scheme: 'fabricassist',
-  version: '0.0.0',
+  version: '1.2.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   platforms: ['ios', 'android', 'web'],

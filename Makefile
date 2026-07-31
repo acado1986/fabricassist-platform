@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift check-version frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -102,6 +102,9 @@ check-openapi-drift: ## Regenerate OpenAPI/client and fail if checked-in artifac
 	$(MAKE) openapi
 	git diff --exit-code -- docs/api/openapi.json frontend/packages/api-client/src/generated
 
+check-version: ## Verify release metadata matches the root VERSION file.
+	@python3 infrastructure/scripts/check-version.py
+
 frontend-build: ## Build the Phase 3 Expo web artifact in Docker.
 	docker build --file frontend/Dockerfile frontend
 
@@ -112,7 +115,7 @@ build-release-web: ## Export the Expo static web artifact and verify it has no s
 check-web-bundle-secrets: ## Scan the generated Expo web bundle without printing secret values.
 	python3 infrastructure/scripts/check-web-bundle-secrets.py frontend/apps/client/dist
 
-check: bootstrap lint test ## Run the complete default Phase 5 local quality gate.
+check: bootstrap check-version lint test ## Run the complete default Phase 5 local quality gate.
 
 check-alpha-config: ## Validate typed alpha settings and safe alpha example configuration.
 	cd backend && uv run pytest tests/unit/test_settings.py -k alpha
