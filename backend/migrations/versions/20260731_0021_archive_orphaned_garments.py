@@ -38,5 +38,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Cannot safely distinguish rows archived by this repair from a prior user
-    # archive, so the migration is intentionally forward-only.
-    raise RuntimeError("20260731_0021 archive repair is irreversible")
+    # archive, so the data repair is intentionally not reversed. The no-op
+    # downgrade still lets Alembic traverse older schema revisions safely.
+    pass

@@ -2,6 +2,12 @@
 
 All notable changes to FabricAssist are documented here.
 
+## [1.3.1] - 2026-07-31
+
+### Fixed
+
+- Allow Alembic to traverse the orphan-garment repair migration during rollback without attempting an unsafe data reversal.
+
 ## [1.3.0] - 2026-07-31
 
 ### Added
@@ -20,9 +26,10 @@ All notable changes to FabricAssist are documented here.
 
 ### Deployment
 
-This prerelease is deployed by pushing the immutable tag `v1.3.0`. The
+This production release is deployed by pushing the immutable tag `v1.3.1`. The
 tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
+[1.3.1]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.1
 [1.3.0]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.0
