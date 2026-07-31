@@ -2,6 +2,18 @@
 
 All notable changes to FabricAssist are documented here.
 
+## [1.3.5] - 2026-07-31
+
+### Fixed
+
+- Fixed production GraphQL startup by instantiating Strawberry's
+  `DisableIntrospection` extension correctly, restoring garment history and
+  other authenticated GraphQL reads.
+
+### Deployment
+
+This patch release is deployed by pushing the immutable tag `v1.3.5`.
+
 ## [1.3.4] - 2026-07-31
 
 ### Added
@@ -75,6 +87,7 @@ tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
+[1.3.5]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.5
 [1.3.3]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.3
 [1.3.4]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.4
 [1.3.2]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.2

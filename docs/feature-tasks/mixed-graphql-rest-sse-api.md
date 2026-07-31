@@ -43,7 +43,7 @@ all other breaking changes remain fail-closed.
 
 Phase 7 local release checks and a bounded local metadata load smoke passed.
 The GraphQL implementation and follow-up history synchronization/deletion fixes
-are prepared for production release `v1.3.4`, but production
+are prepared for production release `v1.3.5`, but production
 SSE capacity/starvation validation remains deferred until the deployed API URL
 and protected smoke credentials are supplied. Android and iOS smoke evidence is
 also pending the required device runners.

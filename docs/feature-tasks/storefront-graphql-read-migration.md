@@ -860,7 +860,7 @@ At completion, record:
 
 ### Current implementation record
 
-- **Release:** `v1.3.4` (to be created from the release commit).
+- **Release:** `v1.3.5` (to be created from the release commit).
 - **Migrated screens/documents:** result composite (`ResultComposite`), garment
   detail/history (`GarmentDetail`, `GarmentHistory`), conversation reads
   (`ScanMessages`), and image metadata (`ScanImageMetadata`).
