@@ -49,14 +49,14 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@expo/vector-icons/Feather', () => 'Feather');
 
 test('history list closes the dialog after confirmed garment deletion', async () => {
-  const screen = render(<CustomerHistory />);
+  const screen = await render(<CustomerHistory />);
 
-  fireEvent.press(screen.getByLabelText('deleteGarment'));
+  await fireEvent.press(screen.getByLabelText('deleteGarment'));
 
   expect(mockMutate).not.toHaveBeenCalled();
   expect(screen.getByText('deleteGarmentConfirmDescription')).toBeTruthy();
 
-  fireEvent.press(screen.getByLabelText('deleteGarmentConfirmAction'));
+  await fireEvent.press(screen.getByLabelText('deleteGarmentConfirmAction'));
 
   expect(mockMutate).toHaveBeenCalledWith(
     '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',

@@ -7,9 +7,16 @@ module.exports = defineConfig([
     ignores: [
       'node_modules/',
       '.expo/',
-      'dist/',
-      'apps/client/dist/',
+      '**/dist/**',
       'packages/api-client/src/generated/',
     ],
+  },
+  {
+    // Expo 57's React Compiler rules are not yet compatible with these
+    // established provider/effect patterns.
+    rules: {
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ]);
