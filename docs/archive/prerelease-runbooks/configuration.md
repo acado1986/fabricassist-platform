@@ -12,7 +12,7 @@ Never expose database, R2, QStash, provider, JWT, or refresh-token secrets in
 `EXPO_PUBLIC_*` variables.
 
 For the meaning of every variable and the difference between local Docker and
-hosted prerelease, see the repository-wide [environment reference](../environment.md).
+hosted prerelease, see the repository-wide [environment reference](../../environment.md).
 
 ## Required prerelease settings
 

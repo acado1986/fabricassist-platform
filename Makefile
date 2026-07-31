@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed retention migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift check-version frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed retention migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift check-version frontend-build build-release-web check-web-bundle-secrets check check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -120,24 +120,6 @@ check-web-bundle-secrets: ## Scan the generated Expo web bundle without printing
 
 check: bootstrap check-version lint test ## Run the complete default Phase 5 local quality gate.
 
-check-alpha-config: ## Validate typed alpha settings and safe alpha example configuration.
-	cd backend && uv run pytest tests/unit/test_settings.py -k alpha
-	@! grep -Eq '^EXPO_PUBLIC_.*(TOKEN|KEY|SECRET|DATABASE|S3|QSTASH)' .env.alpha.example
-	@for expected in \
-		FABRICASSIST_JOB_DISPATCHER \
-		FABRICASSIST_EVIDENCE_PROVIDER \
-		FABRICASSIST_CARE_PLANNER_PROVIDER \
-		FABRICASSIST_CHAT_PROVIDER \
-		FABRICASSIST_OBJECT_STORAGE_BACKEND \
-		FABRICASSIST_PRODUCT_INFORMATION_PROVIDER \
-		FABRICASSIST_PUBLICATION_RECOVERY_INTERVAL_SECONDS \
-		FABRICASSIST_PUBLICATION_RECOVERY_BATCH_SIZE \
-		FABRICASSIST_DELETION_MAX_ATTEMPTS; do \
-		grep -Eq "^$${expected}=" .env.alpha.example || { \
-			echo "missing alpha capability setting $${expected}" >&2; exit 1; \
-		}; \
-	done
-
 check-production-config: ## Validate typed production settings and the safe production template.
 	cd backend && uv run python -c "from fabricassist.settings import DeploymentProfile, Settings; settings = Settings(_env_file='../.env.production.example'); assert settings.environment == 'production'; assert settings.deployment_profile == DeploymentProfile.PRODUCTION"
 	@! grep -Eq '^EXPO_PUBLIC_.*(TOKEN|KEY|SECRET|DATABASE|S3|QSTASH)' .env.production.example
@@ -156,10 +138,10 @@ check-production-config: ## Validate typed production settings and the safe prod
 		}; \
 	done
 
-check-render-config: ## Validate the Render alpha API workflow and container contract.
+check-render-config: ## Validate the Render production API workflow and container contract.
 	@./infrastructure/scripts/validate-render-api-workflow.sh
 
-check-deployment-workflows: ## Validate alpha and production release workflow contracts.
+check-deployment-workflows: ## Validate the production release workflow contract.
 	python3 infrastructure/scripts/validate-deployment-workflows.py
 	@./infrastructure/scripts/test-run-release-migrations.sh
 

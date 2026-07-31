@@ -16,6 +16,12 @@ Changes for the next release will be added here before a new version is tagged.
   confirmed garment and hid the resulting empty history entry with an auditable
   tombstone and deferred cleanup.
 
+### Changed
+
+- Retired the legacy hosted alpha/prerelease runtime profile; production is now
+  the only active hosted deployment profile, with historical runbooks archived
+  and staging explicitly deferred.
+
 ## [1.2.0] — 2026-07-31
 
 ### Added

@@ -23,15 +23,14 @@ garments, service history, sourced product data, and contextual conversations.
 
 Phase 19 adds OTLP tracing, Prometheus-compatible process and durable business
 metrics, redacted structured logs, explicit security headers/CORS, Valkey-backed
-rate and provider-concurrency limits, an optional Grafana stack, OpenTofu AWS
-staging infrastructure, supply-chain CI, backup/restore and failure drills,
+rate and provider-concurrency limits, an optional Grafana stack, deployment
+infrastructure, supply-chain CI, backup/restore and failure drills,
 bounded load gates, and web/native release procedures. The garment-intelligence
 cutover is complete; there is no fixed two-photo or `decide_care()` fallback.
 
 Infrastructure is selected independently by capability at backend composition
-roots. Local/self-hosted defaults use Celery plus Valkey-backed hot cache, rate
-limiting, and concurrency; the hosted prerelease profile uses QStash plus
-explicit optional no-op adapters.
+roots. Local defaults use Celery plus Valkey-backed hot cache, rate limiting,
+and concurrency; production uses QStash plus TLS Valkey for those capabilities.
 `FABRICASSIST_CELERY_BROKER_URL` is independent from
 `FABRICASSIST_VALKEY_URL`, so RabbitMQ can replace the Celery broker without
 changing application code. PostgreSQL remains authoritative for job intent,
@@ -47,7 +46,7 @@ Read these documents before making changes, in the precedence described by
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Environment variable reference](docs/environment.md)
 - [Production deployment runbook](docs/production/deployment.md)
-- [Prerelease operations](docs/prerelease/README.md)
+- [Production operations](docs/production/operations.md)
 - [Documentation index](docs/README.md)
 - [Next-session garment-intelligence prompt](docs/prompts/IMPLEMENT_GARMENT_INTELLIGENCE.md)
 
@@ -70,7 +69,6 @@ duplicated at the repository root.
 │   ├── architecture.md
 │   ├── IMPLEMENTATION_PLAN.md
 │   ├── adr/
-│   ├── prerelease/
 │   ├── production/
 │   ├── archive/
 │   ├── prompts/
@@ -102,12 +100,12 @@ make bootstrap
 ```
 
 `.env.example` contains development-only placeholders. Change every value marked
-for replacement before using any shared, staging, or production environment.
+for replacement before using any shared or production environment.
 Never commit `.env` or real credentials.
 
 See the complete [environment variable reference](docs/environment.md) for the
-purpose of each setting, the local Docker versus hosted prerelease and
-production topologies, and the capability selectors. The examples are
+purpose of each setting, the local Docker and production topologies, and the
+capability selectors. The examples are
 templates, not files to source directly.
 
 Capability selection examples:
@@ -120,11 +118,11 @@ FABRICASSIST_HOT_CACHE_BACKEND=valkey
 FABRICASSIST_RATE_LIMITER_BACKEND=valkey
 FABRICASSIST_CONCURRENCY_GATE_BACKEND=valkey
 
-# Hosted prerelease topology (QStash credentials remain protected secrets)
+# Production topology (QStash credentials remain protected secrets)
 FABRICASSIST_JOB_DISPATCHER=qstash
-FABRICASSIST_HOT_CACHE_BACKEND=noop
-FABRICASSIST_RATE_LIMITER_BACKEND=noop
-FABRICASSIST_CONCURRENCY_GATE_BACKEND=noop
+FABRICASSIST_HOT_CACHE_BACKEND=valkey
+FABRICASSIST_RATE_LIMITER_BACKEND=valkey
+FABRICASSIST_CONCURRENCY_GATE_BACKEND=valkey
 ```
 
 Production startup rejects no-op rate limiting and concurrency. Routes, domain
@@ -322,8 +320,8 @@ and [observability](docs/runbooks/observability.md) runbooks.
 The local mock remains deliberately conservative and is not professional
 textile-care advice. Production activation still requires named textile-care
 validator approval, a licensed/reviewed live provider and product source,
-privacy/subprocessor approval, an applied staging plan, and successful platform
-release gates.
+privacy/subprocessor approval, an approved hosted-environment plan, and
+successful platform release gates. A separate staging design is deferred.
 
 ## Review and privacy lifecycle
 

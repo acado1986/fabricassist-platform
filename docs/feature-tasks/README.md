@@ -6,9 +6,13 @@ requirements, architecture decisions, or active runbooks.
 
 ## Active tasks
 
-- [Retire the legacy alpha deployment profile](retire-legacy-alpha-profile.md)
+There are no active feature tasks.
 
-After implementation, add completion evidence and preserve the original
-filename while moving the task to
-[`../archive/implemented-tasks/`](../archive/implemented-tasks/). Update
-permanent operational documentation before archiving the plan.
+## Implemented tasks
+
+- [Retire the legacy alpha deployment profile](../archive/implemented-tasks/retire-legacy-alpha-profile.md)
+
+Implemented task plans retain their original filename under
+[`../archive/implemented-tasks/`](../archive/implemented-tasks/) with completion
+evidence. Permanent operational documentation is authoritative over archived
+plans.

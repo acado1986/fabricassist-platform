@@ -31,7 +31,7 @@ In GitHub, `release-quality.yml` additionally runs `make test-migrations`, `make
 1. Merge the reviewed change, then create and push a new immutable prerelease
    tag such as `v0.1.0-alpha.29`. Never move or re-push a published
    tag. Stable tags use the separate
-   [production deployment workflow](../production/deployment.md).
+   [production deployment workflow](../../production/deployment.md).
 2. Let `deploy-prerelease.yml` run, or dispatch it with a known exact tag/commit in `ref`. The workflow runs quality, migrates, deploys API and web from its recorded SHA, then executes hosted mock smoke.
 3. Record in the release log: selected SHA, tag, Alembic head, API origin, Pages origin, date/operator, and smoke outcome. Do not record secrets, presigned URLs, access tokens, or image data.
 4. Run the full post-deploy checklist in [smoke-tests.md](smoke-tests.md).

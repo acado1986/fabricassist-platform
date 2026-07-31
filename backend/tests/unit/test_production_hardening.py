@@ -131,7 +131,7 @@ def test_s3_storage_uses_r2_region_and_virtual_addressing(
             s3_endpoint_url="https://account-id.r2.cloudflarestorage.com",
             s3_public_endpoint_url="https://account-id.r2.cloudflarestorage.com",
             s3_region="auto",
-            s3_bucket="fabricassist-alpha",
+            s3_bucket="fabricassist-test",
             s3_access_key="synthetic-r2-key",
             s3_secret_key="synthetic-r2-secret",
             s3_force_path_style=False,

@@ -3,12 +3,11 @@
 .env.*
 .env-*
 !.env.example
-!.env.alpha.example
 !.env.production.example
 !.env.android.example
 
-# Never retain provider dashboard exports or copied credentials in alpha docs.
-docs/alpha/credentials/
+# Never retain provider dashboard exports or copied credentials in documentation.
+docs/**/credentials/
 
 # Python (Phase 2 and later)
 __pycache__/

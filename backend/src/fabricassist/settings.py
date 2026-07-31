@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from enum import Enum
-from typing import Any, Literal, cast
+from typing import Literal, cast
 from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
@@ -15,7 +15,6 @@ class DeploymentProfile(str, Enum):
     """Deployment topology selected at the infrastructure composition boundary."""
 
     LOCAL = "local"
-    ALPHA = "alpha"
     PRODUCTION = "production"
 
 
@@ -76,7 +75,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    environment: Literal["development", "test", "alpha", "production"] = "development"
+    environment: Literal["development", "test", "production"] = "development"
     deployment_profile: DeploymentProfile = DeploymentProfile.LOCAL
     job_dispatcher: JobDispatcherType = JobDispatcherType.CELERY
     hot_cache_backend: HotCacheBackend = HotCacheBackend.VALKEY
@@ -175,40 +174,9 @@ class Settings(BaseSettings):
     qstash_destination_url: str = ""
     cache_hot_ttl_seconds: int = Field(default=86_400, ge=60, le=604_800)
 
-    @model_validator(mode="before")
-    @classmethod
-    def apply_alpha_defaults(cls, data: Any) -> Any:
-        """Apply hosted-alpha limits without changing the local default values."""
-        if not isinstance(data, dict):
-            return data
-        values = cast(dict[str, Any], data)
-        profile = values.get("deployment_profile")
-        environment = values.get("environment")
-        if (
-            profile in {DeploymentProfile.ALPHA, DeploymentProfile.ALPHA.value}
-            or environment == "alpha"
-        ):
-            values = values.copy()
-            values.setdefault("max_images_per_scan", 3)
-            values.setdefault("database_pool_size", 2)
-            values.setdefault("database_max_overflow", 1)
-            values.setdefault("database_pool_recycle_seconds", 300)
-            values.setdefault("database_connect_attempts", 3)
-            values.setdefault("database_connect_retry_seconds", 1)
-            return values
-        return values
-
     @model_validator(mode="after")
     def reject_insecure_production_defaults(self) -> Settings:
         """Reject local credentials and unsafe network policy in production."""
-        if self.environment == "alpha" and self.deployment_profile != DeploymentProfile.ALPHA:
-            raise ValueError(
-                "FABRICASSIST_DEPLOYMENT_PROFILE must be alpha when environment is alpha"
-            )
-        if self.deployment_profile == DeploymentProfile.ALPHA and self.environment != "alpha":
-            raise ValueError(
-                "FABRICASSIST_ENVIRONMENT must be alpha for the alpha deployment profile"
-            )
         if self.job_dispatcher == JobDispatcherType.QSTASH:
             if not self.qstash_token:
                 raise ValueError("FABRICASSIST_QSTASH_TOKEN is required when QStash is selected")
@@ -233,54 +201,6 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "FABRICASSIST_VALKEY_URL is required by the selected Valkey capability"
                 )
-        if self.deployment_profile == DeploymentProfile.ALPHA:
-            origins = [
-                origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()
-            ]
-            if (
-                not origins
-                or "*" in origins
-                or any(urlparse(origin).scheme != "https" for origin in origins)
-            ):
-                raise ValueError(
-                    "FABRICASSIST_CORS_ALLOWED_ORIGINS must contain explicit HTTPS origins in alpha"
-                )
-            if any(
-                local_value in self.database_url
-                for local_value in ("change-me", "fabricassist_dev", "fabricassist-postgres")
-            ):
-                raise ValueError(
-                    "FABRICASSIST_DATABASE_URL must not use local development defaults in alpha"
-                )
-            if not self.database_migration_url:
-                raise ValueError("FABRICASSIST_DATABASE_MIGRATION_URL is required in alpha")
-            if "sslmode=require" not in self.database_url:
-                raise ValueError("FABRICASSIST_DATABASE_URL must configure PostgreSQL TLS in alpha")
-            if "sslmode=require" not in self.database_migration_url:
-                raise ValueError(
-                    "FABRICASSIST_DATABASE_MIGRATION_URL must configure PostgreSQL TLS in alpha"
-                )
-            if (
-                self.s3_bucket == "fabricassist-local"
-                or "fabricassist-minio" in self.s3_endpoint_url
-                or "localhost" in self.s3_endpoint_url
-            ):
-                raise ValueError("FabricAssist MinIO defaults are forbidden in alpha")
-            if urlparse(self.s3_endpoint_url).scheme != "https":
-                raise ValueError("FABRICASSIST_S3_ENDPOINT_URL must use HTTPS in alpha")
-            if urlparse(self.s3_public_endpoint_url).scheme != "https":
-                raise ValueError("FABRICASSIST_S3_PUBLIC_ENDPOINT_URL must use HTTPS in alpha")
-            if not self.s3_access_key or not self.s3_secret_key:
-                raise ValueError(
-                    "FABRICASSIST_S3_ACCESS_KEY and FABRICASSIST_S3_SECRET_KEY "
-                    "are required in alpha"
-                )
-            if self.s3_region != "auto":
-                raise ValueError("FABRICASSIST_S3_REGION must be auto in alpha")
-            if self.s3_force_path_style:
-                raise ValueError("FABRICASSIST_S3_FORCE_PATH_STYLE must be false in alpha")
-            if self.max_images_per_scan > 3:
-                raise ValueError("FABRICASSIST_MAX_IMAGES_PER_SCAN must not exceed 3 in alpha")
         if self.environment == "production" and (
             "change-me" in self.database_url
             or "fabricassist_dev" in self.database_url

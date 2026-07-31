@@ -19,7 +19,7 @@ already deployed. Its optional `base_url` does not deploy a candidate and is
 therefore not evidence that a new ref was released.
 
 Stable tags deploy only through the separate production workflow documented in
-the [production deployment runbook](../production/deployment.md).
+the [production deployment runbook](../../production/deployment.md).
 
 To roll back, manually dispatch `deploy-prerelease.yml` with a known-good commit or
 tag. Do not move or re-push a published tag, and do not automatically downgrade

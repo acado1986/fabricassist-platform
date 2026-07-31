@@ -433,3 +433,19 @@ Use focused commits only if the user asks the implementing agent to commit:
 
 Every commit must keep the repository internally consistent and pass its
 relevant focused checks. Do not push or deploy unless explicitly requested.
+
+## Implementation record
+
+**Status:** Implemented
+**Completed:** 2026-07-31
+**Implementation:** Working-tree implementation; no commit or hosted operation
+was requested.
+**Validation:** `git diff --check`; `make check-production-config`; `make
+test-qstash`; `make check-deployment-workflows`; `make check-openapi-drift`;
+`make build-release-web`; `make check`; focused settings/QStash/production
+hardening tests; tracked Markdown link and active workflow YAML checks.
+**Deviations:** None. Existing separate AWS staging IaC was left untouched;
+staging remains a later separately designed feature.
+**Remaining work:** A human operator may later inventory and retire obsolete
+external resources using ADR-016 and the production operations runbook. No
+hosted resources or credentials were changed by this implementation.

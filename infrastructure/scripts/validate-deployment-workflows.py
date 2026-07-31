@@ -33,7 +33,6 @@ def main() -> None:
     for marker in (
         "name: Release quality",
         "pull_request:",
-        "make check-alpha-config",
         "make check-production-config",
         "make test-qstash",
         "make test-migrations",
@@ -53,32 +52,6 @@ def main() -> None:
             raise SystemExit(
                 f"release-quality.yml must not use external deployment credentials: {forbidden}"
             )
-
-    alpha_deploy = load("deploy-prerelease.yml")
-    for marker in (
-        "name: Deploy prerelease",
-        '"v*-alpha*"',
-        "workflow_dispatch:",
-        "description: Commit, branch, or tag to deploy",
-        "ref: ${{ inputs.ref || github.ref }}",
-        "git rev-parse HEAD",
-        "needs: quality",
-        "needs: [quality, migrate]",
-        "needs: [deploy-api, deploy-web]",
-        "RENDER_DEPLOY_HOOK_URL",
-        '--data-urlencode "ref=${SELECTED_SHA}"',
-        "Wait for API liveness and readiness",
-        "uses: cloudflare/wrangler-action@v3",
-        "apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}",
-        "accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
-        "gitHubToken: ${{ secrets.GITHUB_TOKEN }}",
-        "steps.deploy-pages.outputs.deployment-url",
-        "run-release-migrations.sh",
-    ):
-        require(alpha_deploy, marker, "deploy-prerelease.yml")
-    for forbidden in ("KOYEB_API_TOKEN", "koyeb-community/", "koyeb/action-"):
-        if forbidden in alpha_deploy:
-            raise SystemExit(f"deploy-prerelease.yml must not use Koyeb: {forbidden}")
 
     production_deploy = load("deploy-production.yml")
     for marker in (
@@ -120,7 +93,7 @@ def main() -> None:
     ):
         require(runner, marker, "run-release-migrations.sh")
 
-    for workflow in ("prerelease-live-smoke.yml", "production-live-smoke.yml"):
+    for workflow in ("production-live-smoke.yml",):
         smoke = load(workflow)
         for marker in (
             "workflow_dispatch:",
@@ -133,7 +106,7 @@ def main() -> None:
     width, height = struct.unpack(">II", fixture_png[16:24])
     if width < 320 or height < 320:
         raise SystemExit("release smoke fixture must satisfy backend image dimensions")
-    print("Prerelease and production deployment workflow checks passed.")
+    print("Production deployment workflow checks passed.")
 
 
 if __name__ == "__main__":

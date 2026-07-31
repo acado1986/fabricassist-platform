@@ -28,7 +28,6 @@ jobs:
       - name: Run deterministic release quality checks
         run: |
           make check
-          make check-alpha-config
           make check-production-config
           make test-qstash
           make test-migrations

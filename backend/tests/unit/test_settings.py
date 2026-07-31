@@ -16,29 +16,27 @@ from fabricassist.settings import (
 )
 
 
-def alpha_settings(**overrides: object) -> Settings:
-    """Return complete synthetic alpha settings without using a real credential."""
+def qstash_settings(**overrides: object) -> Settings:
+    """Return a provider-neutral test configuration for QStash settings."""
     values: dict[str, object] = {
-        "environment": "alpha",
-        "deployment_profile": DeploymentProfile.ALPHA,
+        "environment": "test",
+        "deployment_profile": DeploymentProfile.LOCAL,
         "job_dispatcher": JobDispatcherType.QSTASH,
         "hot_cache_backend": "noop",
         "rate_limiter_backend": "noop",
         "concurrency_gate_backend": "noop",
-        "access_token_secret": "alpha-access-token-secret-that-is-long-enough",
+        "access_token_secret": "test-access-token-secret-that-is-long-enough",
         "app_base_url": "https://app.example.test",
         "api_public_url": "https://api.example.test",
         "cors_allowed_origins": "https://app.example.test",
-        "database_url": "postgresql://alpha:password@db.example.test/fabricassist?sslmode=require",
-        "database_migration_url": (
-            "postgresql://alpha:password@db-direct.example.test/fabricassist?sslmode=require"
-        ),
+        "database_url": "postgresql://test:password@db.example.test/fabricassist",
+        "database_migration_url": "postgresql://test:password@db-direct.example.test/fabricassist",
         "s3_endpoint_url": "https://account.r2.cloudflarestorage.com",
         "s3_public_endpoint_url": "https://account.r2.cloudflarestorage.com",
         "s3_region": "auto",
         "s3_access_key": "synthetic-r2-access-key",
         "s3_secret_key": "synthetic-r2-secret-key",
-        "s3_bucket": "fabricassist-alpha",
+        "s3_bucket": "fabricassist-test",
         "s3_force_path_style": False,
         "qstash_token": "synthetic-qstash-token",
         "qstash_current_signing_key": "synthetic-current-signing-key",
@@ -115,17 +113,19 @@ def test_any_selected_valkey_capability_requires_a_valkey_url() -> None:
         )
 
 
-def test_alpha_settings_accept_complete_qstash_configuration_without_valkey() -> None:
-    settings = alpha_settings()
+def test_qstash_settings_accept_complete_configuration_without_valkey() -> None:
+    settings = qstash_settings()
 
-    assert settings.deployment_profile == DeploymentProfile.ALPHA
+    assert settings.deployment_profile == DeploymentProfile.LOCAL
     assert settings.job_dispatcher == JobDispatcherType.QSTASH
     assert settings.valkey_url == ""
-    assert settings.max_images_per_scan == 3
+    assert settings.max_images_per_scan == 8
     assert settings.vision_max_concurrency == 1
-    assert settings.database_pool_size == 2
-    assert settings.database_max_overflow == 1
-    assert settings.database_pool_recycle_seconds == 300
+    assert settings.database_pool_size == 5
+    assert settings.database_max_overflow == 10
+    assert settings.database_pool_recycle_seconds == -1
+    assert settings.database_connect_attempts == 1
+    assert settings.database_connect_retry_seconds == 0
     assert settings.migration_database_url == settings.database_migration_url
 
 
@@ -136,44 +136,23 @@ def test_alpha_settings_accept_complete_qstash_configuration_without_valkey() ->
         ({"qstash_current_signing_key": ""}, "CURRENT_SIGNING_KEY"),
         ({"qstash_next_signing_key": ""}, "NEXT_SIGNING_KEY"),
         ({"qstash_destination_url": "http://api.example.test/jobs"}, "DESTINATION_URL"),
-        ({"cors_allowed_origins": "*"}, "CORS_ALLOWED_ORIGINS"),
-        (
-            {"database_url": "postgresql://fabricassist_dev:change-me@fabricassist-postgres/db"},
-            "DATABASE_URL",
-        ),
-        ({"database_migration_url": ""}, "DATABASE_MIGRATION_URL"),
-        ({"database_url": "postgresql://alpha:password@db.example.test/fabricassist"}, "TLS"),
-        (
-            {
-                "database_migration_url": (
-                    "postgresql://alpha:password@db-direct.example.test/fabricassist"
-                )
-            },
-            "MIGRATION_URL.*TLS",
-        ),
-        ({"s3_endpoint_url": "http://fabricassist-minio:9000"}, "MinIO defaults"),
-        ({"s3_access_key": ""}, "S3_ACCESS_KEY"),
-        ({"s3_secret_key": ""}, "S3_SECRET_KEY"),
-        ({"s3_region": "us-east-1"}, "S3_REGION"),
-        ({"s3_force_path_style": True}, "S3_FORCE_PATH_STYLE"),
-        ({"max_images_per_scan": 4}, "MAX_IMAGES_PER_SCAN"),
     ],
 )
-def test_alpha_settings_reject_unsafe_or_incomplete_configuration(
+def test_qstash_settings_reject_incomplete_configuration(
     overrides: dict[str, object], message: str
 ) -> None:
     with pytest.raises(ValidationError, match=message):
-        alpha_settings(**overrides)
+        qstash_settings(**overrides)
 
 
-def test_alpha_settings_require_matching_environment_and_profile() -> None:
-    with pytest.raises(ValidationError, match="DEPLOYMENT_PROFILE"):
-        Settings(environment="alpha")
-    with pytest.raises(ValidationError, match="ENVIRONMENT"):
-        alpha_settings(environment="production")
+def test_retired_alpha_values_are_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate({"environment": "alpha"})
+    with pytest.raises(ValidationError):
+        Settings.model_validate({"deployment_profile": "alpha"})
 
 
-def test_alpha_secret_settings_are_not_expo_public_configuration() -> None:
+def test_secret_settings_are_not_expo_public_configuration() -> None:
     frontend_config = (
         Path(__file__).resolve().parents[3] / "frontend/apps/client/app.config.ts"
     ).read_text()

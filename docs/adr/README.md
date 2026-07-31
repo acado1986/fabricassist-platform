@@ -10,11 +10,12 @@ ADR-005's model-authority decision; ADR-010 through ADR-012 record physical
 garment identity/history, sourced product enrichment, and server-owned
 contextual conversation.
 
-ADR-013 is a historical record of the hosted prerelease API placement. ADR-014
-records capability-level adapter selection and the PostgreSQL transactional job
-outbox. ADR-015 records the production Render/Cloudflare/Neon/R2/QStash/Valkey
-release topology.
+ADR-013 is a historical record of the hosted API placement. ADR-014 records
+capability-level adapter selection and the PostgreSQL transactional job outbox.
+ADR-015 records the production Render/Cloudflare/Neon/R2/QStash/Valkey release
+topology. ADR-016 records retirement of the obsolete hosted profile and the
+explicit deferral of staging.
 
-The historical alpha plan and inventory are archived under
-[`../archive/`](../archive/). Active prerelease operations live under
-[`../prerelease/`](../prerelease/).
+Retired plans and operational runbooks are archived under
+[`../archive/`](../archive/). Active hosted operations live under
+[`../production/`](../production/).

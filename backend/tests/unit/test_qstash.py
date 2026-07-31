@@ -51,8 +51,8 @@ NEXT_SIGNING_KEY = "next-signing-key-for-tests-000002"
 
 def settings() -> Settings:
     return Settings(
-        environment="alpha",
-        deployment_profile=DeploymentProfile.ALPHA,
+        environment="test",
+        deployment_profile=DeploymentProfile.LOCAL,
         job_dispatcher=JobDispatcherType.QSTASH,
         hot_cache_backend=HotCacheBackend.NOOP,
         rate_limiter_backend=RateLimiterBackend.NOOP,
@@ -61,16 +61,14 @@ def settings() -> Settings:
         app_base_url="https://app.example.test",
         api_public_url="https://api.example.test",
         cors_allowed_origins="https://app.example.test",
-        database_url="postgresql://alpha:password@db.example.test/fabricassist?sslmode=require",
-        database_migration_url=(
-            "postgresql://alpha:password@db.example.test/fabricassist?sslmode=require"
-        ),
+        database_url="postgresql://test:password@db.example.test/fabricassist",
+        database_migration_url="postgresql://test:password@db.example.test/fabricassist",
         s3_endpoint_url="https://account.r2.cloudflarestorage.com",
         s3_public_endpoint_url="https://account.r2.cloudflarestorage.com",
         s3_region="auto",
         s3_access_key="synthetic-r2-access-key",
         s3_secret_key="synthetic-r2-secret-key",
-        s3_bucket="fabricassist-alpha",
+        s3_bucket="fabricassist-test",
         s3_force_path_style=False,
         qstash_token="test-token-never-log",
         qstash_current_signing_key=CURRENT_SIGNING_KEY,

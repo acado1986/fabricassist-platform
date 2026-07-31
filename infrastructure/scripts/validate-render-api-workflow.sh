@@ -4,7 +4,7 @@ set -eu
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repository_root"
 
-workflow=.github/workflows/deploy-prerelease.yml
+workflow=.github/workflows/deploy-production.yml
 
 [ -f "$workflow" ] || {
   printf '%s\n' "Render workflow is missing: $workflow" >&2

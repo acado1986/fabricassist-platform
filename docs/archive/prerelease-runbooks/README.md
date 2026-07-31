@@ -5,12 +5,12 @@ This directory is the operator guide for the FabricAssist prerelease. It describ
 ## Read in this order
 
 1. [Architecture](architecture.md), [configuration](configuration.md), and the
-   repository-wide [environment reference](../environment.md).
+   repository-wide [environment reference](../../environment.md).
 2. [Secrets](secrets.md), then create the provider resources in the exact order in [deployment](deployment.md).
 3. Execute [smoke tests](smoke-tests.md) after deployment.
 4. Use [troubleshooting](troubleshooting.md) for a failed check or outage, and [rollback](rollback.md) for a release reversal.
 
-[`../archive/free-alpha-implementation-inventory.md`](../archive/free-alpha-implementation-inventory.md)
+[`../free-alpha-implementation-inventory.md`](../free-alpha-implementation-inventory.md)
 records the historical pre-prerelease baseline. The provider notes
 (`neon-database.md`, `r2-storage.md`, `render-api.md`, and `deployment-ci.md`)
 remain useful implementation references; these runbooks are the operational
