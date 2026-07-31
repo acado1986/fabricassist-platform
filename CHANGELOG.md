@@ -2,7 +2,7 @@
 
 All notable changes to FabricAssist are documented here.
 
-## [0.1.0-alpha.30] - 2026-07-31
+## [1.3.0] - 2026-07-31
 
 ### Added
 
@@ -20,9 +20,9 @@ All notable changes to FabricAssist are documented here.
 
 ### Deployment
 
-This prerelease is deployed by pushing the immutable tag `v0.1.0-alpha.30`. The
+This prerelease is deployed by pushing the immutable tag `v1.3.0`. The
 tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
-[0.1.0-alpha.30]: https://github.com/acado1986/fabricassist-platform/releases/tag/v0.1.0-alpha.30
+[1.3.0]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.0
