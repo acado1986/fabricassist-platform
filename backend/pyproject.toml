@@ -25,7 +25,7 @@ dependencies = [
   "pyjwt>=2.10,<3",
   "redis>=5.3,<9",
   "sqlalchemy>=2.0.36,<2.1",
-  "strawberry-graphql[fastapi]>=0.312.3,<0.313",
+  "strawberry-graphql[fastapi]>=0.315.7,<0.316",
   "uvicorn[standard]>=0.34,<0.52",
   "zxing-cpp>=2.3,<4",
 ]

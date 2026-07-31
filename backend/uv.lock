@@ -444,7 +444,7 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.10,<3" },
     { name = "redis", specifier = ">=5.3,<9" },
     { name = "sqlalchemy", specifier = ">=2.0.36,<2.1" },
-    { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.312.3,<0.313" },
+    { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.315.7,<0.316" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<0.52" },
     { name = "zxing-cpp", specifier = ">=2.3,<4" },
 ]
@@ -1361,7 +1361,7 @@ wheels = [
 
 [[package]]
 name = "strawberry-graphql"
-version = "0.312.4"
+version = "0.315.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cross-web" },
@@ -1370,9 +1370,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/53/e0/8e34606616b012b0a1612fcdf4d8f01705ddce11499dcbb5be130d451206/strawberry_graphql-0.312.4.tar.gz", hash = "sha256:02b2610ebe39fa6846511090630c5007f6ef4174e2003cb1aa914eddbbc9e0c9", size = 215575, upload-time = "2026-04-05T12:03:13.051Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/6a/49ea67e9419d934c505835fdb8cae63eb13bf4a99575e1c0e91c3b239eeb/strawberry_graphql-0.315.7.tar.gz", hash = "sha256:cce4c30b22686d4420eef1da640c8644d03478489181da505acf93a48bb4a629", size = 223087, upload-time = "2026-05-19T16:50:26.284Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/6d/bea257760cfb733b1fee6e50db68f244db6b54a87feb044d7a9955b5b289/strawberry_graphql-0.312.4-py3-none-any.whl", hash = "sha256:3021e290ccd04f3361b0c83829a2a8ec7b6baca94d1475df43d54ac4294ebf5a", size = 313189, upload-time = "2026-04-05T12:03:14.936Z" },
+    { url = "https://files.pythonhosted.org/packages/13/1e/2266df7e27a809de2eb610b644553b8d4cfb888c77db8c06b59d9378b6f7/strawberry_graphql-0.315.7-py3-none-any.whl", hash = "sha256:859c21b06c328357d935f5b735601e9f06342967033c9f1afe1db968aeabff24", size = 325535, upload-time = "2026-05-19T16:50:23.834Z" },
 ]
 
 [package.optional-dependencies]
