@@ -2,6 +2,12 @@
 
 All notable changes to FabricAssist are documented here.
 
+## [1.3.3] - 2026-07-31
+
+### Security
+
+- Upgrade Strawberry GraphQL to 0.312.4 to remediate the high-severity GraphQL WebSocket vulnerabilities reported by the production container scan.
+
 ## [1.3.2] - 2026-07-31
 
 ### Fixed
@@ -37,6 +43,7 @@ tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
+[1.3.3]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.3
 [1.3.2]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.2
 [1.3.1]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.1
 [1.3.0]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.0
