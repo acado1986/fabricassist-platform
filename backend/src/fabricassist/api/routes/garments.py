@@ -200,7 +200,18 @@ async def list_garments(
             )
         ).all()
     )
-    return [await response_for(session, garment, storage) for garment in garments]
+    responses = [await response_for(session, garment, storage) for garment in garments]
+    # History is customer-facing and must show the most recently analysed
+    # garment first. Garments without an analysis remain at the end.
+    responses.sort(
+        key=lambda garment: (
+            datetime.fromisoformat(garment.last_analysis_at)
+            if garment.last_analysis_at
+            else datetime.min.replace(tzinfo=UTC)
+        ),
+        reverse=True,
+    )
+    return responses
 
 
 @router.get("/{garment_id}", response_model=GarmentResponse)
