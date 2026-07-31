@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap up start start-android down logs reset-local smoke migrate seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
+.PHONY: help bootstrap graphql check-graphql-drift check-graphql-breaking up start start-android down logs reset-local smoke migrate migrate-repair seed migration-test test-migrations test-neon test-object-storage test-object-storage-r2 test lint openapi check-openapi-drift frontend-build build-release-web check-web-bundle-secrets check check-alpha-config check-production-config check-render-config check-deployment-workflows release-live-smoke test-qstash test-worker observability-up observability-down backup-restore-test load-test security-check iac-check release-check
 
 help: ## List the stable FabricAssist developer commands.
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -49,6 +49,10 @@ smoke: ## Verify local PostgreSQL, Valkey, MinIO, bucket privacy, and API health
 migrate: ## Apply the Alembic schema baseline through the API Compose service.
 	docker compose exec -T fabricassist-api alembic -c /app/alembic.ini upgrade head
 
+migrate-repair: ## Explicitly reset the local Alembic marker, then upgrade and verify (REVISION=... required).
+	@test -n "$(REVISION)" || { echo "Usage: make migrate-repair REVISION=<known-good-revision>" >&2; exit 2; }
+	@./infrastructure/scripts/migrate-repair.sh "$(REVISION)"
+
 seed: ## Seed the idempotent non-loginable development tenant and admin.
 	docker compose exec -T fabricassist-api python /app/scripts/seed.py
 
@@ -93,6 +97,23 @@ lint: ## Run configuration, backend, and frontend quality checks.
 	pnpm --dir frontend typecheck
 	@git diff --check
 
+graphql: ## Export the Strawberry SDL and generate typed GraphQL documents.
+	@mkdir -p docs/api/graphql
+	cd backend && uv run python -c "from fabricassist.api.graphql_schema import create_schema; from fabricassist.settings import Settings; print(create_schema(Settings()).as_str())" > ../docs/api/graphql/schema.graphql
+	pnpm --dir frontend generate:graphql
+
+check-graphql-drift: ## Regenerate GraphQL SDL/documents and fail on checked-in drift.
+	$(MAKE) graphql
+	git diff --exit-code -- docs/api/graphql/schema.graphql frontend/packages/api-client/src/graphql/generated
+
+check-graphql-breaking: ## Compare the checked-in GraphQL schema with merge-base when available.
+	@base=$$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1); \
+	if git cat-file -e $$base:docs/api/graphql/schema.graphql 2>/dev/null; then \
+		git show $$base:docs/api/graphql/schema.graphql > /tmp/fabricassist-graphql-base.graphql; \
+		pnpm --dir frontend exec graphql-inspector diff /tmp/fabricassist-graphql-base.graphql docs/api/graphql/schema.graphql; \
+	else \
+		echo 'No prior GraphQL schema available for breaking-change comparison.'; \
+	fi
 openapi: ## Generate deterministic FastAPI OpenAPI and the frontend client.
 	@mkdir -p docs/api
 	cd backend && uv run python -c "import json; from fabricassist.api.main import app; print(json.dumps(app.openapi(), indent=2, sort_keys=True))" > ../docs/api/openapi.json
