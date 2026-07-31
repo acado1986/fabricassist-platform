@@ -31,7 +31,11 @@ export async function refetchActiveGraphQLQueries(
         query.queryName !== undefined && requested.has(query.queryName),
     )
     .map((query) => query.refetch());
-  await Promise.all(activeQueries);
+  // Cache synchronization is opportunistic. A stale query can legitimately
+  // fail while a REST write has already succeeded (for example, when its
+  // scan was deleted or replaced), and that must not turn the successful
+  // write into a user-visible upload failure.
+  await Promise.allSettled(activeQueries);
 }
 
 function isQuery(operation: Operation): boolean {

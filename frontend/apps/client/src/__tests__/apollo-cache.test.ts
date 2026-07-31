@@ -62,6 +62,26 @@ test('REST cache effects refetch only active GraphQL queries', async () => {
   expect(refetch).toHaveBeenCalledTimes(1);
 });
 
+test('REST cache effects do not reject when an active query is stale', async () => {
+  const client = createApolloClient({
+    endpoint: 'http://localhost:8000/api/v1/graphql',
+    getAccessToken: () => 'token',
+    refreshAccessToken: async () => null,
+  });
+  const refetch = jest.fn().mockRejectedValue(new Error('NOT_FOUND'));
+  jest
+    .spyOn(client, 'getObservableQueries')
+    .mockReturnValue(
+      new Map([
+        ['active', { queryName: 'ScanImageMetadata', refetch } as never],
+      ]),
+    );
+
+  await expect(
+    refetchActiveGraphQLQueries(client, ['ScanImageMetadata']),
+  ).resolves.toBeUndefined();
+});
+
 test('Apollo merges paginated garment analysis history by scan id', () => {
   const client = createApolloClient({
     endpoint: 'http://localhost:8000/api/v1/graphql',

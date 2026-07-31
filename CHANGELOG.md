@@ -2,6 +2,17 @@
 
 All notable changes to FabricAssist are documented here.
 
+## [1.3.6] - 2026-08-01
+
+### Fixed
+
+- Prevented a stale GraphQL cache refetch from turning a successful image
+  upload into a user-visible upload failure.
+
+### Deployment
+
+This patch release is deployed by pushing the immutable tag `v1.3.6`.
+
 ## [1.3.5] - 2026-07-31
 
 ### Fixed
@@ -87,6 +98,7 @@ tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
+[1.3.6]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.6
 [1.3.5]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.5
 [1.3.3]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.3
 [1.3.4]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.4
