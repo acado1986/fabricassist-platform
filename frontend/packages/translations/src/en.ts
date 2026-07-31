@@ -127,6 +127,7 @@ export const en = {
     deleteGarmentRequestFailed: 'Unable to delete this garment history.',
     previousAnalyses: 'Previous analyses',
     previousAnalysesEmpty: 'You have no previous analyses yet.',
+    loadMoreAnalyses: 'Load more analyses',
     previousAnalysis: 'Care analysis',
     viewPreviousResult: 'View care result',
     scanHistoryLoadFailed: 'We could not load your previous analyses.',

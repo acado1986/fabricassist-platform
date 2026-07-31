@@ -1,14 +1,14 @@
 import {
   createAuthenticatedApiClient,
   createClient,
-  createGraphQLExecutor,
+  createApolloClient,
+  createRestWriteClient,
+  refetchActiveGraphQLQueries,
   bootstrapApiV1BootstrapGet,
-  loginApiV1AuthLoginPost,
-  logoutApiV1AuthLogoutPost,
-  refreshApiV1AuthRefreshPost,
-  registerApiV1AuthRegisterPost,
   type FabricAssistApiClient,
 } from '@fabricassist/api-client';
+import type { ApolloClient } from '@apollo/client';
+import { ApolloProvider } from '@apollo/client';
 import type { ReactNode } from 'react';
 import {
   createContext,
@@ -26,7 +26,8 @@ import { restoreAccessToken } from './restoreSession';
 type SessionContextValue = {
   refreshAccessToken: () => Promise<string | null>;
   apiClient: FabricAssistApiClient;
-  graphql: ReturnType<typeof createGraphQLExecutor>;
+  apolloClient: ApolloClient<unknown>;
+  restWrites: ReturnType<typeof createRestWriteClient>;
   isSessionReady: boolean;
   token: string | null;
   bootstrapLogin: () => Promise<void>;
@@ -43,7 +44,19 @@ export function SessionProvider({
   const [token, setToken] = useState<string | null>(null);
   const [isSessionReady, setIsSessionReady] = useState(false);
   const tokenRef = useRef<string | null>(null);
+  const refreshInFlight = useRef<Promise<string | null> | null>(null);
+  const apolloClientRef = useRef<ApolloClient<unknown> | null>(null);
   const anonymousClient = useRef(createClient({ baseUrl: getApiBaseUrl() }));
+  const [anonymousWrites] = useState(() =>
+    createRestWriteClient({
+      client: anonymousClient.current,
+      applyEffect: async (_operation, effect) => {
+        if (effect.kind === 'clear-authenticated-cache') {
+          await apolloClientRef.current?.clearStore();
+        }
+      },
+    }),
+  );
   const storeToken = useCallback(
     async (accessToken: string): Promise<string> => {
       tokenRef.current = accessToken;
@@ -53,18 +66,24 @@ export function SessionProvider({
     },
     [],
   );
-  const performRefresh = useCallback(async (): Promise<string | null> => {
-    try {
-      const result = await refreshApiV1AuthRefreshPost({
-        client: anonymousClient.current,
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': '1' },
-      });
-      return result.data ? storeToken(result.data.access_token) : null;
-    } catch {
-      return null;
-    }
-  }, [storeToken]);
+  const performRefresh = useCallback((): Promise<string | null> => {
+    if (refreshInFlight.current) return refreshInFlight.current;
+    const request = (async (): Promise<string | null> => {
+      try {
+        const result = await anonymousWrites.refresh({
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': '1' },
+        });
+        return result.data ? storeToken(result.data.access_token) : null;
+      } catch {
+        return null;
+      } finally {
+        refreshInFlight.current = null;
+      }
+    })();
+    refreshInFlight.current = request;
+    return request;
+  }, [anonymousWrites, storeToken]);
   const [apiClient] = useState(() =>
     createAuthenticatedApiClient({
       baseUrl: getApiBaseUrl(),
@@ -72,11 +91,40 @@ export function SessionProvider({
       refreshAccessToken: performRefresh,
     }),
   );
-  const [graphql] = useState(() =>
-    createGraphQLExecutor({
+  const [apolloClient] = useState(() => {
+    const client = createApolloClient({
       endpoint: `${getApiBaseUrl()}/api/v1/graphql`,
       getAccessToken: () => tokenRef.current,
       refreshAccessToken: performRefresh,
+      onAuthenticationFailure: () => {
+        tokenRef.current = null;
+        setToken(null);
+        void apolloClientRef.current?.clearStore();
+      },
+    });
+    apolloClientRef.current = client;
+    return client;
+  });
+  const [restWrites] = useState(() =>
+    createRestWriteClient({
+      client: apiClient,
+      applyEffect: async (_operation, effect) => {
+        if (effect.kind === 'clear-authenticated-cache') {
+          await apolloClient.clearStore();
+          return;
+        }
+        if (effect.kind === 'evict-and-refetch') {
+          apolloClient.cache.evict({
+            id: 'ROOT_QUERY',
+            fieldName:
+              effect.entity === 'GarmentType' ? 'garmentHistory' : 'scans',
+          });
+          apolloClient.cache.gc();
+        }
+        if (effect.kind === 'refetch' || effect.kind === 'evict-and-refetch') {
+          await refetchActiveGraphQLQueries(apolloClient, effect.queries);
+        }
+      },
     }),
   );
   useEffect(() => {
@@ -101,11 +149,11 @@ export function SessionProvider({
     password: string,
     register: boolean,
   ): Promise<void> {
+    await apolloClient.clearStore();
     const operation = register
-      ? registerApiV1AuthRegisterPost
-      : loginApiV1AuthLoginPost;
+      ? anonymousWrites.register
+      : anonymousWrites.login;
     const result = await operation({
-      client: anonymousClient.current,
       body: { email, password },
       credentials: 'include',
     });
@@ -128,32 +176,36 @@ export function SessionProvider({
   }
   async function signOut(): Promise<void> {
     try {
-      if (token) await logoutApiV1AuthLogoutPost({ client: apiClient });
+      if (token) await restWrites.logout();
     } finally {
       // A local logout must still succeed if the access token has expired or
       // the network is unavailable. The server-side refresh token is revoked
       // whenever the request reaches the API.
       await secureSession.clear();
+      await apolloClient.clearStore();
       tokenRef.current = null;
       setToken(null);
       router.replace('/login');
     }
   }
   return (
-    <SessionContext.Provider
-      value={{
-        apiClient,
-        graphql,
-        isSessionReady,
-        token,
-        signIn,
-        signOut,
-        refreshAccessToken,
-        bootstrapLogin,
-      }}
-    >
-      {children}
-    </SessionContext.Provider>
+    <ApolloProvider client={apolloClient}>
+      <SessionContext.Provider
+        value={{
+          apiClient,
+          apolloClient,
+          restWrites,
+          isSessionReady,
+          token,
+          signIn,
+          signOut,
+          refreshAccessToken,
+          bootstrapLogin,
+        }}
+      >
+        {children}
+      </SessionContext.Provider>
+    </ApolloProvider>
   );
 }
 export function useSession(): SessionContextValue {

@@ -1481,6 +1481,8 @@ Create Architecture Decision Records under `docs/adr/` for at least:
 - ADR-011: Trusted, sourced product-information lookup behind adapters.
 - ADR-012: Server-owned contextual conversation state in PostgreSQL.
 - ADR-016: Mixed GraphQL reads, REST commands, and durable SSE run events.
+- ADR-017: Unified v1 API with read-only GraphQL, REST-only writes, shared
+  application services, and canonical SSE recovery.
 
 ## 27. Initial implementation order for Codex
 

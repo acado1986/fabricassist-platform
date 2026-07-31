@@ -11,6 +11,7 @@
     "test": "jest --config jest.config.js"
   },
   "dependencies": {
+    "@apollo/client": "^3.14.1",
     "@expo/vector-icons": "^15.1.1",
     "@fabricassist/api-client": "workspace:*",
     "@fabricassist/design-tokens": "workspace:*",

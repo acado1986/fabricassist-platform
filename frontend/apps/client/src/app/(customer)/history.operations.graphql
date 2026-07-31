@@ -1,8 +1,14 @@
-#import "../../graphql/fragments/scan.graphql"
-query ScanHistory($first: Int!, $after: UUID) {
-  scans(first: $first, after: $after) {
+query GarmentHistory($first: Int!, $after: String) {
+  garmentHistory(first: $first, after: $after) {
     items {
-      ...ScanSummary
+      id
+      identifiers
+      thumbnailUrl
+      thumbnailScanId
+      thumbnailImageId
+      lastAnalysisAt
+      analysedBefore
+      cleanedBefore
     }
     pageInfo {
       nextCursor

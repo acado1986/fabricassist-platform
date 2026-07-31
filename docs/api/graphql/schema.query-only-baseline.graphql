@@ -1,0 +1,122 @@
+type AiRunType {
+  id: UUID!
+  scanId: UUID!
+  operation: String!
+  status: String!
+  errorCode: String
+  createdAt: DateTime!
+  startedAt: DateTime
+  completedAt: DateTime
+}
+
+type AnalysisRevisionType {
+  id: UUID!
+  scanId: UUID!
+  status: String!
+  revisionNumber: Int!
+  createdAt: DateTime!
+}
+
+
+type ConversationMessageConnection {
+  items: [ConversationMessageType!]!
+  pageInfo: PageInfo!
+}
+
+type ConversationMessageType {
+  id: UUID!
+  role: String!
+  status: String!
+  text: String!
+  createdAt: DateTime!
+}
+
+type CurrentUserType {
+  id: UUID!
+  email: String!
+  role: String!
+  preferredLanguage: String!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+type GarmentConnection {
+  items: [GarmentType!]!
+  pageInfo: PageInfo!
+}
+
+type GarmentHistoryConnection {
+  items: [GarmentHistoryItemType!]!
+  pageInfo: PageInfo!
+}
+
+type GarmentHistoryItemType {
+  id: UUID!
+  identifiers: [String!]!
+  thumbnailUrl: String
+  lastAnalysisAt: DateTime
+  analysedBefore: Boolean!
+  cleanedBefore: Boolean!
+}
+
+type GarmentType {
+  id: UUID!
+  displayName: String
+  archivedAt: DateTime
+  activeResultId: UUID
+  createdAt: DateTime!
+}
+
+
+
+type PageInfo {
+  nextCursor: String
+}
+
+type Query {
+  currentUser: CurrentUserType!
+  scans(first: Int! = 20, after: UUID = null): ScanConnection!
+  scan(id: UUID!): ScanType
+  garments(first: Int! = 20, after: UUID = null): GarmentConnection!
+  garmentHistory(first: Int! = 20, after: String = null): GarmentHistoryConnection!
+  garment(id: UUID!): GarmentType
+  messages(scanId: UUID!, first: Int! = 30, after: UUID = null): ConversationMessageConnection!
+  analysisRevision(id: UUID!): AnalysisRevisionType
+  analysis(id: UUID!): AnalysisRevisionType
+  imageMetadata(scanId: UUID!): [ScanImageMetadataType!]!
+  run(id: UUID!): AiRunType
+  usage: UsageSummary!
+}
+
+
+type ScanConnection {
+  items: [ScanType!]!
+  pageInfo: PageInfo!
+}
+
+type ScanImageMetadataType {
+  id: UUID!
+  role: String!
+  displayOrder: Int!
+  width: Int
+  height: Int
+}
+
+type ScanType {
+  id: UUID!
+  status: String!
+  requestedLanguage: String!
+  progressPercent: Int!
+  analysisStage: String
+  errorCode: String
+  garmentId: UUID
+  createdAt: DateTime!
+}
+
+scalar UUID
+
+type UsageSummary {
+  modelRunCount: Int!
+  estimatedCostUsd: String!
+}

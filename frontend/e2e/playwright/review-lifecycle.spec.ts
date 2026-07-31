@@ -7,9 +7,12 @@ test('operator claims a review case and confirms the validated correction workfl
   let assigned = false;
   let approved = false;
   await page.addInitScript(() =>
-    sessionStorage.setItem('fabricassist_access_token', 'e2e-token'),
+    sessionStorage.setItem(
+      'fabricassist_access_token',
+      'e2e.eyJleHAiOjQxMDI0NDQ4MDB9.signature',
+    ),
   );
-  await page.route('**/api/v1/reviews', async (route) => {
+  const reviewList = async (route: import('@playwright/test').Route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         json: assigned ? [] : [{ id: 'review-1', status: 'open' }],
@@ -17,6 +20,14 @@ test('operator claims a review case and confirms the validated correction workfl
       return;
     }
     await route.continue();
+  };
+  await page.route('**/api/v1/reviews**', async (route) => {
+    const pathname = new URL(route.request().url()).pathname.replace(/\/$/, '');
+    if (route.request().method() === 'GET' && pathname === '/api/v1/reviews') {
+      await reviewList(route);
+      return;
+    }
+    await route.fallback();
   });
   const reviewDetail = async (route: import('@playwright/test').Route) => {
     const url = route.request().url();

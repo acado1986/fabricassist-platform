@@ -1,5 +1,5 @@
 /* eslint-disable */
-import { DocumentTypeDecoration } from '@graphql-typed-document-node/core';
+import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
 export type Maybe<T> = T | null;
 export type InputMaybe<T> = T | null | undefined;
 export type Exact<T extends { [key: string]: unknown }> = {
@@ -29,6 +29,8 @@ export type Scalars = {
   Float: { input: number; output: number };
   /** Date with time (isoformat) */
   DateTime: { input: string; output: string };
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf). */
+  JSON: { input: unknown; output: unknown };
   UUID: { input: string; output: string };
 };
 
@@ -53,6 +55,14 @@ export type AnalysisRevisionType = {
   status: Scalars['String']['output'];
 };
 
+export type CareResultType = {
+  __typename?: 'CareResultType';
+  data: Scalars['JSON']['output'];
+  id: Scalars['UUID']['output'];
+  language: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+};
+
 export type ConversationMessageConnection = {
   __typename?: 'ConversationMessageConnection';
   items: Array<ConversationMessageType>;
@@ -68,10 +78,6 @@ export type ConversationMessageType = {
   text: Scalars['String']['output'];
 };
 
-export type CreateScanInput = {
-  requestedLanguage?: Scalars['String']['input'];
-};
-
 export type CurrentUserType = {
   __typename?: 'CurrentUserType';
   email: Scalars['String']['output'];
@@ -80,10 +86,20 @@ export type CurrentUserType = {
   role: Scalars['String']['output'];
 };
 
-export type FeedbackType = {
-  __typename?: 'FeedbackType';
-  id: Scalars['UUID']['output'];
-  requestReview: Scalars['Boolean']['output'];
+export type GarmentAnalysisHistoryConnection = {
+  __typename?: 'GarmentAnalysisHistoryConnection';
+  items: Array<GarmentAnalysisHistoryType>;
+  pageInfo: PageInfo;
+};
+
+export type GarmentAnalysisHistoryType = {
+  __typename?: 'GarmentAnalysisHistoryType';
+  createdAt: Scalars['DateTime']['output'];
+  resultAvailable: Scalars['Boolean']['output'];
+  scanId: Scalars['UUID']['output'];
+  status: Scalars['String']['output'];
+  thumbnailImageId?: Maybe<Scalars['UUID']['output']>;
+  thumbnailScanId?: Maybe<Scalars['UUID']['output']>;
 };
 
 export type GarmentConnection = {
@@ -92,8 +108,38 @@ export type GarmentConnection = {
   pageInfo: PageInfo;
 };
 
-export type GarmentIdInput = {
-  garmentId: Scalars['UUID']['input'];
+export type GarmentDetailType = {
+  __typename?: 'GarmentDetailType';
+  activeAnalysis?: Maybe<AnalysisRevisionType>;
+  activeResult?: Maybe<CareResultType>;
+  analysedBefore: Scalars['Boolean']['output'];
+  analyses: GarmentAnalysisHistoryConnection;
+  cleanedBefore: Scalars['Boolean']['output'];
+  displayName?: Maybe<Scalars['String']['output']>;
+  id: Scalars['UUID']['output'];
+  identifiers: Array<Scalars['String']['output']>;
+  lastAnalysisAt?: Maybe<Scalars['DateTime']['output']>;
+  serviceEvents: Array<ServiceEventType>;
+  thumbnailImageId?: Maybe<Scalars['UUID']['output']>;
+  thumbnailScanId?: Maybe<Scalars['UUID']['output']>;
+};
+
+export type GarmentHistoryConnection = {
+  __typename?: 'GarmentHistoryConnection';
+  items: Array<GarmentHistoryItemType>;
+  pageInfo: PageInfo;
+};
+
+export type GarmentHistoryItemType = {
+  __typename?: 'GarmentHistoryItemType';
+  analysedBefore: Scalars['Boolean']['output'];
+  cleanedBefore: Scalars['Boolean']['output'];
+  id: Scalars['UUID']['output'];
+  identifiers: Array<Scalars['String']['output']>;
+  lastAnalysisAt?: Maybe<Scalars['DateTime']['output']>;
+  thumbnailImageId?: Maybe<Scalars['UUID']['output']>;
+  thumbnailScanId?: Maybe<Scalars['UUID']['output']>;
+  thumbnailUrl?: Maybe<Scalars['String']['output']>;
 };
 
 export type GarmentType = {
@@ -105,43 +151,15 @@ export type GarmentType = {
   id: Scalars['UUID']['output'];
 };
 
-export type Mutation = {
-  __typename?: 'Mutation';
-  archiveGarment: GarmentType;
-  createScan: ScanType;
-  deleteGarment: Scalars['Boolean']['output'];
-  deleteScan: Scalars['Boolean']['output'];
-  renameGarment: GarmentType;
-  submitFeedback: FeedbackType;
-  unarchiveGarment: GarmentType;
-};
-
-export type MutationArchiveGarmentArgs = {
-  input: GarmentIdInput;
-};
-
-export type MutationCreateScanArgs = {
-  input: CreateScanInput;
-};
-
-export type MutationDeleteGarmentArgs = {
-  input: GarmentIdInput;
-};
-
-export type MutationDeleteScanArgs = {
-  input: ScanIdInput;
-};
-
-export type MutationRenameGarmentArgs = {
-  input: RenameGarmentInput;
-};
-
-export type MutationSubmitFeedbackArgs = {
-  input: SubmitFeedbackInput;
-};
-
-export type MutationUnarchiveGarmentArgs = {
-  input: GarmentIdInput;
+export type IdentityCandidateType = {
+  __typename?: 'IdentityCandidateType';
+  classification: Scalars['String']['output'];
+  garmentId: Scalars['UUID']['output'];
+  id: Scalars['UUID']['output'];
+  reasons: Scalars['JSON']['output'];
+  status: Scalars['String']['output'];
+  thumbnailImageId?: Maybe<Scalars['UUID']['output']>;
+  thumbnailScanId?: Maybe<Scalars['UUID']['output']>;
 };
 
 export type PageInfo = {
@@ -155,11 +173,14 @@ export type Query = {
   analysisRevision?: Maybe<AnalysisRevisionType>;
   currentUser: CurrentUserType;
   garment?: Maybe<GarmentType>;
+  garmentDetail?: Maybe<GarmentDetailType>;
+  garmentHistory: GarmentHistoryConnection;
   garments: GarmentConnection;
   imageMetadata: Array<ScanImageMetadataType>;
   messages: ConversationMessageConnection;
   run?: Maybe<AiRunType>;
   scan?: Maybe<ScanType>;
+  scanResult?: Maybe<ResultCompositeType>;
   scans: ScanConnection;
   usage: UsageSummary;
 };
@@ -176,8 +197,20 @@ export type QueryGarmentArgs = {
   id: Scalars['UUID']['input'];
 };
 
+export type QueryGarmentDetailArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  first?: Scalars['Int']['input'];
+  id: Scalars['UUID']['input'];
+  language?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type QueryGarmentHistoryArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  first?: Scalars['Int']['input'];
+};
+
 export type QueryGarmentsArgs = {
-  after?: InputMaybe<Scalars['UUID']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
   first?: Scalars['Int']['input'];
 };
 
@@ -186,7 +219,7 @@ export type QueryImageMetadataArgs = {
 };
 
 export type QueryMessagesArgs = {
-  after?: InputMaybe<Scalars['UUID']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
   first?: Scalars['Int']['input'];
   scanId: Scalars['UUID']['input'];
 };
@@ -199,24 +232,29 @@ export type QueryScanArgs = {
   id: Scalars['UUID']['input'];
 };
 
+export type QueryScanResultArgs = {
+  language?: InputMaybe<Scalars['String']['input']>;
+  scanId: Scalars['UUID']['input'];
+};
+
 export type QueryScansArgs = {
-  after?: InputMaybe<Scalars['UUID']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
   first?: Scalars['Int']['input'];
 };
 
-export type RenameGarmentInput = {
-  displayName: Scalars['String']['input'];
-  garmentId: Scalars['UUID']['input'];
+export type ResultCompositeType = {
+  __typename?: 'ResultCompositeType';
+  activeAnalysis?: Maybe<AnalysisRevisionType>;
+  garment?: Maybe<GarmentType>;
+  identityCandidates: Array<IdentityCandidateType>;
+  result?: Maybe<CareResultType>;
+  scan: ScanType;
 };
 
 export type ScanConnection = {
   __typename?: 'ScanConnection';
   items: Array<ScanType>;
   pageInfo: PageInfo;
-};
-
-export type ScanIdInput = {
-  scanId: Scalars['UUID']['input'];
 };
 
 export type ScanImageMetadataType = {
@@ -240,11 +278,12 @@ export type ScanType = {
   status: Scalars['String']['output'];
 };
 
-export type SubmitFeedbackInput = {
-  comment?: InputMaybe<Scalars['String']['input']>;
-  rating?: InputMaybe<Scalars['Int']['input']>;
-  requestReview?: Scalars['Boolean']['input'];
-  scanId: Scalars['UUID']['input'];
+export type ServiceEventType = {
+  __typename?: 'ServiceEventType';
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['UUID']['output'];
+  kind: Scalars['String']['output'];
+  note?: Maybe<Scalars['String']['output']>;
 };
 
 export type UsageSummary = {
@@ -256,7 +295,7 @@ export type UsageSummary = {
 export type ScanMessagesQueryVariables = Exact<{
   scanId: Scalars['UUID']['input'];
   first: Scalars['Int']['input'];
-  after?: InputMaybe<Scalars['UUID']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
 }>;
 
 export type ScanMessagesQuery = {
@@ -275,35 +314,157 @@ export type ScanMessagesQuery = {
   };
 };
 
-export type ScanHistoryQueryVariables = Exact<{
+export type GarmentDetailQueryVariables = Exact<{
+  garmentId: Scalars['UUID']['input'];
   first: Scalars['Int']['input'];
-  after?: InputMaybe<Scalars['UUID']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
+  language: Scalars['String']['input'];
 }>;
 
-export type ScanHistoryQuery = {
+export type GarmentDetailQuery = {
   __typename?: 'Query';
-  scans: {
-    __typename?: 'ScanConnection';
-    items: Array<
-      { __typename?: 'ScanType' } & {
-        ' $fragmentRefs'?: { ScanSummaryFragment: ScanSummaryFragment };
-      }
-    >;
+  garmentDetail?: {
+    __typename?: 'GarmentDetailType';
+    id: string;
+    displayName?: string | null;
+    identifiers: Array<string>;
+    thumbnailScanId?: string | null;
+    thumbnailImageId?: string | null;
+    lastAnalysisAt?: string | null;
+    analysedBefore: boolean;
+    cleanedBefore: boolean;
+    activeAnalysis?: {
+      __typename?: 'AnalysisRevisionType';
+      id: string;
+      scanId: string;
+      status: string;
+      revisionNumber: number;
+      createdAt: string;
+    } | null;
+    activeResult?: {
+      __typename?: 'CareResultType';
+      id: string;
+      status: string;
+      language: string;
+      data: unknown;
+    } | null;
+    analyses: {
+      __typename?: 'GarmentAnalysisHistoryConnection';
+      items: Array<{
+        __typename?: 'GarmentAnalysisHistoryType';
+        scanId: string;
+        status: string;
+        createdAt: string;
+        resultAvailable: boolean;
+        thumbnailScanId?: string | null;
+        thumbnailImageId?: string | null;
+      }>;
+      pageInfo: { __typename?: 'PageInfo'; nextCursor?: string | null };
+    };
+    serviceEvents: Array<{
+      __typename?: 'ServiceEventType';
+      id: string;
+      kind: string;
+      note?: string | null;
+      createdAt: string;
+    }>;
+  } | null;
+};
+
+export type GarmentHistoryQueryVariables = Exact<{
+  first: Scalars['Int']['input'];
+  after?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+export type GarmentHistoryQuery = {
+  __typename?: 'Query';
+  garmentHistory: {
+    __typename?: 'GarmentHistoryConnection';
+    items: Array<{
+      __typename?: 'GarmentHistoryItemType';
+      id: string;
+      identifiers: Array<string>;
+      thumbnailUrl?: string | null;
+      thumbnailScanId?: string | null;
+      thumbnailImageId?: string | null;
+      lastAnalysisAt?: string | null;
+      analysedBefore: boolean;
+      cleanedBefore: boolean;
+    }>;
     pageInfo: { __typename?: 'PageInfo'; nextCursor?: string | null };
   };
 };
 
-export type ScanRunRecoveryQueryVariables = Exact<{
-  id: Scalars['UUID']['input'];
+export type ScanImageMetadataQueryVariables = Exact<{
+  scanId: Scalars['UUID']['input'];
 }>;
 
-export type ScanRunRecoveryQuery = {
+export type ScanImageMetadataQuery = {
   __typename?: 'Query';
-  scan?:
-    | ({ __typename?: 'ScanType' } & {
-        ' $fragmentRefs'?: { ScanSummaryFragment: ScanSummaryFragment };
-      })
-    | null;
+  imageMetadata: Array<{
+    __typename?: 'ScanImageMetadataType';
+    id: string;
+    role: string;
+    displayOrder: number;
+    width?: number | null;
+    height?: number | null;
+  }>;
+};
+
+export type ResultCompositeQueryVariables = Exact<{
+  scanId: Scalars['UUID']['input'];
+  language: Scalars['String']['input'];
+}>;
+
+export type ResultCompositeQuery = {
+  __typename?: 'Query';
+  scanResult?: {
+    __typename?: 'ResultCompositeType';
+    scan: {
+      __typename?: 'ScanType';
+      id: string;
+      status: string;
+      requestedLanguage: string;
+      progressPercent: number;
+      analysisStage?: string | null;
+      errorCode?: string | null;
+      garmentId?: string | null;
+      createdAt: string;
+    };
+    activeAnalysis?: {
+      __typename?: 'AnalysisRevisionType';
+      id: string;
+      scanId: string;
+      status: string;
+      revisionNumber: number;
+      createdAt: string;
+    } | null;
+    result?: {
+      __typename?: 'CareResultType';
+      id: string;
+      status: string;
+      language: string;
+      data: unknown;
+    } | null;
+    garment?: {
+      __typename?: 'GarmentType';
+      id: string;
+      displayName?: string | null;
+      archivedAt?: string | null;
+      activeResultId?: string | null;
+      createdAt: string;
+    } | null;
+    identityCandidates: Array<{
+      __typename?: 'IdentityCandidateType';
+      id: string;
+      garmentId: string;
+      thumbnailScanId?: string | null;
+      thumbnailImageId?: string | null;
+      classification: string;
+      reasons: unknown;
+      status: string;
+    }>;
+  } | null;
 };
 
 export type ScanSummaryFragment = {
@@ -318,100 +479,774 @@ export type ScanSummaryFragment = {
   createdAt: string;
 } & { ' $fragmentName'?: 'ScanSummaryFragment' };
 
-export class TypedDocumentString<TResult, TVariables>
-  extends String
-  implements DocumentTypeDecoration<TResult, TVariables>
-{
-  __apiType?: NonNullable<
-    DocumentTypeDecoration<TResult, TVariables>['__apiType']
-  >;
-  private value: string;
-  public __meta__?: Record<string, any> | undefined;
-
-  constructor(value: string, __meta__?: Record<string, any> | undefined) {
-    super(value);
-    this.value = value;
-    this.__meta__ = __meta__;
-  }
-
-  override toString(): string & DocumentTypeDecoration<TResult, TVariables> {
-    return this.value;
-  }
-}
-export const ScanSummaryFragmentDoc = new TypedDocumentString(
-  `
-    fragment ScanSummary on ScanType {
-  id
-  status
-  requestedLanguage
-  progressPercent
-  analysisStage
-  errorCode
-  garmentId
-  createdAt
-}
-    `,
-  { fragmentName: 'ScanSummary' },
-) as unknown as TypedDocumentString<ScanSummaryFragment, unknown>;
-export const ScanMessagesDocument = new TypedDocumentString(`
-    query ScanMessages($scanId: UUID!, $first: Int!, $after: UUID) {
-  messages(scanId: $scanId, first: $first, after: $after) {
-    items {
-      id
-      role
-      status
-      text
-      createdAt
-    }
-    pageInfo {
-      nextCursor
-    }
-  }
-}
-    `) as unknown as TypedDocumentString<
-  ScanMessagesQuery,
-  ScanMessagesQueryVariables
+export const ScanSummaryFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'ScanSummary' },
+      typeCondition: {
+        kind: 'NamedType',
+        name: { kind: 'Name', value: 'ScanType' },
+      },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'requestedLanguage' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'progressPercent' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'analysisStage' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'errorCode' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'garmentId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ScanSummaryFragment, unknown>;
+export const ScanMessagesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ScanMessages' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'scanId' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UUID' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'first' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'after' },
+          },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'messages' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'scanId' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'scanId' },
+                },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'first' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'first' },
+                },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'after' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'after' },
+                },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'role' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'status' },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'text' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'createdAt' },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'pageInfo' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'nextCursor' },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ScanMessagesQuery, ScanMessagesQueryVariables>;
+export const GarmentDetailDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GarmentDetail' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'garmentId' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UUID' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'first' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'after' },
+          },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'language' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'NamedType',
+              name: { kind: 'Name', value: 'String' },
+            },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'garmentDetail' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'id' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'garmentId' },
+                },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'first' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'first' },
+                },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'after' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'after' },
+                },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'language' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'language' },
+                },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'identifiers' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'thumbnailScanId' },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'thumbnailImageId' },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'lastAnalysisAt' },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'analysedBefore' },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'cleanedBefore' },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'activeAnalysis' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'scanId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'status' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'revisionNumber' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'createdAt' },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'activeResult' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'status' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'language' },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'data' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'analyses' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'items' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'scanId' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'status' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'createdAt' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'resultAvailable' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'thumbnailScanId' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'thumbnailImageId' },
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'pageInfo' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'nextCursor' },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'serviceEvents' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'note' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'createdAt' },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GarmentDetailQuery, GarmentDetailQueryVariables>;
+export const GarmentHistoryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GarmentHistory' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'first' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'after' },
+          },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'garmentHistory' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'first' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'first' },
+                },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'after' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'after' },
+                },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'identifiers' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'thumbnailUrl' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'thumbnailScanId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'thumbnailImageId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'lastAnalysisAt' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'analysedBefore' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'cleanedBefore' },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'pageInfo' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'nextCursor' },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GarmentHistoryQuery, GarmentHistoryQueryVariables>;
+export const ScanImageMetadataDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ScanImageMetadata' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'scanId' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UUID' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'imageMetadata' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'scanId' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'scanId' },
+                },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'role' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'displayOrder' },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'width' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'height' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<
+  ScanImageMetadataQuery,
+  ScanImageMetadataQueryVariables
 >;
-export const ScanHistoryDocument = new TypedDocumentString(`
-    query ScanHistory($first: Int!, $after: UUID) {
-  scans(first: $first, after: $after) {
-    items {
-      ...ScanSummary
-    }
-    pageInfo {
-      nextCursor
-    }
-  }
-}
-    fragment ScanSummary on ScanType {
-  id
-  status
-  requestedLanguage
-  progressPercent
-  analysisStage
-  errorCode
-  garmentId
-  createdAt
-}`) as unknown as TypedDocumentString<
-  ScanHistoryQuery,
-  ScanHistoryQueryVariables
->;
-export const ScanRunRecoveryDocument = new TypedDocumentString(`
-    query ScanRunRecovery($id: UUID!) {
-  scan(id: $id) {
-    ...ScanSummary
-  }
-}
-    fragment ScanSummary on ScanType {
-  id
-  status
-  requestedLanguage
-  progressPercent
-  analysisStage
-  errorCode
-  garmentId
-  createdAt
-}`) as unknown as TypedDocumentString<
-  ScanRunRecoveryQuery,
-  ScanRunRecoveryQueryVariables
+export const ResultCompositeDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ResultComposite' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'scanId' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UUID' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: {
+            kind: 'Variable',
+            name: { kind: 'Name', value: 'language' },
+          },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'NamedType',
+              name: { kind: 'Name', value: 'String' },
+            },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'scanResult' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'scanId' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'scanId' },
+                },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'language' },
+                value: {
+                  kind: 'Variable',
+                  name: { kind: 'Name', value: 'language' },
+                },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'scan' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'status' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'requestedLanguage' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'progressPercent' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'analysisStage' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'errorCode' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'garmentId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'createdAt' },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'activeAnalysis' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'scanId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'status' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'revisionNumber' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'createdAt' },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'result' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'status' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'language' },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'data' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'garment' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'displayName' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'archivedAt' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'activeResultId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'createdAt' },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'identityCandidates' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'garmentId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'thumbnailScanId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'thumbnailImageId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'classification' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'reasons' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'status' },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<
+  ResultCompositeQuery,
+  ResultCompositeQueryVariables
 >;

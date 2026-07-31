@@ -4,8 +4,52 @@ import CustomerHistory from '../app/(customer)/history';
 
 const mockMutate = jest.fn();
 
-jest.mock('../auth/session', () => ({
-  useSession: () => ({ apiClient: {}, token: 'access-token' }),
+jest.mock('../auth/session', () => {
+  const apiClient = {};
+  return {
+    useSession: () => ({
+      apiClient,
+      restWrites: {
+        deleteGarment: jest
+          .fn()
+          .mockResolvedValue({ data: { status: 'deleted' } }),
+      },
+      token: 'access-token',
+    }),
+  };
+});
+
+jest.mock('@fabricassist/api-client', () => ({
+  GarmentHistoryDocument: {},
+  imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet: jest
+    .fn()
+    .mockResolvedValue({ data: { url: 'https://preview.example.test/image' } }),
+}));
+
+const mockPreview = jest.requireMock('@fabricassist/api-client')
+  .imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet as jest.Mock;
+
+jest.mock('@apollo/client', () => ({
+  useQuery: () => ({
+    data: {
+      garmentHistory: {
+        items: [
+          {
+            analysedBefore: true,
+            cleanedBefore: false,
+            id: '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
+            identifiers: ['FA-EXAMPLE'],
+            lastAnalysisAt: null,
+            thumbnailUrl: null,
+            thumbnailScanId: 'scan-1',
+            thumbnailImageId: 'image-1',
+          },
+        ],
+      },
+    },
+    error: undefined,
+    loading: false,
+  }),
 }));
 
 jest.mock('../i18n/TranslationProvider', () => ({
@@ -31,12 +75,12 @@ jest.mock('@tanstack/react-query', () => ({
   useQuery: () => ({
     data: [
       {
-        analysed_before: true,
-        cleaned_before: false,
+        analysedBefore: true,
+        cleanedBefore: false,
         id: '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
         identifiers: ['FA-EXAMPLE'],
-        last_analysis_at: null,
-        service_events: [],
+        lastAnalysisAt: null,
+        thumbnailUrl: null,
       },
     ],
     isError: false,
@@ -63,5 +107,17 @@ test('history list closes the dialog after confirmed garment deletion', async ()
   );
   await waitFor(() => {
     expect(screen.queryByText('deleteGarmentConfirmDescription')).toBeNull();
+  });
+});
+
+test('history list loads garment thumbnails through the preview endpoint', async () => {
+  const screen = await render(<CustomerHistory />);
+
+  await waitFor(() => {
+    expect(screen.getByLabelText('garmentThumbnail')).toBeTruthy();
+  });
+  expect(mockPreview).toHaveBeenCalledWith({
+    client: expect.any(Object),
+    path: { image_id: 'image-1', scan_id: 'scan-1' },
   });
 });

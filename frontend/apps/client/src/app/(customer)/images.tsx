@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import Feather from '@expo/vector-icons/Feather';
+import { useQuery as useApolloQuery } from '@apollo/client';
 import { useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -15,16 +16,18 @@ import {
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
+  ScanImageMetadataDocument,
   imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet,
-  listScanImagesApiV1ScansScanIdImagesGet,
-  type ScanImageResponse,
+  type ScanImageMetadataQuery,
 } from '@fabricassist/api-client';
 import type { TranslationKey } from '@fabricassist/translations';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
-type GalleryImage = ScanImageResponse & { url: string };
+type GalleryImage = NonNullable<
+  ScanImageMetadataQuery['imageMetadata']
+>[number] & { url: string };
 
 const imageRoleKeys = {
   garment_overview: 'garmentOverviewRole',
@@ -35,35 +38,41 @@ const imageRoleKeys = {
   damage_closeup: 'damageCloseupRole',
   construction_detail: 'constructionDetailRole',
   other: 'otherRole',
-} as const satisfies Record<ScanImageResponse['role'], TranslationKey>;
+} as const satisfies Record<string, TranslationKey>;
+
+function roleTranslationKey(role: string): TranslationKey {
+  return role in imageRoleKeys
+    ? imageRoleKeys[role as keyof typeof imageRoleKeys]
+    : imageRoleKeys.other;
+}
 
 export default function UploadedImages(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
   const { apiClient, token } = useSession();
   const { translate } = useTranslation();
+  const { data, error } = useApolloQuery(ScanImageMetadataDocument, {
+    skip: !scanId || !token,
+    variables: { scanId },
+    fetchPolicy: 'cache-and-network',
+  });
   const [images, setImages] = useState<GalleryImage[]>([]);
   const [selected, setSelected] = useState<GalleryImage>();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!scanId || !token) return;
+    if (!scanId || !token || !data) return;
     let cancelled = false;
     const load = async (): Promise<void> => {
       setLoading(true);
       setFailed(false);
       try {
-        const list = await listScanImagesApiV1ScansScanIdImagesGet({
-          client: apiClient,
-          path: { scan_id: scanId },
-        });
-        if (!list.data) throw list.error;
         const previews = await Promise.all(
-          list.data.map(async (image) => {
+          data.imageMetadata.map(async (image) => {
             const preview =
               await imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet({
                 client: apiClient,
-                path: { scan_id: scanId, image_id: image.image_id },
+                path: { scan_id: scanId, image_id: image.id },
               });
             if (!preview.data) throw preview.error;
             return { ...image, url: preview.data.url };
@@ -80,13 +89,13 @@ export default function UploadedImages(): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [apiClient, scanId, token]);
+  }, [apiClient, data, scanId, token]);
 
   const download = async (image: GalleryImage): Promise<void> => {
     if (!scanId) return;
     const response = await imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet({
       client: apiClient,
-      path: { scan_id: scanId, image_id: image.image_id },
+      path: { scan_id: scanId, image_id: image.id },
       query: { download: true },
     });
     if (response.data) await Linking.openURL(response.data.url);
@@ -101,7 +110,9 @@ export default function UploadedImages(): ReactNode {
         {loading ? (
           <ActivityIndicator color={colors.primary} size="large" />
         ) : null}
-        {failed ? <Text>{translate('uploadedImagesLoadFailed')}</Text> : null}
+        {error || failed ? (
+          <Text>{translate('uploadedImagesLoadFailed')}</Text>
+        ) : null}
         {!loading && !failed && images.length === 0 ? (
           <Text>{translate('uploadedImagesEmpty')}</Text>
         ) : null}
@@ -113,14 +124,14 @@ export default function UploadedImages(): ReactNode {
                 String(index + 1),
               )}
               accessibilityRole="button"
-              key={image.image_id}
+              key={image.id}
               onPress={() => setSelected(image)}
               style={({ pressed }) => [styles.card, pressed && styles.pressed]}
             >
               <Image source={{ uri: image.url }} style={styles.thumbnail} />
               <View style={styles.cardFooter}>
                 <Text numberOfLines={1} style={styles.role}>
-                  {translate(imageRoleKeys[image.role])}
+                  {translate(roleTranslationKey(image.role))}
                 </Text>
                 <Feather color={colors.primary} name="maximize-2" size={17} />
               </View>

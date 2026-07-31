@@ -1,0 +1,15 @@
+{
+  "adr": "ADR-017",
+  "purpose": "One-time query-only GraphQL cutover; no Query or shared object changes are approved.",
+  "base_schema_sha256": "ec9c910dcaeb3adb25816096df0c2fbc04dc3a538b246e84e0630e002a208413",
+  "new_schema_sha256": "ccdfcaab85133e862d2742b44507d16d47ea8afea8c995c38e0cbddde726669c",
+  "allowed_breaking_changes": [
+    "type:CreateScanInput",
+    "type:FeedbackType",
+    "type:GarmentIdInput",
+    "type:Mutation",
+    "type:RenameGarmentInput",
+    "type:ScanIdInput",
+    "type:SubmitFeedbackInput"
+  ]
+}

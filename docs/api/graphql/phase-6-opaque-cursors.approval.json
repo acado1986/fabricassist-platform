@@ -1,0 +1,11 @@
+{
+  "adr": "ADR-018",
+  "purpose": "Exact Phase 6 migration of retained UUID cursor arguments to versioned opaque keyset cursors.",
+  "base_schema_sha256": "e3ef467ab5caabca6db31de6b5b2483e21927334176638e880ed1d80268110f1",
+  "new_schema_sha256": "fa2511be263104ae25539da47bedf716144898672a14834396efb5a1d3e9ec40",
+  "allowed_breaking_changes": [
+    "field-arg-type:Query.garments.after",
+    "field-arg-type:Query.messages.after",
+    "field-arg-type:Query.scans.after"
+  ]
+}

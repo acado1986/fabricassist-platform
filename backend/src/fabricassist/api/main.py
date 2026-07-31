@@ -27,6 +27,7 @@ from fabricassist.api.errors import (
     unexpected_error_handler,
     validation_error_handler,
 )
+from fabricassist.api.graphql_loaders import GraphQLLoaders
 from fabricassist.api.graphql_schema import GraphQLContext, create_graphql_router
 from fabricassist.api.logging import configure_logging
 from fabricassist.api.middleware import (
@@ -57,6 +58,7 @@ from fabricassist.application.publication_recovery import (
     publication_recovery_loop,
     stop_recovery_task,
 )
+from fabricassist.application.storefront_queries import StorefrontPrincipal, StorefrontQueryPort
 from fabricassist.infrastructure.cache.factory import create_hot_cache
 from fabricassist.infrastructure.concurrency.factory import create_concurrency_gate
 from fabricassist.infrastructure.database import Database, DatabasePort
@@ -66,6 +68,9 @@ from fabricassist.infrastructure.jobs.qstash_inbound import (
 )
 from fabricassist.infrastructure.operational_metrics import durable_metrics
 from fabricassist.infrastructure.persistence.models import User
+from fabricassist.infrastructure.persistence.storefront_queries import (
+    SqlAlchemyStorefrontQueries,
+)
 from fabricassist.infrastructure.product_information.factory import (
     create_product_information_provider,
 )
@@ -217,6 +222,12 @@ def create_app(
     def get_storage(request: Request) -> ObjectStorage:
         return request.app.state.storage  # type: ignore[no-any-return]
 
+    async def get_storefront_queries(
+        session: AsyncSession = Depends(get_session),  # noqa: B008
+        storage: ObjectStorage = Depends(get_storage),  # noqa: B008
+    ) -> StorefrontQueryPort:
+        return SqlAlchemyStorefrontQueries(session, storage=storage)
+
     def get_job_dispatcher(request: Request) -> object:
         return request.app.state.job_dispatcher
 
@@ -280,6 +291,7 @@ def create_app(
     app.dependency_overrides[garments.get_session] = get_session
     app.dependency_overrides[garments.get_current_user] = get_current_user
     app.dependency_overrides[garments.get_storage] = get_storage
+    app.dependency_overrides[garments.get_storefront_queries] = get_storefront_queries
     app.dependency_overrides[scans.get_session] = get_session
     app.dependency_overrides[scans.get_current_user] = get_current_user
     app.dependency_overrides[scans.get_storage] = get_storage
@@ -327,10 +339,24 @@ def create_app(
     app.include_router(internal_jobs.router)
 
     async def graphql_context(
+        request: Request,
         user: User = Depends(get_current_user),  # noqa: B008
         session: AsyncSession = Depends(get_session),  # noqa: B008
     ) -> GraphQLContext:
-        return GraphQLContext(session=session, user=user)
+        principal = StorefrontPrincipal(
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            email=user.email,
+            role=user.role,
+            preferred_language=user.preferred_language,
+        )
+        queries = SqlAlchemyStorefrontQueries(session)
+        return GraphQLContext(
+            principal=principal,
+            correlation_id=str(getattr(request.state, "correlation_id", "")),
+            queries=queries,
+            loaders=GraphQLLoaders(queries, principal),
+        )
 
     app.include_router(
         create_graphql_router(context_getter=graphql_context, settings=resolved_settings),

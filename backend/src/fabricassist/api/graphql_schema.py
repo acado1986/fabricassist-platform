@@ -1,17 +1,14 @@
-"""Strawberry schema for canonical authenticated FabricAssist reads."""
+"""Read-only Strawberry schema for canonical authenticated FabricAssist reads."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
-from decimal import Decimal
+from datetime import datetime
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import strawberry
 from graphql import GraphQLError
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from strawberry.extensions import (
     DisableIntrospection,
@@ -20,21 +17,49 @@ from strawberry.extensions import (
     QueryDepthLimiter,
 )
 from strawberry.extensions.base_extension import SchemaExtension
-from strawberry.fastapi import GraphQLRouter
+from strawberry.fastapi import BaseContext, GraphQLRouter
 from strawberry.http import GraphQLHTTPResponse
+from strawberry.scalars import JSON
 from strawberry.types.execution import ExecutionResult
 
-from fabricassist.infrastructure.persistence.models import (
-    AiRun,
-    AnalysisRevision,
-    ConversationMessage,
-    ConversationThread,
-    CustomerFeedback,
-    Garment,
-    ModelRun,
-    Scan,
-    ScanImage,
-    User,
+from fabricassist.api.graphql_loaders import GraphQLLoaders
+from fabricassist.application.garment_analysis_cursor import (
+    GarmentAnalysisCursor,
+    decode_analysis_cursor,
+    encode_analysis_cursor,
+)
+from fabricassist.application.garment_history_cursor import (
+    GarmentHistoryCursor,
+    decode_history_cursor,
+    encode_history_cursor,
+)
+from fabricassist.application.storefront_cursors import (
+    GarmentCursor,
+    MessageCursor,
+    ScanCursor,
+    decode_garment_cursor,
+    decode_message_cursor,
+    decode_scan_cursor,
+    encode_garment_cursor,
+    encode_message_cursor,
+    encode_scan_cursor,
+)
+from fabricassist.application.storefront_queries import (
+    AnalysisRevisionView,
+    CareResultView,
+    ConversationMessageView,
+    GarmentAnalysisHistoryView,
+    GarmentDetailView,
+    GarmentHistoryView,
+    GarmentView,
+    IdentityCandidateView,
+    ImageMetadataView,
+    ResultCompositeView,
+    RunView,
+    ScanView,
+    ServiceEventView,
+    StorefrontPrincipal,
+    StorefrontQueryPort,
 )
 from fabricassist.settings import Settings
 
@@ -95,6 +120,64 @@ class GarmentConnection:
 
 
 @strawberry.type
+class GarmentHistoryItemType:
+    id: UUID
+    identifiers: list[str]
+    thumbnail_url: str | None
+    thumbnail_scan_id: UUID | None
+    thumbnail_image_id: UUID | None
+    last_analysis_at: datetime | None
+    analysed_before: bool
+    cleaned_before: bool
+
+
+@strawberry.type
+class GarmentHistoryConnection:
+    items: list[GarmentHistoryItemType]
+    page_info: PageInfo
+
+
+@strawberry.type
+class ServiceEventType:
+    id: UUID
+    kind: str
+    note: str | None
+    created_at: datetime
+
+
+@strawberry.type
+class GarmentAnalysisHistoryType:
+    scan_id: UUID
+    status: str
+    created_at: datetime
+    result_available: bool
+    thumbnail_scan_id: UUID | None
+    thumbnail_image_id: UUID | None
+
+
+@strawberry.type
+class GarmentAnalysisHistoryConnection:
+    items: list[GarmentAnalysisHistoryType]
+    page_info: PageInfo
+
+
+@strawberry.type
+class GarmentDetailType:
+    id: UUID
+    display_name: str | None
+    identifiers: list[str]
+    thumbnail_scan_id: UUID | None
+    thumbnail_image_id: UUID | None
+    last_analysis_at: datetime | None
+    analysed_before: bool
+    cleaned_before: bool
+    active_analysis: AnalysisRevisionType | None
+    active_result: CareResultType | None
+    analyses: GarmentAnalysisHistoryConnection
+    service_events: list[ServiceEventType]
+
+
+@strawberry.type
 class ConversationMessageType:
     id: UUID
     role: str
@@ -137,48 +220,52 @@ class UsageSummary:
 
 
 @strawberry.type
-class FeedbackType:
+class CareResultType:
     id: UUID
-    request_review: bool
+    status: str
+    language: str
+    data: JSON
 
 
-@strawberry.input
-class CreateScanInput:
-    requested_language: str = "en"
-
-
-@strawberry.input
-class RenameGarmentInput:
+@strawberry.type
+class IdentityCandidateType:
+    id: UUID
     garment_id: UUID
-    display_name: str
+    thumbnail_scan_id: UUID | None
+    thumbnail_image_id: UUID | None
+    classification: str
+    reasons: JSON
+    status: str
 
 
-@strawberry.input
-class GarmentIdInput:
-    garment_id: UUID
+@strawberry.type
+class ResultCompositeType:
+    scan: ScanType
+    active_analysis: AnalysisRevisionType | None
+    result: CareResultType | None
+    garment: GarmentType | None
+    identity_candidates: list[IdentityCandidateType]
 
 
-@strawberry.input
-class ScanIdInput:
-    scan_id: UUID
+class GraphQLContext(BaseContext):
+    """Safe transport context; persistence sessions never reach resolvers."""
 
-
-@strawberry.input
-class SubmitFeedbackInput:
-    scan_id: UUID
-    rating: int | None = None
-    comment: str | None = None
-    request_review: bool = False
-
-
-class GraphQLContext:
-    def __init__(self, *, session: AsyncSession, user: User) -> None:
-        self.session = session
-        self.user = user
+    def __init__(
+        self,
+        *,
+        principal: StorefrontPrincipal,
+        correlation_id: str,
+        queries: StorefrontQueryPort,
+        loaders: GraphQLLoaders,
+    ) -> None:
+        self.principal = principal
+        self.correlation_id = correlation_id
+        self.queries = queries
+        self.loaders = loaders
 
 
 class FabricAssistGraphQLRouter(GraphQLRouter):
-    """Keep GraphQL error details as deliberately small as the REST envelope."""
+    """Keep GraphQL error details deliberately smaller than internal failures."""
 
     async def process_result(
         self, request: Request, result: ExecutionResult
@@ -224,12 +311,12 @@ def page_limit(first: int) -> int:
 class Query:
     @strawberry.field
     def current_user(self, info: strawberry.Info[GraphQLContext, None]) -> CurrentUserType:
-        user = info.context.user
+        principal = info.context.principal
         return CurrentUserType(
-            id=user.id,
-            email=user.email,
-            role=user.role,
-            preferred_language=user.preferred_language,
+            id=principal.user_id,
+            email=principal.email,
+            role=principal.role,
+            preferred_language=principal.preferred_language,
         )
 
     @strawberry.field
@@ -237,41 +324,34 @@ class Query:
         self,
         info: strawberry.Info[GraphQLContext, None],
         first: int = 20,
-        after: UUID | None = None,
+        after: str | None = None,
     ) -> ScanConnection:
         limit = page_limit(first)
-        statement = select(Scan).where(
-            Scan.tenant_id == info.context.user.tenant_id,
-            Scan.user_id == info.context.user.id,
-            Scan.status != "deleted",
-        )
+        cursor = None
         if after is not None:
-            previous = await info.context.session.scalar(
-                select(Scan).where(Scan.id == after, Scan.user_id == info.context.user.id)
-            )
-            if previous is None:
-                raise forbidden()
-            statement = statement.where(
-                (Scan.created_at < previous.created_at)
-                | ((Scan.created_at == previous.created_at) & (Scan.id < previous.id))
-            )
-        rows = list(
-            (
-                await info.context.session.scalars(
-                    statement.order_by(Scan.created_at.desc(), Scan.id.desc()).limit(limit + 1)
-                )
-            ).all()
+            try:
+                cursor = decode_scan_cursor(after)
+            except (ValueError, TypeError) as error:
+                raise GraphQLError(
+                    "Invalid scan cursor.", extensions={"code": "INVALID_PAGINATION"}
+                ) from error
+        items, has_more = await info.context.queries.list_scans(
+            info.context.principal, first=limit, after=cursor
         )
-        has_more = len(rows) > limit
-        rows = rows[:limit]
         return ScanConnection(
-            items=[scan_type(row) for row in rows],
-            page_info=PageInfo(next_cursor=str(rows[-1].id) if has_more and rows else None),
+            items=[scan_type(item) for item in items],
+            page_info=PageInfo(
+                next_cursor=(
+                    encode_scan_cursor(ScanCursor(items[-1].created_at, items[-1].id))
+                    if has_more and items
+                    else None
+                )
+            ),
         )
 
     @strawberry.field
     async def scan(self, info: strawberry.Info[GraphQLContext, None], id: UUID) -> ScanType | None:
-        row = await owned_scan(info.context, id)
+        row = await info.context.loaders.scans.load(id)
         return scan_type(row) if row else None
 
     @strawberry.field
@@ -279,36 +359,98 @@ class Query:
         self,
         info: strawberry.Info[GraphQLContext, None],
         first: int = 20,
-        after: UUID | None = None,
+        after: str | None = None,
     ) -> GarmentConnection:
         limit = page_limit(first)
-        statement = select(Garment).where(
-            Garment.tenant_id == info.context.user.tenant_id,
-            Garment.user_id == info.context.user.id,
-            Garment.archived_at.is_(None),
-        )
+        cursor = None
         if after is not None:
-            statement = statement.where(Garment.id < after)
-        rows = list(
-            (
-                await info.context.session.scalars(
-                    statement.order_by(Garment.id.desc()).limit(limit + 1)
-                )
-            ).all()
+            try:
+                cursor = decode_garment_cursor(after)
+            except (ValueError, TypeError) as error:
+                raise GraphQLError(
+                    "Invalid garment cursor.", extensions={"code": "INVALID_PAGINATION"}
+                ) from error
+        items, has_more = await info.context.queries.list_garments(
+            info.context.principal, first=limit, after=cursor
         )
-        has_more = len(rows) > limit
-        rows = rows[:limit]
         return GarmentConnection(
-            items=[garment_type(row) for row in rows],
-            page_info=PageInfo(next_cursor=str(rows[-1].id) if has_more and rows else None),
+            items=[garment_type(item) for item in items],
+            page_info=PageInfo(
+                next_cursor=(
+                    encode_garment_cursor(GarmentCursor(items[-1].created_at, items[-1].id))
+                    if has_more and items
+                    else None
+                )
+            ),
+        )
+
+    @strawberry.field
+    async def garment_history(
+        self,
+        info: strawberry.Info[GraphQLContext, None],
+        first: int = 20,
+        after: str | None = None,
+    ) -> GarmentHistoryConnection:
+        limit = page_limit(first)
+        cursor = None
+        if after is not None:
+            try:
+                cursor = decode_history_cursor(after)
+            except ValueError as error:
+                raise GraphQLError(
+                    "Invalid garment history cursor.",
+                    extensions={"code": "INVALID_PAGINATION"},
+                ) from error
+        items, has_more = await info.context.queries.list_garment_history(
+            info.context.principal, first=limit, after=cursor
+        )
+        next_cursor = (
+            encode_history_cursor(GarmentHistoryCursor(items[-1].last_analysis_at, items[-1].id))
+            if has_more and items
+            else None
+        )
+        return GarmentHistoryConnection(
+            items=[garment_history_type(item) for item in items],
+            page_info=PageInfo(next_cursor=next_cursor),
         )
 
     @strawberry.field
     async def garment(
         self, info: strawberry.Info[GraphQLContext, None], id: UUID
     ) -> GarmentType | None:
-        row = await owned_garment(info.context, id)
+        row = await info.context.loaders.garments.load(id)
         return garment_type(row) if row else None
+
+    @strawberry.field
+    async def garment_detail(
+        self,
+        info: strawberry.Info[GraphQLContext, None],
+        id: UUID,
+        first: int = 20,
+        after: str | None = None,
+        language: str | None = None,
+    ) -> GarmentDetailType | None:
+        limit = page_limit(first)
+        cursor = None
+        if after is not None:
+            try:
+                cursor = decode_analysis_cursor(after)
+            except ValueError as error:
+                raise GraphQLError(
+                    "Invalid garment analysis cursor.",
+                    extensions={"code": "INVALID_PAGINATION"},
+                ) from error
+        requested_language = language or info.context.principal.preferred_language
+        if requested_language not in {"en", "es"}:
+            raise GraphQLError("language must be en or es.", extensions={"code": "INVALID_INPUT"})
+        row = await info.context.queries.get_garment_detail(
+            info.context.principal,
+            id,
+            first=limit,
+            after=cursor,
+            language=requested_language,
+        )
+        return garment_detail_type(row) if row else None
 
     @strawberry.field
     async def messages(
@@ -316,279 +458,99 @@ class Query:
         info: strawberry.Info[GraphQLContext, None],
         scan_id: UUID,
         first: int = 30,
-        after: UUID | None = None,
+        after: str | None = None,
     ) -> ConversationMessageConnection:
         limit = page_limit(first)
-        scan = await owned_scan(info.context, scan_id)
-        if scan is None or scan.garment_id is None:
-            return ConversationMessageConnection(items=[], page_info=PageInfo(next_cursor=None))
-        thread = await info.context.session.scalar(
-            select(ConversationThread).where(
-                ConversationThread.tenant_id == info.context.user.tenant_id,
-                ConversationThread.garment_id == scan.garment_id,
-                ConversationThread.user_id == info.context.user.id,
-            )
-        )
-        if thread is None:
-            return ConversationMessageConnection(items=[], page_info=PageInfo(next_cursor=None))
-        statement = select(ConversationMessage).where(ConversationMessage.thread_id == thread.id)
+        cursor = None
         if after is not None:
-            previous = await info.context.session.scalar(
-                select(ConversationMessage).where(
-                    ConversationMessage.id == after, ConversationMessage.thread_id == thread.id
-                )
-            )
-            if previous is None:
-                raise forbidden()
-            statement = statement.where(
-                (ConversationMessage.created_at > previous.created_at)
-                | (
-                    (ConversationMessage.created_at == previous.created_at)
-                    & (ConversationMessage.id > previous.id)
-                )
-            )
-        rows = list(
-            (
-                await info.context.session.scalars(
-                    statement.order_by(
-                        ConversationMessage.created_at, ConversationMessage.id
-                    ).limit(limit + 1)
-                )
-            ).all()
+            try:
+                cursor = decode_message_cursor(after)
+            except (ValueError, TypeError) as error:
+                raise GraphQLError(
+                    "Invalid message cursor.", extensions={"code": "INVALID_PAGINATION"}
+                ) from error
+        items, has_more = await info.context.queries.list_messages(
+            info.context.principal, scan_id=scan_id, first=limit, after=cursor
         )
-        has_more = len(rows) > limit
-        rows = rows[:limit]
         return ConversationMessageConnection(
-            items=[message_type(row) for row in rows],
-            page_info=PageInfo(next_cursor=str(rows[-1].id) if has_more and rows else None),
+            items=[message_type(item) for item in items],
+            page_info=PageInfo(
+                next_cursor=(
+                    encode_message_cursor(MessageCursor(items[-1].created_at, items[-1].id))
+                    if has_more and items
+                    else None
+                )
+            ),
         )
 
     @strawberry.field
     async def analysis_revision(
         self, info: strawberry.Info[GraphQLContext, None], id: UUID
     ) -> AnalysisRevisionType | None:
-        row = await info.context.session.scalar(
-            select(AnalysisRevision)
-            .join(Scan, Scan.id == AnalysisRevision.scan_id)
-            .where(
-                AnalysisRevision.id == id,
-                AnalysisRevision.tenant_id == info.context.user.tenant_id,
-                Scan.user_id == info.context.user.id,
-            )
-        )
+        row = await info.context.loaders.revisions.load(id)
         return revision_type(row) if row else None
 
     @strawberry.field
     async def analysis(
         self, info: strawberry.Info[GraphQLContext, None], id: UUID
     ) -> AnalysisRevisionType | None:
-        """Compatibility-friendly conceptual analysis lookup for typed clients."""
-        row = await info.context.session.scalar(
-            select(AnalysisRevision)
-            .join(Scan, Scan.id == AnalysisRevision.scan_id)
-            .where(
-                AnalysisRevision.id == id,
-                AnalysisRevision.tenant_id == info.context.user.tenant_id,
-                Scan.user_id == info.context.user.id,
-            )
-        )
+        row = await info.context.loaders.revisions.load(id)
         return revision_type(row) if row else None
 
     @strawberry.field
     async def image_metadata(
         self, info: strawberry.Info[GraphQLContext, None], scan_id: UUID
     ) -> list[ScanImageMetadataType]:
-        scan = await owned_scan(info.context, scan_id)
-        if scan is None:
+        rows = await info.context.loaders.images.load(scan_id)
+        if rows is None:
             raise forbidden()
-        rows = list(
-            (
-                await info.context.session.scalars(
-                    select(ScanImage)
-                    .where(
-                        ScanImage.scan_id == scan.id,
-                        ScanImage.tenant_id == info.context.user.tenant_id,
-                        ScanImage.completed_at.is_not(None),
-                        ScanImage.deleted_at.is_(None),
-                    )
-                    .order_by(ScanImage.display_order, ScanImage.created_at)
-                )
-            ).all()
-        )
-        return [
-            ScanImageMetadataType(
-                id=row.id,
-                role=row.role,
-                display_order=row.display_order,
-                width=row.width,
-                height=row.height,
-            )
-            for row in rows
-        ]
+        return [image_metadata_type(row) for row in rows]
 
     @strawberry.field
     async def run(self, info: strawberry.Info[GraphQLContext, None], id: UUID) -> AiRunType | None:
-        row = await info.context.session.scalar(
-            select(AiRun).where(
-                AiRun.id == id,
-                AiRun.tenant_id == info.context.user.tenant_id,
-                AiRun.user_id == info.context.user.id,
-            )
-        )
+        row = await info.context.loaders.runs.load(id)
         return ai_run_type(row) if row else None
 
     @strawberry.field
     async def usage(self, info: strawberry.Info[GraphQLContext, None]) -> UsageSummary:
-        if info.context.user.role != "admin":
+        usage = await info.context.queries.get_usage(info.context.principal)
+        if usage is None:
             raise forbidden()
-        result = await info.context.session.execute(
-            select(
-                func.count(ModelRun.id), func.coalesce(func.sum(ModelRun.estimated_cost_usd), 0)
-            ).where(ModelRun.tenant_id == info.context.user.tenant_id)
+        return UsageSummary(
+            model_run_count=usage.model_run_count,
+            estimated_cost_usd=str(usage.estimated_cost_usd),
         )
-        count, cost = cast(tuple[int, Decimal | None], result.one())
-        return UsageSummary(model_run_count=count, estimated_cost_usd=str(cost or Decimal(0)))
 
-
-@strawberry.type
-class Mutation:
-    @strawberry.mutation
-    async def create_scan(
-        self, info: strawberry.Info[GraphQLContext, None], input: CreateScanInput
-    ) -> ScanType:
-        if input.requested_language not in {"en", "es"}:
-            raise GraphQLError("Unsupported language.", extensions={"code": "INVALID_INPUT"})
-        scan = Scan(
-            id=uuid4(),
-            tenant_id=info.context.user.tenant_id,
-            user_id=info.context.user.id,
-            requested_language=input.requested_language,
-            status="draft",
+    @strawberry.field
+    async def scan_result(
+        self,
+        info: strawberry.Info[GraphQLContext, None],
+        scan_id: UUID,
+        language: str | None = None,
+    ) -> ResultCompositeType | None:
+        requested_language = language or info.context.principal.preferred_language
+        if requested_language not in {"en", "es"}:
+            raise GraphQLError("language must be en or es.", extensions={"code": "INVALID_INPUT"})
+        row = await info.context.queries.get_result_composite(
+            info.context.principal, scan_id, language=requested_language
         )
-        info.context.session.add(scan)
-        await info.context.session.commit()
-        return scan_type(scan)
-
-    @strawberry.mutation
-    async def rename_garment(
-        self, info: strawberry.Info[GraphQLContext, None], input: RenameGarmentInput
-    ) -> GarmentType:
-        garment = await owned_garment(info.context, input.garment_id)
-        if garment is None:
-            raise forbidden()
-        display_name = input.display_name.strip()
-        if len(display_name) > 200:
-            raise GraphQLError("Display name is too long.", extensions={"code": "INVALID_INPUT"})
-        garment.display_name = display_name or None
-        await info.context.session.commit()
-        return garment_type(garment)
-
-    @strawberry.mutation
-    async def archive_garment(
-        self, info: strawberry.Info[GraphQLContext, None], input: GarmentIdInput
-    ) -> GarmentType:
-        garment = await owned_garment(info.context, input.garment_id)
-        if garment is None:
-            raise forbidden()
-        garment.archived_at = datetime.now(UTC)
-        await info.context.session.commit()
-        return garment_type(garment)
-
-    @strawberry.mutation
-    async def unarchive_garment(
-        self, info: strawberry.Info[GraphQLContext, None], input: GarmentIdInput
-    ) -> GarmentType:
-        garment = await owned_garment(info.context, input.garment_id)
-        if garment is None:
-            raise forbidden()
-        garment.archived_at = None
-        await info.context.session.commit()
-        return garment_type(garment)
-
-    @strawberry.mutation
-    async def delete_scan(
-        self, info: strawberry.Info[GraphQLContext, None], input: ScanIdInput
-    ) -> bool:
-        scan = await owned_scan(info.context, input.scan_id)
-        if scan is None:
-            raise forbidden()
-        scan.status = "deleted"
-        await info.context.session.commit()
-        return True
-
-    @strawberry.mutation
-    async def delete_garment(
-        self, info: strawberry.Info[GraphQLContext, None], input: GarmentIdInput
-    ) -> bool:
-        garment = await owned_garment(info.context, input.garment_id)
-        if garment is None:
-            raise forbidden()
-        garment.archived_at = datetime.now(UTC)
-        await info.context.session.commit()
-        return True
-
-    @strawberry.mutation
-    async def submit_feedback(
-        self, info: strawberry.Info[GraphQLContext, None], input: SubmitFeedbackInput
-    ) -> FeedbackType:
-        scan = await owned_scan(info.context, input.scan_id)
-        if scan is None:
-            raise forbidden()
-        if input.rating is not None and not 1 <= input.rating <= 5:
-            raise GraphQLError(
-                "Rating must be between 1 and 5.", extensions={"code": "INVALID_INPUT"}
-            )
-        if input.comment is not None and len(input.comment) > 2_000:
-            raise GraphQLError("Comment is too long.", extensions={"code": "INVALID_INPUT"})
-        feedback = CustomerFeedback(
-            id=uuid4(),
-            tenant_id=info.context.user.tenant_id,
-            scan_id=scan.id,
-            user_id=info.context.user.id,
-            rating=input.rating,
-            comment=input.comment,
-            request_review=input.request_review,
-        )
-        info.context.session.add(feedback)
-        await info.context.session.commit()
-        return FeedbackType(id=feedback.id, request_review=feedback.request_review)
+        return result_composite_type(row) if row else None
 
 
-async def owned_scan(context: GraphQLContext, scan_id: UUID) -> Scan | None:
-    return await context.session.scalar(
-        select(Scan).where(
-            Scan.id == scan_id,
-            Scan.tenant_id == context.user.tenant_id,
-            Scan.user_id == context.user.id,
-        )
-    )
-
-
-async def owned_garment(context: GraphQLContext, garment_id: UUID) -> Garment | None:
-    return await context.session.scalar(
-        select(Garment).where(
-            Garment.id == garment_id,
-            Garment.tenant_id == context.user.tenant_id,
-            Garment.user_id == context.user.id,
-            Garment.archived_at.is_(None),
-        )
-    )
-
-
-def scan_type(row: Scan) -> ScanType:
+def scan_type(row: ScanView) -> ScanType:
     return ScanType(
         id=row.id,
         status=row.status,
         requested_language=row.requested_language,
         progress_percent=row.progress_percent,
         analysis_stage=row.analysis_stage,
-        error_code=row.analysis_error_code,
+        error_code=row.error_code,
         garment_id=row.garment_id,
         created_at=row.created_at,
     )
 
 
-def garment_type(row: Garment) -> GarmentType:
+def garment_type(row: GarmentView) -> GarmentType:
     return GarmentType(
         id=row.id,
         display_name=row.display_name,
@@ -598,13 +560,78 @@ def garment_type(row: Garment) -> GarmentType:
     )
 
 
-def message_type(row: ConversationMessage) -> ConversationMessageType:
+def garment_history_type(row: GarmentHistoryView) -> GarmentHistoryItemType:
+    return GarmentHistoryItemType(
+        id=row.id,
+        identifiers=row.identifiers,
+        # GraphQL returns safe image identifiers only. Preview/download remains REST.
+        thumbnail_url=None,
+        thumbnail_scan_id=row.thumbnail_scan_id,
+        thumbnail_image_id=row.thumbnail_image_id,
+        last_analysis_at=row.last_analysis_at,
+        analysed_before=row.analysed_before,
+        cleaned_before=row.cleaned_before,
+    )
+
+
+def service_event_type(row: ServiceEventView) -> ServiceEventType:
+    return ServiceEventType(
+        id=row.id,
+        kind=row.kind,
+        note=row.note,
+        created_at=row.created_at,
+    )
+
+
+def garment_analysis_history_type(row: GarmentAnalysisHistoryView) -> GarmentAnalysisHistoryType:
+    return GarmentAnalysisHistoryType(
+        scan_id=row.scan_id,
+        status=row.status,
+        created_at=row.created_at,
+        result_available=row.result_available,
+        thumbnail_scan_id=row.thumbnail_scan_id,
+        thumbnail_image_id=row.thumbnail_image_id,
+    )
+
+
+def garment_detail_type(row: GarmentDetailView) -> GarmentDetailType:
+    next_cursor = (
+        encode_analysis_cursor(
+            GarmentAnalysisCursor(row.analyses[-1].created_at, row.analyses[-1].scan_id)
+        )
+        if row.analyses_has_more and row.analyses
+        else None
+    )
+    return GarmentDetailType(
+        id=row.id,
+        display_name=row.display_name,
+        identifiers=row.identifiers,
+        thumbnail_scan_id=row.thumbnail_scan_id,
+        thumbnail_image_id=row.thumbnail_image_id,
+        last_analysis_at=row.last_analysis_at,
+        analysed_before=row.analysed_before,
+        cleaned_before=row.cleaned_before,
+        active_analysis=(
+            revision_type(row.active_analysis) if row.active_analysis is not None else None
+        ),
+        active_result=care_result_type(row.active_result)
+        if row.active_result is not None
+        else None,
+        analyses=GarmentAnalysisHistoryConnection(
+            items=[garment_analysis_history_type(item) for item in row.analyses],
+            page_info=PageInfo(next_cursor=next_cursor),
+        ),
+        service_events=[service_event_type(event) for event in row.service_events],
+    )
+
+
+def message_type(row: ConversationMessageView) -> ConversationMessageType:
     return ConversationMessageType(
         id=row.id, role=row.role, status=row.status, text=row.text, created_at=row.created_at
     )
 
 
-def revision_type(row: AnalysisRevision) -> AnalysisRevisionType:
+def revision_type(row: AnalysisRevisionView) -> AnalysisRevisionType:
     return AnalysisRevisionType(
         id=row.id,
         scan_id=row.scan_id,
@@ -614,7 +641,17 @@ def revision_type(row: AnalysisRevision) -> AnalysisRevisionType:
     )
 
 
-def ai_run_type(row: AiRun) -> AiRunType:
+def image_metadata_type(row: ImageMetadataView) -> ScanImageMetadataType:
+    return ScanImageMetadataType(
+        id=row.id,
+        role=row.role,
+        display_order=row.display_order,
+        width=row.width,
+        height=row.height,
+    )
+
+
+def ai_run_type(row: RunView) -> AiRunType:
     return AiRunType(
         id=row.id,
         scan_id=row.scan_id,
@@ -627,18 +664,46 @@ def ai_run_type(row: AiRun) -> AiRunType:
     )
 
 
+def care_result_type(row: CareResultView) -> CareResultType:
+    return CareResultType(
+        id=row.id, status=row.status, language=row.language, data=cast(JSON, row.data)
+    )
+
+
+def identity_candidate_type(row: IdentityCandidateView) -> IdentityCandidateType:
+    return IdentityCandidateType(
+        id=row.id,
+        garment_id=row.garment_id,
+        thumbnail_scan_id=row.thumbnail_scan_id,
+        thumbnail_image_id=row.thumbnail_image_id,
+        classification=row.classification,
+        reasons=cast(JSON, row.reasons),
+        status=row.status,
+    )
+
+
+def result_composite_type(row: ResultCompositeView) -> ResultCompositeType:
+    return ResultCompositeType(
+        scan=scan_type(row.scan),
+        active_analysis=(
+            revision_type(row.active_analysis) if row.active_analysis is not None else None
+        ),
+        result=care_result_type(row.result) if row.result is not None else None,
+        garment=garment_type(row.garment) if row.garment is not None else None,
+        identity_candidates=[identity_candidate_type(item) for item in row.identity_candidates],
+    )
+
+
 def create_schema(settings: Settings) -> strawberry.Schema:
-    """Build the deterministic schema used both by FastAPI and code generation."""
+    """Build the query-only schema used both by FastAPI and code generation."""
     extensions: list[type[SchemaExtension] | SchemaExtension] = [
         QueryDepthLimiter(max_depth=settings.graphql_max_depth),
-        # Token and alias ceilings make query cost bounded even while the
-        # schema remains deliberately shallow and cursor-paginated.
         MaxTokensLimiter(max_token_count=settings.graphql_max_tokens),
         MaxAliasesLimiter(max_alias_count=settings.graphql_max_aliases),
     ]
     if settings.environment == "production":
         extensions.append(DisableIntrospection)
-    return strawberry.Schema(query=Query, mutation=Mutation, extensions=extensions)
+    return strawberry.Schema(query=Query, extensions=extensions)
 
 
 def create_graphql_router(*, context_getter: object, settings: Settings) -> GraphQLRouter:

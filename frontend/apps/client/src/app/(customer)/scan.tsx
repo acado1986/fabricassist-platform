@@ -13,13 +13,6 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
-import {
-  addImageApiV1ScansScanIdImagesPost,
-  completeUploadApiV1ScansScanIdUploadsCompletePost,
-  createScanApiV1ScansPost,
-  productLookupApiV1ScansScanIdProductLookupPost,
-  startRunApiV1ScansScanIdRunsPost,
-} from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { useTranslation } from '../../i18n/TranslationProvider';
@@ -49,7 +42,7 @@ const roles: Role[] = [
 ];
 
 export default function Scan(): ReactNode {
-  const { apiClient, token } = useSession();
+  const { restWrites, token } = useSession();
   const { locale, translate } = useTranslation();
   const [items, setItems] = useState<Selected[]>([]);
   const [role, setRole] = useState<Role>('garment_overview');
@@ -138,8 +131,7 @@ export default function Scan(): ReactNode {
     setBusy(true);
     setError(undefined);
     try {
-      const scanResult = await createScanApiV1ScansPost({
-        client: apiClient,
+      const scanResult = await restWrites.createScan({
         body: { requested_language: locale },
       });
       if (!scanResult.data) throw new Error('create');
@@ -148,8 +140,7 @@ export default function Scan(): ReactNode {
       for (const [index, item] of items.entries()) {
         const contentType =
           item.asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
-        const instructionResult = await addImageApiV1ScansScanIdImagesPost({
-          client: apiClient,
+        const instructionResult = await restWrites.addImage({
           path: { scan_id: scan.scan_id },
           body: {
             role: item.role,
@@ -165,28 +156,24 @@ export default function Scan(): ReactNode {
           url: upload.url,
         });
         if (!binaryResult.ok) throw new Error('upload');
-        const completion =
-          await completeUploadApiV1ScansScanIdUploadsCompletePost({
-            client: apiClient,
-            path: { scan_id: scan.scan_id },
-            body: {
-              image_id: upload.image_id,
-              content_type: contentType,
-            },
-          });
+        const completion = await restWrites.completeUpload({
+          path: { scan_id: scan.scan_id },
+          body: {
+            image_id: upload.image_id,
+            content_type: contentType,
+          },
+        });
         if (!completion.data) throw new Error('complete');
         imageIds.push(upload.image_id);
       }
       if (barcode.trim()) {
-        const lookup = await productLookupApiV1ScansScanIdProductLookupPost({
-          client: apiClient,
+        const lookup = await restWrites.productLookup({
           path: { scan_id: scan.scan_id },
           body: { barcode: barcode.trim() },
         });
         if (!lookup.data) throw new Error('barcode');
       }
-      const analysis = await startRunApiV1ScansScanIdRunsPost({
-        client: apiClient,
+      const analysis = await restWrites.startRun({
         path: { scan_id: scan.scan_id },
         headers: { 'Idempotency-Key': `scan-run-${scan.scan_id}` },
         body: { image_ids: imageIds },

@@ -11,11 +11,9 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
-import {
-  postMessageApiV1ScansScanIdMessagesPost,
-  ScanMessagesDocument,
-} from '@fabricassist/api-client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ScanMessagesDocument } from '@fabricassist/api-client';
+import { useMutation } from '@tanstack/react-query';
+import { useQuery as useApolloQuery } from '@apollo/client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { useTranslation } from '../../i18n/TranslationProvider';
@@ -28,39 +26,30 @@ function newIdempotencyKey(): string {
 
 export default function Chat(): ReactNode {
   const { scanId } = useLocalSearchParams<{ scanId: string }>();
-  const { apiClient, graphql, token } = useSession();
-  const queryClient = useQueryClient();
+  const { restWrites, token } = useSession();
   const { translate } = useTranslation();
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
-  const messageQueryKey = ['graphql', 'conversation-messages', scanId];
-  const { data: messages = [] } = useQuery({
-    queryKey: messageQueryKey,
-    enabled: Boolean(scanId && token),
-    refetchInterval: 2000,
-    queryFn: async () => {
-      const result = await graphql(ScanMessagesDocument, {
-        scanId,
-        first: 100,
-      });
-      return result.messages.items;
-    },
+  const { data } = useApolloQuery(ScanMessagesDocument, {
+    skip: !scanId || !token,
+    variables: { scanId, first: 100, after: null },
+    fetchPolicy: 'cache-and-network',
+    pollInterval: 2_000,
   });
+  const messages = data?.messages.items ?? [];
   const postMessage = useMutation({
     mutationFn: async (messageText: string) => {
-      const result = await postMessageApiV1ScansScanIdMessagesPost({
-        client: apiClient,
+      const result = await restWrites.postMessage({
         path: { scan_id: scanId },
         headers: { 'Idempotency-Key': newIdempotencyKey() },
         body: { text: messageText },
       });
-      if (!result.data) throw result.error;
+      if (!result.data) throw new Error('CHAT_MESSAGE_FAILED');
       return result.data;
     },
     onSuccess: async () => {
       setSendError(null);
       setText('');
-      await queryClient.invalidateQueries({ queryKey: messageQueryKey });
     },
     onError: () => setSendError(translate('chatSendFailed')),
   });

@@ -1,0 +1,9 @@
+query ScanImageMetadata($scanId: UUID!) {
+  imageMetadata(scanId: $scanId) {
+    id
+    role
+    displayOrder
+    width
+    height
+  }
+}

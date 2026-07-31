@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useQuery as useApolloQuery } from '@apollo/client';
 import { fetch as expoFetch } from 'expo/fetch';
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -16,16 +16,11 @@ import {
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
-  confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost,
-  deleteScanApiV1ScansScanIdDelete,
-  identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet,
-  rejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPost,
-  scanDetailApiV1ScansScanIdGet,
-  scanResultApiV1ScansScanIdResultGet,
-  submitFeedbackApiV1ScansScanIdFeedbackPost,
-  type IdentityCandidateResponse,
+  ResultCompositeDocument,
+  RunStreamLifecycle,
+  imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet,
   streamRunEvents,
-  ScanRunRecoveryDocument,
+  type FabricAssistApiClient,
   type RunEvent,
 } from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
@@ -69,51 +64,64 @@ type RichResult = {
     product: Record<string, unknown> | null;
   } | null;
 };
+
+function toRichResult(value: unknown): RichResult | undefined {
+  return value && typeof value === 'object' ? (value as RichResult) : undefined;
+}
+
 export default function Result(): ReactNode {
   const { scanId, runId } = useLocalSearchParams<{
     scanId: string;
     runId?: string;
   }>();
-  const { apiClient, graphql, token } = useSession();
+  const { apiClient, restWrites, token } = useSession();
   const { locale, translate } = useTranslation();
-  const queryClient = useQueryClient();
-  const [result, setResult] = useState<RichResult>();
   const [failed, setFailed] = useState(false);
   const [failureCode, setFailureCode] = useState<string>();
   const [stage, setStage] = useState<string>();
   const [progressPercent, setProgressPercent] = useState(0);
   const [garmentId, setGarmentId] = useState<string>();
   const [lifecycleMessage, setLifecycleMessage] = useState<string>();
-  const [identityCandidates, setIdentityCandidates] = useState<
-    IdentityCandidateResponse[]
-  >([]);
-  const [streamCompletion, setStreamCompletion] = useState(0);
-  const scanRecoveryQueryKey = useMemo(
-    () => ['graphql', 'scan-run-recovery', scanId] as const,
-    [scanId],
+  const [streamUnavailable, setStreamUnavailable] = useState(false);
+  const [isForeground, setIsForeground] = useState(
+    AppState.currentState === 'active',
   );
-  const { refetch: refetchCanonicalScan } = useQuery({
-    enabled: false,
-    queryKey: scanRecoveryQueryKey,
-    queryFn: ({ signal }) => {
-      if (!scanId) throw new Error('SCAN_UNAVAILABLE');
-      return graphql(ScanRunRecoveryDocument, { id: scanId }, signal);
+  const { data, refetch: refetchCanonicalResult } = useApolloQuery(
+    ResultCompositeDocument,
+    {
+      skip: !scanId || !token,
+      variables: { scanId, language: locale },
+      fetchPolicy: 'network-only',
+      notifyOnNetworkStatusChange: true,
+      pollInterval: streamUnavailable && runId && isForeground ? 5_000 : 0,
     },
-  });
+  );
+  const composite = data?.scanResult;
+  const result = toRichResult(composite?.result?.data);
+  const identityCandidates = composite?.identityCandidates ?? [];
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      setIsForeground(nextState === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => {
+    if (!composite) return;
+    setStage(composite.scan.analysisStage ?? composite.scan.status);
+    setProgressPercent(composite.scan.progressPercent);
+    setGarmentId(composite.scan.garmentId ?? undefined);
+    setFailureCode(composite.scan.errorCode ?? undefined);
+    setFailed(composite.scan.status === 'failed');
+  }, [composite]);
   const confirmIdentityCandidate = async (
     candidateId: string,
   ): Promise<void> => {
     if (!scanId || !token) return;
-    const response =
-      await confirmIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdConfirmPost(
-        {
-          client: apiClient,
-          path: { scan_id: scanId },
-          body: { candidate_id: candidateId },
-        },
-      );
+    const response = await restWrites.confirmIdentity({
+      path: { scan_id: scanId },
+      body: { candidate_id: candidateId },
+    });
     if (response.data) {
-      setIdentityCandidates([]);
       setLifecycleMessage(translate('identityCandidateConfirmed'));
     }
   };
@@ -121,25 +129,17 @@ export default function Result(): ReactNode {
     candidateId: string,
   ): Promise<void> => {
     if (!scanId || !token) return;
-    const response =
-      await rejectIdentityCandidateApiV1GarmentsIdentityCandidatesScanIdRejectPost(
-        {
-          client: apiClient,
-          path: { scan_id: scanId },
-          body: { candidate_id: candidateId },
-        },
-      );
+    const response = await restWrites.rejectIdentity({
+      path: { scan_id: scanId },
+      body: { candidate_id: candidateId },
+    });
     if (response.data) {
-      setIdentityCandidates((current) =>
-        current.filter((candidate) => candidate.id !== candidateId),
-      );
       setLifecycleMessage(translate('identityCandidateRejected'));
     }
   };
   const requestReview = async (): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await submitFeedbackApiV1ScansScanIdFeedbackPost({
-      client: apiClient,
+    const response = await restWrites.submitFeedback({
       path: { scan_id: scanId },
       body: { request_review: true },
     });
@@ -151,8 +151,7 @@ export default function Result(): ReactNode {
   };
   const deleteAnalysis = async (): Promise<void> => {
     if (!scanId || !token) return;
-    const response = await deleteScanApiV1ScansScanIdDelete({
-      client: apiClient,
+    const response = await restWrites.deleteScan({
       path: { scan_id: scanId },
     });
     if (response.data) {
@@ -170,166 +169,71 @@ export default function Result(): ReactNode {
     return translate('resultLoading');
   };
   useEffect(() => {
-    if (!runId || !token) return;
-    let active = true;
-    let terminal = false;
-    let lastEventId: string | undefined;
+    if (!runId || !token || !scanId) return;
     let lastSequence = 0;
-    let retryAttempt = 0;
-    let controller: AbortController | undefined;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-
-    const scheduleReconnect = (): void => {
-      if (!active || terminal) return;
-      const baseDelay = Math.min(1_000 * 2 ** retryAttempt, 15_000);
-      retryAttempt += 1;
-      const jitter = Math.floor(Math.random() * Math.max(1, baseDelay / 4));
-      retry = setTimeout(connect, baseDelay + jitter);
-    };
-    const refreshCanonicalState = (): void => {
-      void queryClient.invalidateQueries({ queryKey: scanRecoveryQueryKey });
-      void refetchCanonicalScan();
-      setStreamCompletion((value) => value + 1);
-    };
-    const connect = (): void => {
-      if (!active || terminal) return;
-      controller = new AbortController();
-      void streamRunEvents(
-        `${getApiBaseUrl()}/api/v1/runs/${runId}/events`,
-        token,
-        (frame) => {
-          if (!frame.data || frame.event === 'heartbeat') return;
-          try {
-            const event = JSON.parse(frame.data) as RunEvent;
-            if (event.sequence <= lastSequence) return;
-            lastSequence = event.sequence;
-            lastEventId = frame.id ?? String(event.sequence);
-            if (typeof event.data.progress_percent === 'number') {
-              setProgressPercent(event.data.progress_percent);
+    const lifecycle = new RunStreamLifecycle({
+      recover: async () => {
+        await refetchCanonicalResult({ scanId, language: locale });
+      },
+      open: async (signal, lastEventId) => {
+        await streamRunEvents(
+          `${getApiBaseUrl()}/api/v1/runs/${runId}/events`,
+          token,
+          (frame) => {
+            if (!frame.data || frame.event === 'heartbeat') return;
+            try {
+              const event = JSON.parse(frame.data) as RunEvent;
+              if (event.sequence <= lastSequence) return;
+              lastSequence = event.sequence;
+              lifecycle.markEventId(frame.id ?? String(event.sequence));
+              if (typeof event.data.progress_percent === 'number') {
+                setProgressPercent(event.data.progress_percent);
+              }
+              if (typeof event.data.stage === 'string')
+                setStage(event.data.stage);
+              if (
+                frame.event === 'run.completed' ||
+                frame.event === 'run.failed' ||
+                frame.event === 'run.cancelled'
+              ) {
+                lifecycle.stop();
+                void refetchCanonicalResult({ scanId, language: locale }).then(
+                  () => {
+                    if (frame.event === 'run.failed') {
+                      setFailureCode(
+                        typeof event.data.error_code === 'string'
+                          ? event.data.error_code
+                          : undefined,
+                      );
+                      setFailed(true);
+                    }
+                  },
+                );
+              }
+            } catch {
+              // Canonical GraphQL polling remains the recovery path for malformed events.
             }
-            if (typeof event.data.stage === 'string')
-              setStage(event.data.stage);
-            if (frame.event === 'run.failed') {
-              setFailureCode(
-                typeof event.data.error_code === 'string'
-                  ? event.data.error_code
-                  : undefined,
-              );
-              setFailed(true);
-              terminal = true;
-            }
-            if (frame.event === 'run.cancelled') terminal = true;
-            if (frame.event === 'run.completed') {
-              terminal = true;
-              // Streamed state is ephemeral only. Refresh the generated typed
-              // GraphQL query before treating the scan as canonical.
-              refreshCanonicalState();
-            }
-          } catch {
-            // Polling remains the durable recovery path for malformed streams.
-          }
-        },
-        controller.signal,
-        lastEventId,
-        expoFetch,
-      )
-        .then(() => {
-          if (!terminal && !controller?.signal.aborted) scheduleReconnect();
-        })
-        .catch(() => {
-          if (!controller?.signal.aborted) scheduleReconnect();
-        });
-    };
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        retryAttempt = 0;
-        connect();
-      } else {
-        controller?.abort();
-      }
+          },
+          signal,
+          lastEventId,
+          expoFetch,
+        );
+      },
+      onReconnectFailure: (attempt) => {
+        if (attempt >= 3) setStreamUnavailable(true);
+      },
     });
-    connect();
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') lifecycle.resume();
+      else lifecycle.pause();
+    });
+    lifecycle.start();
     return () => {
-      active = false;
-      controller?.abort();
-      if (retry) clearTimeout(retry);
+      lifecycle.stop();
       subscription.remove();
     };
-  }, [
-    queryClient,
-    refetchCanonicalScan,
-    runId,
-    scanRecoveryQueryKey,
-    scanId,
-    token,
-  ]);
+  }, [locale, refetchCanonicalResult, runId, scanId, token]);
 
-  useEffect(() => {
-    if (!scanId || !token) return;
-    let cancelled = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    const retry = (): void => {
-      if (!cancelled) timeout = setTimeout(() => void load(), 1500);
-    };
-    const load = async (): Promise<void> => {
-      try {
-        const scan = await scanDetailApiV1ScansScanIdGet({
-          client: apiClient,
-          path: { scan_id: scanId },
-        });
-        if (!scan.data) throw new Error('SCAN_UNAVAILABLE');
-        const status = scan.data;
-        if (cancelled) return;
-        setStage(status.analysis_stage ?? status.status);
-        setProgressPercent(status.progress_percent);
-        setGarmentId(status.garment_id ?? undefined);
-        const candidates =
-          await identityCandidatesApiV1GarmentsIdentityCandidatesScanIdGet({
-            client: apiClient,
-            path: { scan_id: scanId },
-          });
-        if (candidates.data && !cancelled) {
-          setIdentityCandidates(candidates.data);
-        }
-        if (status.status === 'failed') {
-          setFailureCode(status.error_code ?? undefined);
-          setFailed(true);
-          return;
-        }
-        // The result endpoint intentionally returns 409 while the worker is
-        // still processing. Do not turn that normal state transition into a
-        // permanent error screen, especially with a slower live provider.
-        if (
-          !['completed', 'needs_review', 'needs_better_image'].includes(
-            status.status,
-          )
-        ) {
-          retry();
-          return;
-        }
-        const response = await scanResultApiV1ScansScanIdResultGet({
-          client: apiClient,
-          path: { scan_id: scanId },
-          query: { language: locale },
-        });
-        if (response.data) {
-          if (!cancelled)
-            setResult(response.data.result as unknown as RichResult);
-          return;
-        }
-        retry();
-      } catch {
-        // Network/API races are recoverable while a scan is being processed.
-        // Only the durable `failed` scan status above is terminal here.
-        retry();
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-      if (timeout) clearTimeout(timeout);
-    };
-  }, [apiClient, locale, scanId, streamCompletion, token]);
   return (
     <FoundationShell
       title={translate('resultTitle')}
@@ -446,15 +350,12 @@ export default function Result(): ReactNode {
               .filter((candidate) => candidate.status === 'pending')
               .map((candidate) => (
                 <View key={candidate.id} style={styles.identityCandidate}>
-                  {candidate.thumbnail_url ? (
-                    <Image
-                      accessibilityLabel={translate(
-                        'identityCandidateThumbnail',
-                      )}
-                      source={{ uri: candidate.thumbnail_url }}
-                      style={styles.identityThumbnail}
-                    />
-                  ) : null}
+                  <IdentityCandidateThumbnail
+                    apiClient={apiClient}
+                    imageId={candidate.thumbnailImageId}
+                    scanId={candidate.thumbnailScanId}
+                    thumbnailLabel={translate('identityCandidateThumbnail')}
+                  />
                   <Text style={styles.heading}>
                     {translate(
                       candidate.classification === 'probable_instance'
@@ -480,11 +381,14 @@ export default function Result(): ReactNode {
                     accessibilityRole="button"
                     onPress={() =>
                       router.push({
-                        pathname: `/garments/${candidate.garment_id}`,
+                        pathname: `/garments/${candidate.garmentId}`,
                         params: { decisionScanId: scanId },
                       })
                     }
-                    style={styles.identityReviewButton}
+                    style={({ pressed }) => [
+                      styles.identityReviewButton,
+                      pressed && styles.buttonPressed,
+                    ]}
                   >
                     <Text style={styles.neutralButtonText}>
                       {translate('reviewCandidateGarment')}
@@ -493,7 +397,10 @@ export default function Result(): ReactNode {
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => void confirmIdentityCandidate(candidate.id)}
-                    style={styles.identityButton}
+                    style={({ pressed }) => [
+                      styles.identityButton,
+                      pressed && styles.buttonPressed,
+                    ]}
                   >
                     <Text style={styles.identityButtonText}>
                       {translate('confirmSameGarment')}
@@ -502,7 +409,10 @@ export default function Result(): ReactNode {
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => void rejectIdentityCandidate(candidate.id)}
-                    style={styles.identityRejectButton}
+                    style={({ pressed }) => [
+                      styles.identityRejectButton,
+                      pressed && styles.buttonPressed,
+                    ]}
                   >
                     <Text style={styles.identityRejectText}>
                       {translate('rejectSameGarment')}
@@ -655,6 +565,48 @@ function Section({
     </View>
   );
 }
+
+function IdentityCandidateThumbnail({
+  apiClient,
+  imageId,
+  scanId,
+  thumbnailLabel,
+}: {
+  apiClient: FabricAssistApiClient;
+  imageId?: string | null;
+  scanId?: string | null;
+  thumbnailLabel: string;
+}): ReactNode {
+  const [url, setUrl] = useState<string>();
+
+  useEffect(() => {
+    if (!scanId || !imageId) {
+      setUrl(undefined);
+      return;
+    }
+    let cancelled = false;
+    void imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet({
+      client: apiClient,
+      path: { scan_id: scanId, image_id: imageId },
+    }).then((response) => {
+      if (!cancelled) setUrl(response.data?.url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, imageId, scanId]);
+
+  if (!url) return null;
+  return (
+    <Image
+      accessibilityLabel={thumbnailLabel}
+      resizeMode="cover"
+      source={{ uri: url }}
+      style={styles.identityThumbnail}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   content: { gap: spacing.medium },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
@@ -670,21 +622,38 @@ const styles = StyleSheet.create({
     gap: spacing.small,
     padding: spacing.medium,
   },
-  identityThumbnail: { borderRadius: radii.small, height: 120, width: '100%' },
+  identityThumbnail: {
+    backgroundColor: colors.background,
+    borderRadius: radii.small,
+    height: 150,
+    width: '100%',
+  },
   identityButton: {
-    alignSelf: 'flex-start',
+    alignItems: 'center',
     backgroundColor: colors.primary,
     borderRadius: radii.small,
-    paddingHorizontal: spacing.medium,
+    minHeight: 46,
     paddingVertical: spacing.small,
+    width: '100%',
   },
   identityReviewButton: {
-    alignSelf: 'flex-start',
+    alignItems: 'center',
+    borderColor: colors.borderStrong,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    minHeight: 44,
     paddingVertical: spacing.small,
+    width: '100%',
   },
   identityRejectButton: {
-    alignSelf: 'flex-start',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.danger,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    minHeight: 44,
     paddingVertical: spacing.small,
+    width: '100%',
   },
   identityRejectText: { color: colors.danger, fontWeight: '800' },
   identityButtonText: { color: colors.background, fontWeight: '800' },

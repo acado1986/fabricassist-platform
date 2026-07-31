@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -39,6 +39,12 @@ export function FoundationShell({
   const menuButtonRef = useRef<View>(null);
   const { width } = useWindowDimensions();
   const isCompact = width < 640;
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = title ? `${title} · FabricAssist` : 'FabricAssist';
+    }
+  }, [title]);
 
   function toggleCustomerMenu(): void {
     if (customerMenuOpen) {

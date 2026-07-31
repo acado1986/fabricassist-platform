@@ -10,10 +10,6 @@ import {
 } from 'react-native';
 import { spacing } from '@fabricassist/design-tokens';
 import {
-  approveReviewApiV1ReviewsReviewIdApprovePost,
-  assignReviewApiV1ReviewsReviewIdAssignPost,
-  confirmServiceEventApiV1ReviewsReviewIdServiceEventsPost,
-  correctReviewApiV1ReviewsReviewIdCorrectionsPost,
   listReviewsApiV1ReviewsGet,
   reviewDetailApiV1ReviewsReviewIdGet,
   type GarmentEvidenceDossier,
@@ -25,7 +21,7 @@ import { FoundationShell } from '../../components/FoundationShell';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
 export default function ReviewQueue(): ReactNode {
-  const { apiClient, token } = useSession();
+  const { apiClient, restWrites, token } = useSession();
   const { translate } = useTranslation();
   const [items, setItems] = useState<ReviewResponse[]>([]);
   const [selected, setSelected] = useState<ReviewDetail>();
@@ -47,8 +43,7 @@ export default function ReviewQueue(): ReactNode {
     void load();
   }, [load]);
   const selectCase = async (id: string): Promise<void> => {
-    const claim = await assignReviewApiV1ReviewsReviewIdAssignPost({
-      client: apiClient,
+    const claim = await restWrites.assignReview({
       path: { review_id: id },
     });
     const detail = await reviewDetailApiV1ReviewsReviewIdGet({
@@ -68,8 +63,7 @@ export default function ReviewQueue(): ReactNode {
     if (!selected) return;
     try {
       const corrected = JSON.parse(dossier) as GarmentEvidenceDossier;
-      const response = await correctReviewApiV1ReviewsReviewIdCorrectionsPost({
-        client: apiClient,
+      const response = await restWrites.correctReview({
         path: { review_id: selected.id },
         body: { dossier: corrected, reason },
       });
@@ -81,8 +75,7 @@ export default function ReviewQueue(): ReactNode {
   };
   const approve = async (): Promise<void> => {
     if (!selected) return;
-    const response = await approveReviewApiV1ReviewsReviewIdApprovePost({
-      client: apiClient,
+    const response = await restWrites.approveReview({
       path: { review_id: selected.id },
       body: {},
     });
@@ -94,12 +87,10 @@ export default function ReviewQueue(): ReactNode {
   };
   const confirmCompleted = async (): Promise<void> => {
     if (!selected) return;
-    const response =
-      await confirmServiceEventApiV1ReviewsReviewIdServiceEventsPost({
-        client: apiClient,
-        path: { review_id: selected.id },
-        body: { kind: 'completed' },
-      });
+    const response = await restWrites.confirmServiceEvent({
+      path: { review_id: selected.id },
+      body: { kind: 'completed' },
+    });
     if (!response.data) setFailed(true);
   };
   return (

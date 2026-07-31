@@ -17,6 +17,13 @@ type AnalysisRevisionType {
   createdAt: DateTime!
 }
 
+type CareResultType {
+  id: UUID!
+  status: String!
+  language: String!
+  data: JSON!
+}
+
 type ConversationMessageConnection {
   items: [ConversationMessageType!]!
   pageInfo: PageInfo!
@@ -30,10 +37,6 @@ type ConversationMessageType {
   createdAt: DateTime!
 }
 
-input CreateScanInput {
-  requestedLanguage: String! = "en"
-}
-
 type CurrentUserType {
   id: UUID!
   email: String!
@@ -44,9 +47,18 @@ type CurrentUserType {
 """Date with time (isoformat)"""
 scalar DateTime
 
-type FeedbackType {
-  id: UUID!
-  requestReview: Boolean!
+type GarmentAnalysisHistoryConnection {
+  items: [GarmentAnalysisHistoryType!]!
+  pageInfo: PageInfo!
+}
+
+type GarmentAnalysisHistoryType {
+  scanId: UUID!
+  status: String!
+  createdAt: DateTime!
+  resultAvailable: Boolean!
+  thumbnailScanId: UUID
+  thumbnailImageId: UUID
 }
 
 type GarmentConnection {
@@ -54,8 +66,35 @@ type GarmentConnection {
   pageInfo: PageInfo!
 }
 
-input GarmentIdInput {
-  garmentId: UUID!
+type GarmentDetailType {
+  id: UUID!
+  displayName: String
+  identifiers: [String!]!
+  thumbnailScanId: UUID
+  thumbnailImageId: UUID
+  lastAnalysisAt: DateTime
+  analysedBefore: Boolean!
+  cleanedBefore: Boolean!
+  activeAnalysis: AnalysisRevisionType
+  activeResult: CareResultType
+  analyses: GarmentAnalysisHistoryConnection!
+  serviceEvents: [ServiceEventType!]!
+}
+
+type GarmentHistoryConnection {
+  items: [GarmentHistoryItemType!]!
+  pageInfo: PageInfo!
+}
+
+type GarmentHistoryItemType {
+  id: UUID!
+  identifiers: [String!]!
+  thumbnailUrl: String
+  thumbnailScanId: UUID
+  thumbnailImageId: UUID
+  lastAnalysisAt: DateTime
+  analysedBefore: Boolean!
+  cleanedBefore: Boolean!
 }
 
 type GarmentType {
@@ -66,15 +105,20 @@ type GarmentType {
   createdAt: DateTime!
 }
 
-type Mutation {
-  createScan(input: CreateScanInput!): ScanType!
-  renameGarment(input: RenameGarmentInput!): GarmentType!
-  archiveGarment(input: GarmentIdInput!): GarmentType!
-  unarchiveGarment(input: GarmentIdInput!): GarmentType!
-  deleteScan(input: ScanIdInput!): Boolean!
-  deleteGarment(input: GarmentIdInput!): Boolean!
-  submitFeedback(input: SubmitFeedbackInput!): FeedbackType!
+type IdentityCandidateType {
+  id: UUID!
+  garmentId: UUID!
+  thumbnailScanId: UUID
+  thumbnailImageId: UUID
+  classification: String!
+  reasons: JSON!
+  status: String!
 }
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
+"""
+scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
 
 type PageInfo {
   nextCursor: String
@@ -82,30 +126,32 @@ type PageInfo {
 
 type Query {
   currentUser: CurrentUserType!
-  scans(first: Int! = 20, after: UUID = null): ScanConnection!
+  scans(first: Int! = 20, after: String = null): ScanConnection!
   scan(id: UUID!): ScanType
-  garments(first: Int! = 20, after: UUID = null): GarmentConnection!
+  garments(first: Int! = 20, after: String = null): GarmentConnection!
+  garmentHistory(first: Int! = 20, after: String = null): GarmentHistoryConnection!
   garment(id: UUID!): GarmentType
-  messages(scanId: UUID!, first: Int! = 30, after: UUID = null): ConversationMessageConnection!
+  garmentDetail(id: UUID!, first: Int! = 20, after: String = null, language: String = null): GarmentDetailType
+  messages(scanId: UUID!, first: Int! = 30, after: String = null): ConversationMessageConnection!
   analysisRevision(id: UUID!): AnalysisRevisionType
   analysis(id: UUID!): AnalysisRevisionType
   imageMetadata(scanId: UUID!): [ScanImageMetadataType!]!
   run(id: UUID!): AiRunType
   usage: UsageSummary!
+  scanResult(scanId: UUID!, language: String = null): ResultCompositeType
 }
 
-input RenameGarmentInput {
-  garmentId: UUID!
-  displayName: String!
+type ResultCompositeType {
+  scan: ScanType!
+  activeAnalysis: AnalysisRevisionType
+  result: CareResultType
+  garment: GarmentType
+  identityCandidates: [IdentityCandidateType!]!
 }
 
 type ScanConnection {
   items: [ScanType!]!
   pageInfo: PageInfo!
-}
-
-input ScanIdInput {
-  scanId: UUID!
 }
 
 type ScanImageMetadataType {
@@ -127,11 +173,11 @@ type ScanType {
   createdAt: DateTime!
 }
 
-input SubmitFeedbackInput {
-  scanId: UUID!
-  rating: Int = null
-  comment: String = null
-  requestReview: Boolean! = false
+type ServiceEventType {
+  id: UUID!
+  kind: String!
+  note: String
+  createdAt: DateTime!
 }
 
 scalar UUID

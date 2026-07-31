@@ -10,6 +10,8 @@
 - [`runbooks/`](runbooks/) — local operations, incidents, recovery, and release procedures.
 - [`adr/`](adr/) — immutable architecture decisions.
 - [`api/openapi.json`](api/openapi.json) — generated API contract.
+- [`feature-tasks/graphql-garment-history-migration.md`](feature-tasks/graphql-garment-history-migration.md) — locally implemented migration of customer garment-history reads to GraphQL.
+- [`feature-tasks/storefront-graphql-read-migration.md`](feature-tasks/storefront-graphql-read-migration.md) — planned unified v1 API migration for read-only GraphQL, REST writes, and SSE progress across web, iOS, and Android.
 
 ## Historical references
 

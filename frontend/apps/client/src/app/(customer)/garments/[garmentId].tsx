@@ -1,4 +1,9 @@
-import { useState, type ComponentProps, type ReactNode } from 'react';
+import {
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react';
 import {
   Image,
   Pressable,
@@ -10,13 +15,11 @@ import {
 import Feather from '@expo/vector-icons/Feather';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
-  getGarmentApiV1GarmentsGarmentIdGet,
-  deleteGarmentApiV1GarmentsGarmentIdDelete,
-  scanHistoryApiV1ScansHistoryGet,
-  type GarmentResponse,
-  type ScanHistoryResponse,
+  GarmentDetailDocument,
+  imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet,
 } from '@fabricassist/api-client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery as useApolloQuery } from '@apollo/client';
+import { useMutation } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '../../../auth/session';
 import { FoundationShell } from '../../../components/FoundationShell';
@@ -28,48 +31,52 @@ export default function GarmentHistory(): ReactNode {
     garmentId: string;
     decisionScanId?: string;
   }>();
-  const { apiClient, token } = useSession();
+  const { apiClient, restWrites, token } = useSession();
   const { locale, translate } = useTranslation();
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
-  const queryClient = useQueryClient();
+  const { data, error, fetchMore } = useApolloQuery(GarmentDetailDocument, {
+    skip: !garmentId || !token,
+    variables: {
+      garmentId,
+      first: 20,
+      after: null,
+      language: locale,
+    },
+    fetchPolicy: 'cache-and-network',
+  });
+  const garment = data?.garmentDetail;
+  const [thumbnailUrl, setThumbnailUrl] = useState<string>();
+  useEffect(() => {
+    if (!garment?.thumbnailScanId || !garment.thumbnailImageId) {
+      setThumbnailUrl(undefined);
+      return;
+    }
+    let cancelled = false;
+    void imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet({
+      client: apiClient,
+      path: {
+        scan_id: garment.thumbnailScanId,
+        image_id: garment.thumbnailImageId,
+      },
+    }).then((response) => {
+      if (!cancelled) setThumbnailUrl(response.data?.url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, garment?.thumbnailImageId, garment?.thumbnailScanId]);
   const deleteGarment = useMutation({
     mutationFn: async () => {
-      const result = await deleteGarmentApiV1GarmentsGarmentIdDelete({
-        client: apiClient,
+      const result = await restWrites.deleteGarment({
         path: { garment_id: garmentId },
       });
-      if (!result.data) throw result.error;
+      if (!result.data) throw new Error('GARMENT_DELETE_FAILED');
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['customer-history'] });
-      await queryClient.invalidateQueries({ queryKey: ['scan-history'] });
       router.replace('/history');
     },
   });
-  const { data: garment } = useQuery<GarmentResponse>({
-    queryKey: ['garment', garmentId],
-    enabled: Boolean(garmentId && token),
-    queryFn: async () => {
-      const result = await getGarmentApiV1GarmentsGarmentIdGet({
-        client: apiClient,
-        path: { garment_id: garmentId },
-      });
-      if (!result.data) throw result.error;
-      return result.data;
-    },
-  });
-  const { data: scans, isError: scansError } = useQuery<ScanHistoryResponse[]>({
-    queryKey: ['scan-history', garmentId],
-    enabled: Boolean(garmentId && token),
-    queryFn: async () => {
-      const result = await scanHistoryApiV1ScansHistoryGet({
-        client: apiClient,
-      });
-      if (!result.data) throw result.error;
-      return result.data;
-    },
-  });
-  const garmentScans = scans?.filter((scan) => scan.garment_id === garmentId);
+  const garmentScans = garment?.analyses.items ?? [];
 
   return (
     <FoundationShell
@@ -77,14 +84,15 @@ export default function GarmentHistory(): ReactNode {
       description={translate('garmentHistoryDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
-        {!garment ? <Text>{translate('resultLoading')}</Text> : null}
+        {error ? <Text>{translate('scanHistoryLoadFailed')}</Text> : null}
+        {!garment && !error ? <Text>{translate('resultLoading')}</Text> : null}
         {garment ? (
           <>
             <View style={styles.hero}>
-              {garment.thumbnail_url ? (
+              {thumbnailUrl ? (
                 <Image
                   accessibilityLabel={translate('garmentThumbnail')}
-                  source={{ uri: garment.thumbnail_url }}
+                  source={{ uri: thumbnailUrl }}
                   style={styles.heroImage}
                 />
               ) : (
@@ -99,7 +107,7 @@ export default function GarmentHistory(): ReactNode {
                 <Text style={styles.lastAnalysis}>
                   {translate('lastAnalysis')}:{' '}
                   {formatTimestamp(
-                    garment.last_analysis_at,
+                    garment.lastAnalysisAt,
                     locale,
                     translate('notAvailable'),
                   )}
@@ -111,14 +119,14 @@ export default function GarmentHistory(): ReactNode {
                 icon="search"
                 label={translate('analysedBefore')}
                 value={
-                  garment.analysed_before ? translate('yes') : translate('no')
+                  garment.analysedBefore ? translate('yes') : translate('no')
                 }
               />
               <StatusCard
                 icon="check-circle"
                 label={translate('cleanedBefore')}
                 value={
-                  garment.cleaned_before ? translate('yes') : translate('no')
+                  garment.cleanedBefore ? translate('yes') : translate('no')
                 }
               />
             </View>
@@ -126,29 +134,26 @@ export default function GarmentHistory(): ReactNode {
               <Text style={styles.sectionTitle}>
                 {translate('previousAnalyses')}
               </Text>
-              {scansError ? (
-                <Text>{translate('scanHistoryLoadFailed')}</Text>
-              ) : null}
-              {!scansError && garmentScans?.length === 0 ? (
+              {garmentScans.length === 0 ? (
                 <Text>{translate('previousAnalysesEmpty')}</Text>
               ) : null}
-              {garmentScans?.map((scan) => (
+              {garmentScans.map((scan) => (
                 <Pressable
                   accessibilityLabel={translate('viewPreviousResult')}
                   accessibilityRole="button"
-                  accessibilityState={{ disabled: !scan.result_available }}
-                  disabled={!scan.result_available}
-                  key={scan.scan_id}
+                  accessibilityState={{ disabled: !scan.resultAvailable }}
+                  disabled={!scan.resultAvailable}
+                  key={scan.scanId}
                   onPress={() =>
                     router.push({
                       pathname: '/result',
-                      params: { scanId: scan.scan_id },
+                      params: { scanId: scan.scanId },
                     })
                   }
                   style={({ pressed }) => [
                     styles.analysis,
-                    !scan.result_available && styles.analysisDisabled,
-                    pressed && scan.result_available && styles.analysisPressed,
+                    !scan.resultAvailable && styles.analysisDisabled,
+                    pressed && scan.resultAvailable && styles.analysisPressed,
                   ]}
                 >
                   <View>
@@ -157,7 +162,7 @@ export default function GarmentHistory(): ReactNode {
                     </Text>
                     <Text style={styles.analysisDate}>
                       {formatTimestamp(
-                        scan.created_at,
+                        scan.createdAt,
                         locale,
                         translate('notAvailable'),
                       )}
@@ -170,15 +175,35 @@ export default function GarmentHistory(): ReactNode {
                   />
                 </Pressable>
               ))}
+              {garment.analyses.pageInfo.nextCursor ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    void fetchMore({
+                      variables: {
+                        after: garment.analyses.pageInfo.nextCursor,
+                      },
+                    })
+                  }
+                  style={({ pressed }) => [
+                    styles.loadMore,
+                    pressed && styles.analysisPressed,
+                  ]}
+                >
+                  <Text style={styles.loadMoreText}>
+                    {translate('loadMoreAnalyses')}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
             <View style={styles.events}>
               <Text style={styles.sectionTitle}>
                 {translate('serviceHistory')}
               </Text>
-              {garment.service_events.length === 0 ? (
+              {garment.serviceEvents.length === 0 ? (
                 <Text>{translate('noServiceEvents')}</Text>
               ) : null}
-              {garment.service_events.map((event) => (
+              {garment.serviceEvents.map((event) => (
                 <Text key={event.id}>
                   • {event.kind}
                   {event.note ? `: ${event.note}` : ''}
@@ -322,6 +347,15 @@ const styles = StyleSheet.create({
   analysisPressed: { opacity: 0.72 },
   analysisTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
   analysisDate: { color: colors.muted, fontSize: 12, marginTop: 2 },
+  loadMore: {
+    alignSelf: 'flex-start',
+    borderColor: colors.primary,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    paddingHorizontal: spacing.medium,
+    paddingVertical: spacing.small,
+  },
+  loadMoreText: { color: colors.primary, fontWeight: '800' },
   events: { gap: spacing.small, marginTop: spacing.small },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
   returnButton: {

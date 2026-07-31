@@ -88,6 +88,7 @@ test: ## Run foundation checks plus backend and frontend unit tests.
 
 lint: ## Run configuration, backend, and frontend quality checks.
 	@sh -n infrastructure/scripts/validate-foundation.sh
+	@python3 infrastructure/scripts/check-frontend-rest-write-bypass.py
 	@docker compose config --quiet
 	cd backend && uv run ruff format --check .
 	cd backend && uv run ruff check .
@@ -103,14 +104,37 @@ graphql: ## Export the Strawberry SDL and generate typed GraphQL documents.
 	pnpm --dir frontend generate:graphql
 
 check-graphql-drift: ## Regenerate GraphQL SDL/documents and fail on checked-in drift.
-	$(MAKE) graphql
-	git diff --exit-code -- docs/api/graphql/schema.graphql frontend/packages/api-client/src/graphql/generated
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		cp docs/api/graphql/schema.graphql "$$tmp/schema.graphql"; \
+		cp -R frontend/packages/api-client/src/graphql/generated "$$tmp/generated"; \
+		$(MAKE) graphql; \
+	diff -u "$$tmp/schema.graphql" docs/api/graphql/schema.graphql; \
+	diff -ru "$$tmp/generated" frontend/packages/api-client/src/graphql/generated
 
-check-graphql-breaking: ## Compare the checked-in GraphQL schema with merge-base when available.
-	@base=$$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1); \
+check-graphql-breaking: ## Compare the checked-in GraphQL schema with merge-base, allowing only the hash-bound ADR-017 cutover.
+	@set -e; root=$$(pwd); base=$$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1); \
 	if git cat-file -e $$base:docs/api/graphql/schema.graphql 2>/dev/null; then \
 		git show $$base:docs/api/graphql/schema.graphql > /tmp/fabricassist-graphql-base.graphql; \
-		pnpm --dir frontend exec graphql-inspector diff /tmp/fabricassist-graphql-base.graphql docs/api/graphql/schema.graphql; \
+		if pnpm --dir frontend exec graphql-inspector diff /tmp/fabricassist-graphql-base.graphql ../docs/api/graphql/schema.graphql; then \
+			inspector_status=0; \
+		else \
+			inspector_status=$$?; \
+		fi; \
+		approval_hash=$$(python3 -c "import json; print(json.load(open('docs/api/graphql/adr-017-mutation-removal.approval.json'))['new_schema_sha256'])"); \
+		phase6_approval_hash=$$(python3 -c "import json; print(json.load(open('docs/api/graphql/phase-6-opaque-cursors.approval.json'))['new_schema_sha256'])"); \
+		current_hash=$$(sha256sum docs/api/graphql/schema.graphql | cut -d' ' -f1); \
+		if [ "$$current_hash" = "$$approval_hash" ]; then \
+			(cd backend && uv run python ../infrastructure/scripts/check-graphql-breaking.py --base /tmp/fabricassist-graphql-base.graphql --current ../docs/api/graphql/schema.graphql --approval ../docs/api/graphql/adr-017-mutation-removal.approval.json); \
+			if [ "$$inspector_status" -ne 0 ]; then echo 'GraphQL Inspector reported only the approved manifest-bound cutover.'; fi; \
+		elif [ "$$current_hash" = "$$phase6_approval_hash" ]; then \
+			(cd backend && uv run python ../infrastructure/scripts/check-graphql-breaking.py --base ../docs/api/graphql/schema.query-only-baseline.graphql --current ../docs/api/graphql/schema.graphql --approval ../docs/api/graphql/phase-6-opaque-cursors.approval.json); \
+			if [ "$$inspector_status" -ne 0 ]; then echo 'GraphQL Inspector reported only the approved Phase 6 opaque-cursor migration.'; fi; \
+		else \
+			baseline=docs/api/graphql/schema.query-only-baseline.graphql; \
+			test -f "$$baseline" || { echo 'Missing query-only GraphQL baseline for post-cutover breaking checks.' >&2; exit 1; }; \
+            (cd backend && uv run python ../infrastructure/scripts/check-graphql-breaking.py --base ../$$baseline --current ../docs/api/graphql/schema.graphql --approval ../docs/api/graphql/phase-6-opaque-cursors.approval.json --allow-compatible-additions); \
+            echo 'GraphQL changes contain only the exact approved cutover plus compatible additions.'; \
+		fi; \
 	else \
 		echo 'No prior GraphQL schema available for breaking-change comparison.'; \
 	fi
@@ -120,8 +144,12 @@ openapi: ## Generate deterministic FastAPI OpenAPI and the frontend client.
 	pnpm --dir frontend generate:api
 
 check-openapi-drift: ## Regenerate OpenAPI/client and fail if checked-in artifacts drift.
-	$(MAKE) openapi
-	git diff --exit-code -- docs/api/openapi.json frontend/packages/api-client/src/generated
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+		cp docs/api/openapi.json "$$tmp/openapi.json"; \
+		cp -R frontend/packages/api-client/src/generated "$$tmp/generated"; \
+		$(MAKE) openapi; \
+	diff -u "$$tmp/openapi.json" docs/api/openapi.json; \
+	diff -ru "$$tmp/generated" frontend/packages/api-client/src/generated
 
 frontend-build: ## Build the Phase 3 Expo web artifact in Docker.
 	docker build --file frontend/Dockerfile frontend

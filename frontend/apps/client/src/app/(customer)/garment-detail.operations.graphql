@@ -1,0 +1,54 @@
+query GarmentDetail(
+  $garmentId: UUID!
+  $first: Int!
+  $after: String
+  $language: String!
+) {
+  garmentDetail(
+    id: $garmentId
+    first: $first
+    after: $after
+    language: $language
+  ) {
+    id
+    displayName
+    identifiers
+    thumbnailScanId
+    thumbnailImageId
+    lastAnalysisAt
+    analysedBefore
+    cleanedBefore
+    activeAnalysis {
+      id
+      scanId
+      status
+      revisionNumber
+      createdAt
+    }
+    activeResult {
+      id
+      status
+      language
+      data
+    }
+    analyses {
+      items {
+        scanId
+        status
+        createdAt
+        resultAvailable
+        thumbnailScanId
+        thumbnailImageId
+      }
+      pageInfo {
+        nextCursor
+      }
+    }
+    serviceEvents {
+      id
+      kind
+      note
+      createdAt
+    }
+  }
+}

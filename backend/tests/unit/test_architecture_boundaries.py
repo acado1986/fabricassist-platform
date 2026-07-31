@@ -69,6 +69,13 @@ def test_routes_do_not_select_outbound_adapter_technologies() -> None:
         assert forbidden not in route_source
 
 
+def test_garment_history_application_contract_is_transport_neutral() -> None:
+    path = SOURCE / "application" / "garment_history.py"
+    forbidden = {"sqlalchemy", "fabricassist.application.object_storage"}
+    assert imports(path).isdisjoint(forbidden)
+    assert "fabricassist.infrastructure.persistence" not in path.read_text()
+
+
 def test_valkey_capability_adapters_do_not_import_sibling_capabilities() -> None:
     capabilities = ("cache", "concurrency", "rate_limits")
     for capability in capabilities:

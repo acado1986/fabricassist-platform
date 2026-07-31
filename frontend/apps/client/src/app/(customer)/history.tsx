@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Image,
   Pressable,
@@ -9,12 +9,13 @@ import {
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
+import { useQuery as useApolloQuery } from '@apollo/client';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import {
-  deleteGarmentApiV1GarmentsGarmentIdDelete,
-  listGarmentsApiV1GarmentsGet,
-  type GarmentResponse,
+  GarmentHistoryDocument,
+  imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet,
+  type FabricAssistApiClient,
 } from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
@@ -22,50 +23,39 @@ import { GarmentDeletionConfirmation } from '../../components/GarmentDeletionCon
 import { useTranslation } from '../../i18n/TranslationProvider';
 
 export default function CustomerHistory(): ReactNode {
-  const { apiClient, token } = useSession();
+  const { apiClient, restWrites, token } = useSession();
   const { locale, translate } = useTranslation();
   const [deletionCandidate, setDeletionCandidate] = useState<string>();
-  const queryClient = useQueryClient();
   const deleteGarment = useMutation({
     mutationFn: async (garmentId: string) => {
-      const result = await deleteGarmentApiV1GarmentsGarmentIdDelete({
-        client: apiClient,
+      const result = await restWrites.deleteGarment({
         path: { garment_id: garmentId },
       });
-      if (!result.data) throw result.error;
+      if (!result.data) throw new Error('GARMENT_DELETE_FAILED');
     },
-    onSuccess: async () => {
+    onSuccess: () => {
       setDeletionCandidate(undefined);
-      await queryClient.invalidateQueries({ queryKey: ['customer-history'] });
-      await queryClient.invalidateQueries({ queryKey: ['scan-history'] });
     },
   });
-  const {
-    data: garments,
-    isError,
-    isLoading,
-  } = useQuery<GarmentResponse[]>({
-    queryKey: ['customer-history'],
-    enabled: Boolean(token),
-    queryFn: async () => {
-      const result = await listGarmentsApiV1GarmentsGet({ client: apiClient });
-      if (!result.data) throw result.error;
-      return result.data;
-    },
+  const { data, error, loading } = useApolloQuery(GarmentHistoryDocument, {
+    skip: !token,
+    variables: { first: 20, after: null },
+    fetchPolicy: 'cache-and-network',
   });
+  const garments = data?.garmentHistory.items;
   return (
     <FoundationShell
       title={translate('customerHistoryTitle')}
       description={translate('customerHistoryDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
-        {isLoading ? <Text>{translate('resultLoading')}</Text> : null}
-        {isError ? <Text>{translate('customerHistoryLoadFailed')}</Text> : null}
-        {!isLoading && !isError && garments?.length === 0 ? (
+        {loading ? <Text>{translate('resultLoading')}</Text> : null}
+        {error ? <Text>{translate('customerHistoryLoadFailed')}</Text> : null}
+        {!loading && !error && garments?.length === 0 ? (
           <Text>{translate('customerHistoryEmpty')}</Text>
         ) : null}
         {garments?.map((garment) => {
-          const identifier = garment.identifiers?.[0] ?? garment.id;
+          const identifier = garment.identifiers[0] ?? garment.id;
           return (
             <View key={garment.id} style={styles.garment}>
               <Pressable
@@ -77,21 +67,13 @@ export default function CustomerHistory(): ReactNode {
                   pressed && styles.pressed,
                 ]}
               >
-                {garment.thumbnail_url ? (
-                  <Image
-                    accessibilityLabel={translate('garmentThumbnail')}
-                    source={{ uri: garment.thumbnail_url }}
-                    style={styles.thumbnail}
-                  />
-                ) : (
-                  <View style={styles.thumbnailPlaceholder}>
-                    <Feather
-                      color={colors.muted}
-                      name="shopping-bag"
-                      size={24}
-                    />
-                  </View>
-                )}
+                <GarmentThumbnail
+                  apiClient={apiClient}
+                  fallbackUrl={garment.thumbnailUrl}
+                  imageId={garment.thumbnailImageId}
+                  label={translate('garmentThumbnail')}
+                  scanId={garment.thumbnailScanId}
+                />
                 <View style={styles.garmentCopy}>
                   <Text numberOfLines={1} style={styles.identifier}>
                     {identifier}
@@ -99,20 +81,18 @@ export default function CustomerHistory(): ReactNode {
                   <Text style={styles.detail}>
                     {translate('lastAnalysis')}:{' '}
                     {formatTimestamp(
-                      garment.last_analysis_at,
+                      garment.lastAnalysisAt,
                       locale,
                       translate('notAvailable'),
                     )}
                   </Text>
                   <Text style={styles.detail}>
                     {translate('analysedBefore')}:{' '}
-                    {garment.analysed_before
+                    {garment.analysedBefore
                       ? translate('yes')
                       : translate('no')}{' '}
                     · {translate('cleanedBefore')}:{' '}
-                    {garment.cleaned_before
-                      ? translate('yes')
-                      : translate('no')}
+                    {garment.cleanedBefore ? translate('yes') : translate('no')}
                   </Text>
                 </View>
                 <Feather
@@ -151,6 +131,55 @@ export default function CustomerHistory(): ReactNode {
         visible={Boolean(deletionCandidate)}
       />
     </FoundationShell>
+  );
+}
+
+function GarmentThumbnail({
+  apiClient,
+  fallbackUrl,
+  imageId,
+  label,
+  scanId,
+}: {
+  apiClient: FabricAssistApiClient;
+  fallbackUrl?: string | null;
+  imageId?: string | null;
+  label: string;
+  scanId?: string | null;
+}): ReactNode {
+  const [url, setUrl] = useState<string | undefined>(fallbackUrl ?? undefined);
+
+  useEffect(() => {
+    if (!scanId || !imageId) {
+      setUrl(fallbackUrl ?? undefined);
+      return;
+    }
+    let cancelled = false;
+    void imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet({
+      client: apiClient,
+      path: { scan_id: scanId, image_id: imageId },
+    })
+      .then((response) => {
+        if (!cancelled) setUrl(response.data?.url ?? fallbackUrl ?? undefined);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(fallbackUrl ?? undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, fallbackUrl, imageId, scanId]);
+
+  return url ? (
+    <Image
+      accessibilityLabel={label}
+      source={{ uri: url }}
+      style={styles.thumbnail}
+    />
+  ) : (
+    <View style={styles.thumbnailPlaceholder}>
+      <Feather color={colors.muted} name="shopping-bag" size={24} />
+    </View>
   );
 }
 

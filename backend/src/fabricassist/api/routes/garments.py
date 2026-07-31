@@ -13,6 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import enqueue_deletion
 from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.application.storefront_queries import (
+    GarmentDetailView,
+    GarmentHistoryView,
+    StorefrontPrincipal,
+    StorefrontQueryPort,
+)
 from fabricassist.domain.identity import IdentityClassification
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
@@ -21,7 +27,6 @@ from fabricassist.infrastructure.persistence.models import (
     GarmentIdentityCandidate,
     GarmentIdentityConfirmation,
     GarmentIdentityMatchRun,
-    GarmentObservation,
     GarmentServiceEvent,
     ProductLookupRun,
     Scan,
@@ -93,6 +98,50 @@ async def get_current_user() -> User:
 
 async def get_storage() -> ObjectStorage:
     raise RuntimeError("Storage dependency was not configured.")
+
+
+async def get_storefront_queries() -> StorefrontQueryPort:
+    raise RuntimeError("Storefront query dependency was not configured.")
+
+
+def principal_for_user(user: User) -> StorefrontPrincipal:
+    return StorefrontPrincipal(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        email=user.email,
+        role=user.role,
+        preferred_language=user.preferred_language,
+    )
+
+
+def response_from_detail(detail: GarmentDetailView) -> GarmentResponse:
+    return GarmentResponse(
+        id=detail.id,
+        analysed_before=detail.analysed_before,
+        cleaned_before=detail.cleaned_before,
+        identifiers=detail.identifiers,
+        last_analysis_at=(detail.last_analysis_at.isoformat() if detail.last_analysis_at else None),
+        thumbnail_url=detail.thumbnail_url,
+        service_events=[
+            ServiceEventResponse(id=event.id, kind=event.kind, note=event.note)
+            for event in detail.service_events
+        ],
+    )
+
+
+def response_from_history(item: GarmentHistoryView) -> GarmentResponse:
+    return GarmentResponse(
+        id=item.id,
+        analysed_before=item.analysed_before,
+        cleaned_before=item.cleaned_before,
+        identifiers=item.identifiers,
+        last_analysis_at=(item.last_analysis_at.isoformat() if item.last_analysis_at else None),
+        thumbnail_url=item.thumbnail_url,
+        service_events=[
+            ServiceEventResponse(id=event.id, kind=event.kind, note=event.note)
+            for event in item.service_events
+        ],
+    )
 
 
 async def owned_garment(session: AsyncSession, user: User, garment_id: UUID) -> Garment:
@@ -185,43 +234,31 @@ async def response_for(
 
 @router.get("", response_model=list[GarmentResponse])
 async def list_garments(
-    session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[ObjectStorage, Depends(get_storage)],
+    queries: Annotated[StorefrontQueryPort, Depends(get_storefront_queries)],
 ) -> list[GarmentResponse]:
-    garments = list(
-        (
-            await session.scalars(
-                select(Garment).where(
-                    Garment.tenant_id == user.tenant_id,
-                    Garment.user_id == user.id,
-                    Garment.archived_at.is_(None),
-                )
-            )
-        ).all()
+    items, _ = await queries.list_garment_history(
+        principal_for_user(user), first=100_000, after=None
     )
-    responses = [await response_for(session, garment, storage) for garment in garments]
-    # History is customer-facing and must show the most recently analysed
-    # garment first. Garments without an analysis remain at the end.
-    responses.sort(
-        key=lambda garment: (
-            datetime.fromisoformat(garment.last_analysis_at)
-            if garment.last_analysis_at
-            else datetime.min.replace(tzinfo=UTC)
-        ),
-        reverse=True,
-    )
-    return responses
+    return [response_from_history(item) for item in items]
 
 
 @router.get("/{garment_id}", response_model=GarmentResponse)
 async def get_garment(
     garment_id: UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[ObjectStorage, Depends(get_storage)],
+    queries: Annotated[StorefrontQueryPort, Depends(get_storefront_queries)],
 ) -> GarmentResponse:
-    return await response_for(session, await owned_garment(session, user, garment_id), storage)
+    detail = await queries.get_garment_detail(
+        principal_for_user(user),
+        garment_id,
+        first=100_000,
+        after=None,
+        language=user.preferred_language,
+    )
+    if detail is None:
+        raise HTTPException(404, "Garment was not found.")
+    return response_from_detail(detail)
 
 
 @router.post("/{garment_id}/service-events", response_model=ServiceEventResponse, status_code=201)
@@ -249,26 +286,20 @@ async def add_service_event(
 @router.get("/{garment_id}/history", response_model=HistoryResponse)
 async def garment_history(
     garment_id: UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    storage: Annotated[ObjectStorage, Depends(get_storage)],
+    queries: Annotated[StorefrontQueryPort, Depends(get_storefront_queries)],
 ) -> HistoryResponse:
-    garment = await owned_garment(session, user, garment_id)
-    observations = list(
-        (
-            await session.scalars(
-                select(GarmentObservation)
-                .where(
-                    GarmentObservation.tenant_id == user.tenant_id,
-                    GarmentObservation.garment_id == garment.id,
-                )
-                .order_by(GarmentObservation.created_at.desc())
-            )
-        ).all()
+    detail = await queries.get_garment_detail(
+        principal_for_user(user),
+        garment_id,
+        first=100_000,
+        after=None,
+        language=user.preferred_language,
     )
-    events = (await response_for(session, garment, storage)).service_events
+    if detail is None:
+        raise HTTPException(404, "Garment was not found.")
     return HistoryResponse(
-        garment_id=garment.id,
+        garment_id=detail.id,
         observations=[
             {
                 "id": observation.id,
@@ -277,9 +308,12 @@ async def garment_history(
                 "value": observation.value,
                 "created_at": observation.created_at.isoformat(),
             }
-            for observation in observations
+            for observation in detail.observations
         ],
-        service_events=events,
+        service_events=[
+            ServiceEventResponse(id=event.id, kind=event.kind, note=event.note)
+            for event in detail.service_events
+        ],
     )
 
 

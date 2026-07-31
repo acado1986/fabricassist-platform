@@ -11,7 +11,6 @@ const config: CodegenConfig = {
       preset: 'client',
       presetConfig: { fragmentMasking: true },
       config: {
-        documentMode: 'string',
         strictScalars: true,
         defaultScalarType: 'never',
         scalars: {

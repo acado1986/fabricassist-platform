@@ -11,9 +11,18 @@ export {
 } from './authenticated';
 export type { Client as FabricAssistApiClient } from './generated/client';
 export {
-  createGraphQLExecutor,
-  FabricAssistGraphQLError,
-} from './graphql/client';
+  createApolloClient,
+  refetchActiveGraphQLQueries,
+} from './graphql/apollo';
+export type { ApolloClientOptions } from './graphql/apollo';
+export { RunStreamLifecycle } from './run-stream';
+export type { RunStreamLifecycleOptions } from './run-stream';
+export { createRestWriteClient, REST_WRITE_REGISTRY } from './rest-writes';
+export type {
+  CacheEffect,
+  RestWriteEffectHandler,
+  RestWriteOperation,
+} from './rest-writes';
 export {
   parseUuid,
   type DateTime,

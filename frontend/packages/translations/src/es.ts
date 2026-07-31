@@ -134,6 +134,7 @@ export const es: TranslationCatalog = {
       'No se ha podido eliminar este historial de prenda.',
     previousAnalyses: 'Análisis anteriores',
     previousAnalysesEmpty: 'Aún no tienes análisis anteriores.',
+    loadMoreAnalyses: 'Cargar más análisis',
     previousAnalysis: 'Análisis de cuidado',
     viewPreviousResult: 'Ver resultado de cuidado',
     scanHistoryLoadFailed: 'No hemos podido cargar tus análisis anteriores.',

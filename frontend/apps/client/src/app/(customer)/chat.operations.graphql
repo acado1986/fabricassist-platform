@@ -1,4 +1,4 @@
-query ScanMessages($scanId: UUID!, $first: Int!, $after: UUID) {
+query ScanMessages($scanId: UUID!, $first: Int!, $after: String) {
   messages(scanId: $scanId, first: $first, after: $after) {
     items {
       id

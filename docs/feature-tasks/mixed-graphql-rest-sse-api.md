@@ -5,6 +5,46 @@
 **Executor:** GPT-5.6 Luna (high reasoning)
 **Plan branch:** `docs/mixed-graphql-rest-sse-api-plan`
 **Implementation branch:** `feat/mixed-graphql-rest-sse-api` (create from updated `main` after this task is merged)
+
+> **Superseded implementation guidance:** ADR-017 and
+> [`storefront-graphql-read-migration.md`](storefront-graphql-read-migration.md)
+> supersede this task's allowance for GraphQL metadata mutations, its prohibition
+> on a normalized GraphQL client, and its REST-first reconnect recovery. For all
+> remaining storefront work, GraphQL is query-only, every write remains REST,
+> Apollo Client supplies the shared normalized cache, and GraphQL is the
+> canonical resynchronization point before SSE reconnect and after terminal
+> events. The historical phases below remain useful implementation evidence but
+> must not override ADR-017.
+
+Phase 2 result-read work is now implemented in the active migration branch:
+`result.tsx` uses the generated `scanResult` Apollo operation as its canonical
+read, while identity decisions, feedback, deletion, and run commands remain
+REST writes. `RunStreamLifecycle` awaits a network-only GraphQL recovery before
+initial/reconnect SSE opens and after completed, failed, or cancelled terminal
+events; bounded foreground GraphQL polling is the fallback when SSE is
+unavailable. The phase remains subject to its mobile smoke and query-count
+acceptance checks.
+
+Phase 3 and Phase 4 are also implemented in the active branch: garment detail
+and paginated scan history use the generated `GarmentDetail` Apollo operation,
+while image metadata uses `ScanImageMetadata`; thumbnail preview/download
+continues through REST file operations and GraphQL does not expose presigned
+URLs or object keys. The shared SQLAlchemy query adapter is used by the
+compatible REST garment reads and GraphQL reads.
+
+Phase 5 records a no-migration decision: session/authentication and the
+opportunistic bootstrap request remain REST because no measured startup
+waterfall currently exists for a GraphQL bootstrap composite to remove.
+
+Phase 6 hardening converted the retained `scans`, `garments`, and `messages`
+GraphQL connections to versioned opaque keyset cursors. The intentional three
+argument-type changes are bound to ADR-018 and an exact SDL approval manifest;
+all other breaking changes remain fail-closed.
+
+Phase 7 local release checks and a bounded local metadata load smoke passed,
+but production SSE capacity/starvation validation remains deferred until the
+deployed API URL and protected smoke credentials are supplied.
+
 **Created:** 2026-07-31
 **Preparation:** `AGENTS.md`, `docs/requirements.md`, `docs/architecture.md`,
 `docs/environment.md`, `docs/database.md`, `docs/production/`,
@@ -14,9 +54,9 @@ Expo client, generated OpenAPI client, tests, and deployment configuration.
 ## 1. Executive summary
 
 Evolve the existing modular FastAPI monolith incrementally. GraphQL supplies
-frontend application reads and simple metadata mutations; REST remains the
-command boundary for direct-to-private-object-storage image uploads and
-long-running AI runs; SSE supplies ordered, reconnectable run progress and
+read-only composite application reads; REST remains the boundary for every
+write, direct-to-private-object-storage image upload, authentication action, and
+long-running AI command; SSE supplies ordered, reconnectable run progress and
 safe assistant-message display. PostgreSQL remains authoritative; Valkey is
 used only for rate limits, connection/concurrency limits, short-lived locks,
 retry counters, and optional hot cache.
@@ -56,9 +96,9 @@ and the architecture currently defers conversation streaming.
   safe raw-token stream.
 - The Expo client uses TanStack Query and a generated Hey API OpenAPI client.
   `authenticated.ts` already centralizes bearer headers, correlation IDs, and a
-  single refresh on HTTP 401. There is no GraphQL/Apollo client or application
-  SSE lifecycle yet, although the generated client contains a low-level SSE
-  frame parser.
+  single refresh on HTTP 401. The ADR-017 cutover uses Apollo Client for
+  GraphQL reads and the generated client for REST writes/reads; the generated
+  client also contains a low-level SSE frame parser.
 - Hosted production uses Cloudflare Pages, Render API, Neon PostgreSQL, private
   R2, QStash, and TLS Valkey. Repository configuration does not establish that
   the selected Render service/proxy tolerates production SSE; this requires a
@@ -81,10 +121,10 @@ and the architecture currently defers conversation streaming.
 
 - Add Strawberry GraphQL to the same FastAPI application at `/api/v1/graphql`.
   Keep FastAPI OpenAPI and the generated REST client for REST endpoints.
-- Use GraphQL Code Generator's `@graphql-codegen/client-preset`, generated
-  typed documents, TanStack Query, and a small shared request executor. Do not
-  add Apollo: normalized entity caching and optimistic graph mutations are not
-  currently demonstrated requirements.
+- Use GraphQL Code Generator's `@graphql-codegen/client-preset`, generated typed
+  documents, and Apollo Client with `InMemoryCache` across web, iOS, and
+  Android. Keep TanStack Query for generated REST operations and reuse the
+  existing authenticated refresh-once abstraction.
 - Emit `message.delta` only by deterministic chunking **after** the full
   assistant message passes validation and is committed. Pre-validation updates
   contain non-content progress only. This preserves the validator gate.
@@ -99,15 +139,15 @@ and the architecture currently defers conversation streaming.
 
 LangGraph, raw provider-token streaming, subscriptions/WebSockets, a new
 microservice, replacing the worker/queue, direct database access from Expo,
-public image URLs, an Apollo migration, and deletion of legacy REST reads before
-all supported clients have migrated.
+public image URLs, persistent Apollo-cache storage, and deletion of legacy REST
+reads before a separate approved retirement task.
 
 ## 7. Target architecture
 
 ```text
 Expo Android / iOS / web
-  ├─ GraphQL: canonical application reads and metadata mutations
-  ├─ REST: uploads and AI-run commands
+  ├─ GraphQL: read-only composite application reads
+  ├─ REST: every write, auth action, upload, and AI-run command
   └─ fetch-based SSE: ephemeral run progress and safe display chunks
                          ↓
 FastAPI application
@@ -129,7 +169,12 @@ and recovery loops.
 
 ## 9. Proposed frontend structure
 
-The current Expo app remains a single universal application. Put the GraphQL executor, scalar codecs, generated typed documents, REST run/upload helpers, and SSE parser in `frontend/packages/api-client`; keep TanStack Query hooks and operation files next to their owning route or feature. Use tiny `.native`/`.web` lifecycle or binary-upload adapters only where platform behavior actually differs.
+The current Expo app remains a single universal application. Put the Apollo
+client factory, scalar codecs, generated typed documents, REST run/upload
+helpers, and SSE parser in `frontend/packages/api-client`; keep Apollo query
+operations and TanStack Query hooks next to their owning route or feature. Use
+tiny `.native`/`.web` lifecycle or binary-upload adapters only where platform
+behavior actually differs.
 
 ## 10. GraphQL schema plan and client typing/runtime
 
@@ -159,17 +204,9 @@ usage
 session list/detail/history. `usage` is administrator-only and aggregates the
 existing durable `model_runs`; it does not introduce a duplicate usage table.
 
-Initial mutations:
-
-```text
-createScan(input)
-renameGarment(input)
-archiveGarment(input)
-unarchiveGarment(input)
-deleteScan(input)
-deleteGarment(input)
-submitFeedback(input)
-```
+The initial GraphQL mutation fields are legacy implementation artifacts.
+ADR-017 requires their removal after confirming there is no supported GraphQL
+mutation caller; every equivalent operation remains REST.
 
 Every resolver receives the same authenticated FastAPI context as REST, verifies
 current user/tenant/role, calls a shared service, and converts expected domain
@@ -186,13 +223,13 @@ correlation ID.
 - Configuration: `frontend/codegen.ts`.
 - Generated artifacts: `frontend/packages/api-client/src/graphql/generated/`.
 - Shared scalar codecs: `frontend/packages/api-client/src/graphql/scalars.ts`.
-- Runtime executor: `frontend/packages/api-client/src/graphql/client.ts`.
+- Runtime client: `frontend/packages/api-client/src/graphql/apollo.ts`.
 - Reusable fragments: `frontend/apps/client/src/graphql/fragments/*.graphql`.
 - Colocated operations: `*.operations.graphql` beside the route/screen/feature
   that owns them. This is the least disruptive convention for the current
   route-oriented app.
 
-Use `@graphql-codegen/client-preset` with `documentMode: "string"`, fragment
+Use `@graphql-codegen/client-preset` with AST `DocumentNode` output, fragment
 masking, `strictScalars: true`, and `defaultScalarType: "never"`. Map `UUID`,
 `DateTime`, `Decimal`, and JSON explicitly. Validate outgoing custom scalars and
 input builders through Zod; server scalar parsing/serialization is strict.
@@ -216,14 +253,15 @@ clean diff; breaking detection compares the checked-in SDL against the merge
 base with a pinned GraphQL Inspector command. TypeScript typechecking includes
 the generated directory.
 
-The executor reuses the authenticated client’s base URL, bearer header,
-correlation ID, one-token-refresh behavior, error envelope conventions, and
-`AbortSignal`. It classifies HTTP/network/GraphQL errors and remains platform
-neutral. TanStack Query owns canonical GraphQL data and cursor pagination.
-REST command responses are acknowledgements, not a second canonical cache.
-SSE progress is local ephemeral run state only. On `run.completed`, invalidate
-and refetch the generated typed query keys for the exact scan/garment/messages/
-usage affected; do not treat streamed text as permanent canonical data.
+Apollo reuses the authenticated client’s base URL, bearer header, correlation
+ID, one-token-refresh behavior, error envelope conventions, and `AbortSignal`.
+It classifies HTTP/network/GraphQL errors and remains platform neutral. Apollo's
+memory-only `InMemoryCache` owns canonical GraphQL data and cursor pagination;
+TanStack Query remains for generated REST operations. REST command responses are
+acknowledgements, not a second canonical cache. SSE progress is local ephemeral
+run state only. On `run.completed`, perform a network-only canonical GraphQL
+query for the exact scan/garment/messages/usage affected; do not treat streamed
+text as permanent canonical data.
 
 ## 11. REST endpoint plan
 
@@ -301,8 +339,6 @@ origins, `Authorization`, `Last-Event-ID`, and event-stream response headers.
 
 ## 13. Database changes
 
-
-
 Add one forward-only Alembic revision for `ai_runs`, `ai_run_images`, and
 `ai_run_events`; add nullable `run_id` references to the existing job operation
 and conversation message records; add `display_name`/`archived_at` only if not
@@ -376,11 +412,16 @@ services only.
 
 ## 23. Backward-compatible migration strategy
 
-Follow the additive order below: document the change; extract shared services; add durable runs; retain existing REST routes as wrappers; add SSE and its polling fallback; add GraphQL read operations; migrate screens; add selected metadata mutations; then retire redundant REST reads only after telemetry proves all supported clients migrated. Do not remove direct uploads or REST commands.
+Follow the additive order below: document the change; extract shared services;
+add durable runs; retain existing REST routes; add SSE and its GraphQL recovery
+fallback; add GraphQL read operations; migrate screens; add deterministic REST
+write cache effects; and validate production behavior. Do not remove REST reads,
+direct uploads, or REST commands in this task.
 
 ## 24. Ordered implementation phases
 
 ### Phase 1 — Baseline, ADR, and contract alignment
+
 - **Goal:** Make the architectural decision explicit before code.
 - **Likely files:** this task; new ADR; requirements, architecture, environment,
   threat model, production/runbook docs; Makefile/CI plan.
@@ -392,6 +433,7 @@ Follow the additive order below: document the change; extract shared services; a
 - **Dependencies:** none. **Rollback:** revert docs only.
 
 ### Phase 2 — Shared application use cases
+
 - **Goal:** Extract reusable scan/garment/upload/conversation/run commands and
   queries before adding another transport.
 - **Likely files:** `application/`, route adapters, repositories, unit tests.
@@ -403,6 +445,7 @@ Follow the additive order below: document the change; extract shared services; a
   **Rollback:** keep route adapter on prior function until extraction validated.
 
 ### Phase 3 — Durable AI runs and events
+
 - **Goal:** Add authoritative client-visible run lifecycle.
 - **Likely files:** models/repositories, Alembic, run service, jobs/worker,
   REST schemas, tests.
@@ -416,6 +459,7 @@ Follow the additive order below: document the change; extract shared services; a
   **Rollback:** additive schema + retain old commands.
 
 ### Phase 4 — REST command compatibility and upload hardening
+
 - **Goal:** Expose run REST endpoints and complete direct-upload invariants.
 - **Likely files:** scans/runs routes/schemas, storage verification, OpenAPI,
   generated REST client, Expo upload hooks/tests.
@@ -428,6 +472,7 @@ Follow the additive order below: document the change; extract shared services; a
   aliases continue delegating shared service.
 
 ### Phase 5 — SSE backend
+
 - **Goal:** Add safe reconnectable run event stream.
 - **Likely files:** SSE route/formatter, run-event repository, limits/settings,
   metrics/CORS, worker event calls, backend tests.
@@ -440,6 +485,7 @@ Follow the additive order below: document the change; extract shared services; a
   run status and stream route is disabled.
 
 ### Phase 6 — Universal Expo run/SSE client
+
 - **Goal:** Provide one fetch-based stream client and polling fallback.
 - **Likely files:** `packages/api-client`, small platform lifecycle adapter,
   scan/chat screens, Jest tests.
@@ -451,6 +497,7 @@ Follow the additive order below: document the change; extract shared services; a
   existing polling.
 
 ### Phase 7 — Strawberry, SDL, and Codegen foundation
+
 - **Goal:** Add secure GraphQL transport and typed document pipeline without
   migrating UI reads.
 - **Likely files:** GraphQL package/router/context/scalars/limits, dependencies,
@@ -460,10 +507,12 @@ Follow the additive order below: document the change; extract shared services; a
 - **Tests/commands:** unauthenticated/limits/introspection/scalar tests,
   `make graphql`, codegen drift/break/typecheck.
 - **Acceptance:** GraphQL uses shared auth, production controls, strict scalars,
-  deterministic SDL/codegen, and no Apollo. **Dependencies:** 1–2.
+  deterministic SDL/codegen, and the ADR-017 normalized Apollo client.
+  **Dependencies:** 1–2.
   **Rollback:** mount router only behind feature setting/path while REST remains.
 
 ### Phase 8 — GraphQL canonical read queries
+
 - **Goal:** Deliver paginated/read-only typed scans, garments, messages,
   revisions, images, usage.
 - **Likely files:** schema/resolvers/DataLoaders/query services, colocalized
@@ -475,17 +524,16 @@ Follow the additive order below: document the change; extract shared services; a
   reads still work. **Dependencies:** 7. **Rollback:** feature flags return
   affected screens to REST query hooks.
 
-### Phase 9 — GraphQL metadata mutations and client migration
-- **Goal:** Move safe metadata mutations only and use coherent cache updates.
-- **Likely files:** resolver/service adapters, documents/hooks, screens/tests.
-- **Database:** reuse existing feedback/deletion/garment records.
-- **Tests/commands:** object-level auth/idempotency/error/invalidation tests;
-  codegen/drift/typecheck/full frontend tests.
-- **Acceptance:** create/rename/archive/delete/feedback call one shared service;
-  uploads/runs remain REST. **Dependencies:** 8. **Rollback:** REST equivalents
-  stay available until usage telemetry confirms migration.
+### Phase 9 — Superseded by ADR-017
+
+Do not implement the former GraphQL metadata-mutation phase. All metadata,
+feedback, identity, archive, deletion, upload, authentication, and command
+writes remain REST. The replacement work is the typed REST-write cache-effect
+registry and normalized-cache synchronization specified by
+`storefront-graphql-read-migration.md`.
 
 ### Phase 10 — Observability, security, deployment validation
+
 - **Goal:** Validate operations before defaulting clients to GraphQL/SSE.
 - **Likely files:** telemetry/metrics/settings/CORS/runbooks/CI/deployment docs.
 - **Database:** optional metric-support indexes only.
@@ -497,6 +545,7 @@ Follow the additive order below: document the change; extract shared services; a
   **Rollback:** keep polling/REST default.
 
 ### Phase 11 — Compatibility completion and controlled legacy-read retirement
+
 - **Goal:** Remove only redundant REST **read** paths after supported clients are
   migrated and telemetry confirms no traffic.
 - **Likely files:** route deprecation docs, client flags, OpenAPI/client,
@@ -508,6 +557,7 @@ Follow the additive order below: document the change; extract shared services; a
   restore compatibility reads during the window.
 
 ### Phase 12 — Closeout
+
 - **Goal:** Record implementation evidence and archive this task.
 - **Likely files:** task status/archive/indexes, ADR/docs/changelog.
 - **Tests/commands:** record all actually-run commands/results.
@@ -527,12 +577,13 @@ Each phase must meet its listed acceptance criterion, run its listed focused val
 2. **Raw AI streaming safety:** never stream provider tokens before deterministic
    validation. The approved display-chunk approach trades token latency for
    correctness.
-3. **GraphQL scope creep:** retain REST commands and a single backend process;
-   codegen does not imply Apollo or a second source of truth.
+3. **GraphQL scope creep:** retain all writes on REST and a single backend
+   process; Apollo is a normalized read cache, not a second source of truth.
 4. **Migration/query performance:** use additive migrations, DataLoaders,
    pagination, query limits, and measured indexes.
-5. **Token expiry/reconnects:** close/reconnect safely and recover from REST +
-   canonical GraphQL, not Redis.
+5. **Token expiry/reconnects:** close/reconnect safely and recover through a
+   network-only canonical GraphQL query before opening a new SSE stream.
+
 ## 27. Open questions
 
 6. **Open questions before rollout:** confirm Render production tier/proxy SSE
@@ -555,14 +606,17 @@ application runnable.
   the ADR/contracts, durable runs/events, REST run controls and compatibility
   wrappers, PostgreSQL-backed SSE, the universal client parser/reconnect path,
   Strawberry, SDL export, and GraphQL Code Generator.
-- **Partially completed:** Phases 2, 8, 9, and 10. The current shared
+- **Partially completed:** Phases 2, 8, 9, and 10. Customer garment-history
+  reads are now GraphQL-backed through the dedicated `garmentHistory` query;
+  deletion remains REST. The current shared
   `AnalysisRunService` is used by REST and worker paths; GraphQL now provides
-  canonical scan/message/run/revision/image reads and server metadata
-  mutations. Conversation reads and result recovery use generated typed
-  GraphQL documents. Garment-history UI and all metadata UI mutations remain
-  on compatible REST screens until their feature-equivalent GraphQL documents
-  and UI behaviour are migrated. SSE metrics are present, but the hosted
-  Render/proxy validation has not been run.
+  canonical scan/message/run/revision/image reads and legacy server mutation
+  fields that ADR-017 now requires removing. No supported Expo GraphQL mutation
+  caller is known. Conversation reads and result recovery use generated typed
+  GraphQL documents. Garment-detail/history reads remain on compatible REST
+  screens until their feature-equivalent GraphQL documents and UI behaviour are
+  migrated. All metadata writes remain REST. SSE metrics are present, but the
+  hosted Render/proxy validation has not been run.
 - **Deliberately not started:** Phase 11 must wait for client telemetry and a
   rollback window. Phase 12 requires an approved commit/PR plus the complete
   validation evidence; this task remains **In progress** and must not be

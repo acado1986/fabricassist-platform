@@ -1,6 +1,43 @@
-#import "../../graphql/fragments/scan.graphql"
-query ScanRunRecovery($id: UUID!) {
-  scan(id: $id) {
-    ...ScanSummary
+query ResultComposite($scanId: UUID!, $language: String!) {
+  scanResult(scanId: $scanId, language: $language) {
+    scan {
+      id
+      status
+      requestedLanguage
+      progressPercent
+      analysisStage
+      errorCode
+      garmentId
+      createdAt
+    }
+    activeAnalysis {
+      id
+      scanId
+      status
+      revisionNumber
+      createdAt
+    }
+    result {
+      id
+      status
+      language
+      data
+    }
+    garment {
+      id
+      displayName
+      archivedAt
+      activeResultId
+      createdAt
+    }
+    identityCandidates {
+      id
+      garmentId
+      thumbnailScanId
+      thumbnailImageId
+      classification
+      reasons
+      status
+    }
   }
 }
