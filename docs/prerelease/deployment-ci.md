@@ -8,7 +8,7 @@ MinIO storage contracts plus OpenAPI/client drift checks. It does not receive
 provider credentials or call Neon, R2, QStash, Render, Cloudflare, or an AI
 provider.
 
-`deploy-prerelease.yml` runs for immutable `v*-alpha*` and `v*-beta*` prerelease tags or a manual
+`deploy-prerelease.yml` runs for immutable `v*-alpha*` prerelease tags or a manual
 `ref` input. It checks out that ref, records its immutable SHA, migrates first,
 deploys the API and frontend in parallel from that SHA, and then runs the prerelease
 smoke. The `alpha` GitHub environment supplies deployment and smoke secrets

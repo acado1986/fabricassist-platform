@@ -1,6 +1,6 @@
 # Implementation task: production v1 storefront API migration
 
-**Status:** Implemented locally; beta release prepared; external closeout pending
+**Status:** Implemented locally; production release prepared; external closeout pending
 **Created:** 2026-07-31  
 **Intended executor:** GPT-5.6 Luna (high reasoning)  
 **Suggested branch:** `feat/v1-storefront-graphql-reads`  
@@ -860,7 +860,7 @@ At completion, record:
 
 ### Current implementation record
 
-- **Release:** `v1.3.4-beta.1` (to be created from the release commit).
+- **Release:** `v1.3.4` (to be created from the release commit).
 - **Migrated screens/documents:** result composite (`ResultComposite`), garment
   detail/history (`GarmentDetail`, `GarmentHistory`), conversation reads
   (`ScanMessages`), and image metadata (`ScanImageMetadata`).
