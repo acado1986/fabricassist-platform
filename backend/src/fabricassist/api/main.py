@@ -6,6 +6,7 @@ import asyncio
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 from secrets import compare_digest
 from typing import cast
 
@@ -145,7 +146,7 @@ def create_app(
 
     app = FastAPI(
         title="FabricAssist API",
-        version="0.0.0",
+        version=version("fabricassist"),
         description="Validated garment intelligence, review, and lifecycle API.",
         lifespan=lifespan,
     )

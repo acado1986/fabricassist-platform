@@ -1491,7 +1491,7 @@
   "info": {
     "description": "Validated garment intelligence, review, and lifecycle API.",
     "title": "FabricAssist API",
-    "version": "1.3.1"
+    "version": "1.3.2"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -2,6 +2,12 @@
 
 All notable changes to FabricAssist are documented here.
 
+## [1.3.2] - 2026-07-31
+
+### Fixed
+
+- Derive the FastAPI OpenAPI version from installed FabricAssist package metadata, keeping generated OpenAPI artifacts deterministic in release CI.
+
 ## [1.3.1] - 2026-07-31
 
 ### Fixed
@@ -31,5 +37,6 @@ tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
+[1.3.2]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.2
 [1.3.1]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.1
 [1.3.0]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.0

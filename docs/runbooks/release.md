@@ -2,7 +2,7 @@
 
 ## Current prerelease
 
-The current cumulative prerelease is `v1.3.1` (2026-07-31). Its
+The current cumulative prerelease is `v1.3.2` (2026-07-31). Its
 release notes are maintained in the root [`CHANGELOG.md`](../../CHANGELOG.md).
 Create and push the immutable tag only after the working tree contains the
 intended release commit:
