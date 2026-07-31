@@ -286,6 +286,7 @@ async def test_garment_deletion_removes_identity_confirmations_before_the_garmen
     assert any(
         "DELETE FROM garment_identity_confirmations" in str(item) for item in session.executed
     )
+    assert any("UPDATE garments SET" in str(item) for item in session.executed)
     assert session.deleted == [garment]
 
 

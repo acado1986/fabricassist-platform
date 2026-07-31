@@ -104,7 +104,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0021"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0022"
 
     reset_database(engine)
     command.upgrade(config, "20260729_0018")
@@ -133,7 +133,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0021"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0022"
     engine.dispose()
 
 

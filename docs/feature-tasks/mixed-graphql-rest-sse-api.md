@@ -41,9 +41,12 @@ GraphQL connections to versioned opaque keyset cursors. The intentional three
 argument-type changes are bound to ADR-018 and an exact SDL approval manifest;
 all other breaking changes remain fail-closed.
 
-Phase 7 local release checks and a bounded local metadata load smoke passed,
-but production SSE capacity/starvation validation remains deferred until the
-deployed API URL and protected smoke credentials are supplied.
+Phase 7 local release checks and a bounded local metadata load smoke passed.
+The GraphQL implementation and follow-up history synchronization/deletion fixes
+are prepared for beta release `v1.3.4-beta.1`, but production
+SSE capacity/starvation validation remains deferred until the deployed API URL
+and protected smoke credentials are supplied. Android and iOS smoke evidence is
+also pending the required device runners.
 
 **Created:** 2026-07-31
 **Preparation:** `AGENTS.md`, `docs/requirements.md`, `docs/architecture.md`,

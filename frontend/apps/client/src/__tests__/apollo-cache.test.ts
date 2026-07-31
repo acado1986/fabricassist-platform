@@ -134,3 +134,57 @@ test('Apollo merges paginated garment analysis history by scan id', () => {
     cached?.garmentDetail.analyses.items.map((item) => item.scanId),
   ).toEqual(['scan-1', 'scan-2']);
 });
+
+test('Apollo replaces the canonical first garment-history page', () => {
+  const client = createApolloClient({
+    endpoint: 'http://localhost:8000/api/v1/graphql',
+    getAccessToken: () => 'token',
+    refreshAccessToken: async () => null,
+  });
+  const query = gql`
+    query GarmentHistoryPage($after: String) {
+      garmentHistory(first: 20, after: $after) {
+        items {
+          id
+        }
+        pageInfo {
+          nextCursor
+        }
+      }
+    }
+  `;
+  const item = (id: string) => ({
+    __typename: 'GarmentHistoryItemType',
+    id,
+  });
+
+  client.cache.writeQuery({
+    query,
+    variables: { after: null },
+    data: {
+      garmentHistory: {
+        __typename: 'GarmentHistoryConnection',
+        items: [item('deleted-garment')],
+        pageInfo: { __typename: 'PageInfo', nextCursor: null },
+      },
+    },
+  });
+  client.cache.writeQuery({
+    query,
+    variables: { after: null },
+    data: {
+      garmentHistory: {
+        __typename: 'GarmentHistoryConnection',
+        items: [item('new-garment')],
+        pageInfo: { __typename: 'PageInfo', nextCursor: null },
+      },
+    },
+  });
+
+  const cached = client.cache.readQuery<{
+    garmentHistory: { items: { id: string }[] };
+  }>({ query, variables: { after: null } });
+  expect(cached?.garmentHistory.items.map(({ id }) => id)).toEqual([
+    'new-garment',
+  ]);
+});

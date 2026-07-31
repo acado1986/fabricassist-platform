@@ -165,7 +165,12 @@ export function createApolloClient({
           fields: {
             garmentHistory: {
               keyArgs: false,
-              merge(existing, incoming) {
+              merge(existing, incoming, { args }) {
+                // The first page is a canonical snapshot. Replacing it is
+                // important after a garment deletion; appending every server
+                // response would resurrect deleted items from the memory
+                // cache. Only cursor-based pages append.
+                if (args?.after == null) return incoming;
                 const items = [...(existing?.items ?? [])];
                 const seen = new Set(
                   items.map((item: { id: string }) => item.id),

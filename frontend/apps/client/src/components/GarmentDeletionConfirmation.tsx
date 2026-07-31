@@ -5,6 +5,7 @@ import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import { useTranslation } from '../i18n/TranslationProvider';
 
 type GarmentDeletionConfirmationProps = {
+  garmentCount?: number;
   isDeleting: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -13,12 +14,26 @@ type GarmentDeletionConfirmationProps = {
 
 /** A platform-neutral confirmation dialog for irreversible garment deletion. */
 export function GarmentDeletionConfirmation({
+  garmentCount = 1,
   isDeleting,
   onCancel,
   onConfirm,
   visible,
 }: GarmentDeletionConfirmationProps): ReactNode {
   const { translate } = useTranslation();
+  const isBulkDeletion = garmentCount > 1;
+  const title = isBulkDeletion
+    ? translate('deleteGarmentsConfirmTitle')
+    : translate('deleteGarmentConfirmTitle');
+  const description = isBulkDeletion
+    ? translate('deleteGarmentsConfirmDescription').replace(
+        '{count}',
+        String(garmentCount),
+      )
+    : translate('deleteGarmentConfirmDescription');
+  const action = isBulkDeletion
+    ? translate('deleteGarmentsConfirmAction')
+    : translate('deleteGarmentConfirmAction');
 
   return (
     <Modal
@@ -31,11 +46,9 @@ export function GarmentDeletionConfirmation({
         <View accessibilityRole="alert" style={styles.dialog}>
           <Feather color={colors.danger} name="alert-triangle" size={28} />
           <Text accessibilityRole="header" style={styles.title}>
-            {translate('deleteGarmentConfirmTitle')}
+            {title}
           </Text>
-          <Text style={styles.description}>
-            {translate('deleteGarmentConfirmDescription')}
-          </Text>
+          <Text style={styles.description}>{description}</Text>
           <View style={styles.actions}>
             <Pressable
               accessibilityLabel={translate('cameraCancel')}
@@ -50,7 +63,7 @@ export function GarmentDeletionConfirmation({
               <Text style={styles.cancelText}>{translate('cameraCancel')}</Text>
             </Pressable>
             <Pressable
-              accessibilityLabel={translate('deleteGarmentConfirmAction')}
+              accessibilityLabel={action}
               accessibilityRole="button"
               disabled={isDeleting}
               onPress={onConfirm}
@@ -60,9 +73,7 @@ export function GarmentDeletionConfirmation({
                 isDeleting && styles.disabled,
               ]}
             >
-              <Text style={styles.confirmText}>
-                {translate('deleteGarmentConfirmAction')}
-              </Text>
+              <Text style={styles.confirmText}>{action}</Text>
             </Pressable>
           </View>
         </View>

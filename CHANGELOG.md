@@ -2,6 +2,31 @@
 
 All notable changes to FabricAssist are documented here.
 
+## [1.3.4-beta.1] - 2026-07-31
+
+### Added
+
+- Read-only GraphQL storefront queries for result composites, garment detail and
+  history, conversation reads, and image metadata, with Apollo `InMemoryCache`
+  shared by the Expo web, iOS, and Android clients.
+- Canonical GraphQL synchronization before SSE reconnects and after terminal
+  run events, while REST remains responsible for all writes and file previews.
+
+### Changed
+
+- Restored multi-select garment-history deletion controls, localized English and
+  Spanish bulk-delete copy, and typed Apollo cache synchronization after REST
+  writes.
+- History thumbnails now use safe GraphQL image identifiers with authenticated
+  REST preview URLs; complete presigned URLs remain outside GraphQL.
+
+### Fixed
+
+- Prevented stale Apollo history pages from resurrecting deleted garments and
+  added focus refetching for newly created or deleted garments.
+- Detached hidden merged-garment tombstones before deleting their target garment
+  so the self-referential foreign key cannot reject a confirmed deletion.
+
 ## [1.3.3] - 2026-07-31
 
 ### Security
@@ -44,6 +69,7 @@ and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
 [1.3.3]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.3
+[1.3.4-beta.1]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.4-beta.1
 [1.3.2]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.2
 [1.3.1]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.1
 [1.3.0]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.0
