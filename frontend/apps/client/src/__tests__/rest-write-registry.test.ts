@@ -63,6 +63,7 @@ test('cache effects run only after a successful REST write', async () => {
   expect(applyEffect).toHaveBeenCalledWith(
     'logout',
     REST_WRITE_REGISTRY.logout,
+    {},
   );
 });
 
@@ -75,4 +76,47 @@ test('aborted or rejected writes do not run cache effects', async () => {
 
   await expect(writes.logout()).rejects.toThrow('aborted');
   expect(applyEffect).not.toHaveBeenCalled();
+});
+
+test('failed garment deletion does not apply its deletion effect', async () => {
+  const applyEffect = jest.fn();
+  const client = {
+    delete: jest.fn().mockResolvedValue({
+      data: undefined,
+      error: { status: 500 },
+      response: new Response(null, { status: 500 }),
+    }),
+  } as never;
+  const writes = createRestWriteClient({ client, applyEffect });
+
+  await writes.deleteGarment({ path: { garment_id: 'garment-1' } });
+
+  expect(applyEffect).not.toHaveBeenCalled();
+});
+
+test('REST write context uses the current result language', async () => {
+  const applyEffect = jest.fn();
+  const client = {
+    post: jest.fn().mockResolvedValue({
+      data: { ok: true },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    }),
+  } as never;
+  const writes = createRestWriteClient({
+    client,
+    getLanguage: () => 'es',
+    applyEffect,
+  });
+
+  await writes.submitFeedback({
+    path: { scan_id: 'scan-1' },
+    body: { request_review: true },
+  });
+
+  expect(applyEffect).toHaveBeenCalledWith(
+    'submitFeedback',
+    REST_WRITE_REGISTRY.submitFeedback,
+    expect.objectContaining({ scanId: 'scan-1', language: 'es' }),
+  );
 });

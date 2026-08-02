@@ -96,6 +96,8 @@ export const es: TranslationCatalog = {
       'No pudimos analizar la imagen. Prueba con una foto más clara.',
     analysisProviderFailed:
       'El servicio de análisis no pudo completar esta solicitud. Inténtalo de nuevo en unos instantes.',
+    analysisCancelledTitle: 'Análisis cancelado.',
+    analysisCancelled: 'Este análisis fue cancelado.',
     analysisFailedTitle: 'No se ha podido completar el análisis.',
     viewResult: 'Ver instrucciones de cuidado',
     viewUploadedImages: 'Ver imágenes subidas',

@@ -20,6 +20,7 @@ import {
   RunStreamLifecycle,
   imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet,
   streamRunEvents,
+  synchronizeCustomerResult,
   type FabricAssistApiClient,
   type RunEvent,
 } from '@fabricassist/api-client';
@@ -74,9 +75,10 @@ export default function Result(): ReactNode {
     scanId: string;
     runId?: string;
   }>();
-  const { apiClient, restWrites, token } = useSession();
+  const { apiClient, apolloClient, restWrites, token } = useSession();
   const { locale, translate } = useTranslation();
   const [failed, setFailed] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
   const [failureCode, setFailureCode] = useState<string>();
   const [stage, setStage] = useState<string>();
   const [progressPercent, setProgressPercent] = useState(0);
@@ -86,16 +88,13 @@ export default function Result(): ReactNode {
   const [isForeground, setIsForeground] = useState(
     AppState.currentState === 'active',
   );
-  const { data, refetch: refetchCanonicalResult } = useApolloQuery(
-    ResultCompositeDocument,
-    {
-      skip: !scanId || !token,
-      variables: { scanId, language: locale },
-      fetchPolicy: 'network-only',
-      notifyOnNetworkStatusChange: true,
-      pollInterval: streamUnavailable && runId && isForeground ? 5_000 : 0,
-    },
-  );
+  const { data } = useApolloQuery(ResultCompositeDocument, {
+    skip: !scanId || !token,
+    variables: { scanId, language: locale },
+    fetchPolicy: 'network-only',
+    notifyOnNetworkStatusChange: true,
+    pollInterval: streamUnavailable && runId && isForeground ? 5_000 : 0,
+  });
   const composite = data?.scanResult;
   const result = toRichResult(composite?.result?.data);
   const identityCandidates = composite?.identityCandidates ?? [];
@@ -112,6 +111,7 @@ export default function Result(): ReactNode {
     setGarmentId(composite.scan.garmentId ?? undefined);
     setFailureCode(composite.scan.errorCode ?? undefined);
     setFailed(composite.scan.status === 'failed');
+    setCancelled(composite.scan.status === 'cancelled');
   }, [composite]);
   const confirmIdentityCandidate = async (
     candidateId: string,
@@ -173,7 +173,10 @@ export default function Result(): ReactNode {
     let lastSequence = 0;
     const lifecycle = new RunStreamLifecycle({
       recover: async () => {
-        await refetchCanonicalResult({ scanId, language: locale });
+        await synchronizeCustomerResult(apolloClient, scanId, locale);
+      },
+      onTerminal: async () => {
+        await synchronizeCustomerResult(apolloClient, scanId, locale);
       },
       open: async (signal, lastEventId) => {
         await streamRunEvents(
@@ -194,21 +197,12 @@ export default function Result(): ReactNode {
               if (
                 frame.event === 'run.completed' ||
                 frame.event === 'run.failed' ||
-                frame.event === 'run.cancelled'
+                frame.event === 'run.cancelled' ||
+                frame.event === 'RUN_COMPLETED' ||
+                frame.event === 'RUN_FAILED' ||
+                frame.event === 'RUN_CANCELLED'
               ) {
-                lifecycle.stop();
-                void refetchCanonicalResult({ scanId, language: locale }).then(
-                  () => {
-                    if (frame.event === 'run.failed') {
-                      setFailureCode(
-                        typeof event.data.error_code === 'string'
-                          ? event.data.error_code
-                          : undefined,
-                      );
-                      setFailed(true);
-                    }
-                  },
-                );
+                void lifecycle.handleTerminal();
               }
             } catch {
               // Canonical GraphQL polling remains the recovery path for malformed events.
@@ -232,7 +226,7 @@ export default function Result(): ReactNode {
       lifecycle.stop();
       subscription.remove();
     };
-  }, [locale, refetchCanonicalResult, runId, scanId, token]);
+  }, [apolloClient, locale, runId, scanId, token]);
 
   return (
     <FoundationShell
@@ -240,7 +234,7 @@ export default function Result(): ReactNode {
       description={translate('resultDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
-        {!result && !failed ? (
+        {!result && !failed && !cancelled ? (
           <View accessibilityLiveRegion="polite" style={styles.loading}>
             <ActivityIndicator color={colors.primary} size="large" />
             <Text style={styles.loadingTitle}>
@@ -255,6 +249,16 @@ export default function Result(): ReactNode {
               {stage
                 ? translate('resultStage').replace('{stage}', stageLabel(stage))
                 : translate('resultLoadingCopy')}
+            </Text>
+          </View>
+        ) : null}
+        {cancelled ? (
+          <View accessibilityLiveRegion="polite" style={styles.failure}>
+            <Text style={styles.failureTitle}>
+              {translate('analysisCancelledTitle')}
+            </Text>
+            <Text style={styles.failureCopy}>
+              {translate('analysisCancelled')}
             </Text>
           </View>
         ) : null}

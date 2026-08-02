@@ -2,6 +2,7 @@ export type RunStreamLifecycleOptions = {
   recover: () => Promise<void>;
   open: (signal: AbortSignal, lastEventId: string | undefined) => Promise<void>;
   onReconnectFailure?: (attempt: number) => void;
+  onTerminal?: () => Promise<void>;
 };
 
 /**
@@ -48,6 +49,12 @@ export class RunStreamLifecycle {
 
   markEventId(eventId: string | undefined): void {
     if (eventId) this.lastEventId = eventId;
+  }
+
+  async handleTerminal(): Promise<void> {
+    if (this.terminal) return;
+    this.stop();
+    await this.options.onTerminal?.();
   }
 
   stop(): void {

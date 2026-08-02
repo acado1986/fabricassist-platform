@@ -44,7 +44,8 @@ export default function GarmentHistory(): ReactNode {
     },
     fetchPolicy: 'cache-and-network',
   });
-  const garment = data?.garmentDetail;
+  // Never keep rendering cache data after the server says this detail is unavailable.
+  const garment = error ? undefined : data?.garmentDetail;
   const [thumbnailUrl, setThumbnailUrl] = useState<string>();
   useEffect(() => {
     if (!garment?.thumbnailScanId || !garment.thumbnailImageId) {

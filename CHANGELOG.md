@@ -2,6 +2,27 @@
 
 All notable changes to FabricAssist are documented here.
 
+## [1.3.7] - 2026-08-02
+
+### Added
+
+- Centralized typed REST-write cache effects for Apollo GraphQL reads, including
+  normalized garment deletion cleanup and authenticated cache isolation.
+- Canonical Apollo synchronization for REST cancellation and completed, failed,
+  and cancelled SSE terminal events, including reconnect recovery.
+
+### Fixed
+
+- Prevented deleted garment detail, history, and normalized entities from
+  remaining visible after successful REST deletion.
+- Ensured mixed REST cache effects refresh every declared GraphQL projection.
+- Preserved the active English or Spanish result locale during synchronization.
+- Prevented cancelled analyses from remaining in a stale active state.
+
+### Deployment
+
+This patch release is deployed by pushing the immutable tag `v1.3.7`.
+
 ## [1.3.6] - 2026-08-01
 
 ### Fixed
@@ -98,6 +119,7 @@ tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
+[1.3.7]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.7
 [1.3.6]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.6
 [1.3.5]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.5
 [1.3.3]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.3

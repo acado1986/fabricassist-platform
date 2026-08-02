@@ -1,6 +1,8 @@
 import { gql } from '@apollo/client';
 import {
+  applyRestWriteCacheEffect,
   createApolloClient,
+  REST_WRITE_REGISTRY,
   refetchActiveGraphQLQueries,
 } from '@fabricassist/api-client';
 
@@ -207,4 +209,156 @@ test('Apollo replaces the canonical first garment-history page', () => {
   expect(cached?.garmentHistory.items.map(({ id }) => id)).toEqual([
     'new-garment',
   ]);
+});
+
+test('mixed cache effects synchronize every declared projection', async () => {
+  const client = createApolloClient({
+    endpoint: 'http://localhost:8000/api/v1/graphql',
+    getAccessToken: () => 'token',
+    refreshAccessToken: async () => null,
+  });
+  const resultQuery = jest
+    .spyOn(client, 'query')
+    .mockResolvedValue({ data: {} } as never);
+  const detailRefetch = jest.fn().mockResolvedValue({});
+  const historyRefetch = jest.fn().mockResolvedValue({});
+  jest.spyOn(client, 'getObservableQueries').mockReturnValue(
+    new Map([
+      [
+        'detail',
+        { queryName: 'GarmentDetail', refetch: detailRefetch } as never,
+      ],
+      [
+        'history',
+        { queryName: 'GarmentHistory', refetch: historyRefetch } as never,
+      ],
+    ]),
+  );
+
+  await applyRestWriteCacheEffect(
+    'confirmIdentity',
+    REST_WRITE_REGISTRY.confirmIdentity,
+    { apolloClient: client, scanId: 'scan-1', language: 'es' },
+  );
+
+  expect(resultQuery).toHaveBeenCalledWith(
+    expect.objectContaining({
+      variables: { scanId: 'scan-1', language: 'es' },
+      fetchPolicy: 'network-only',
+    }),
+  );
+  expect(detailRefetch).toHaveBeenCalledTimes(1);
+  expect(historyRefetch).toHaveBeenCalledTimes(1);
+});
+
+test('garment deletion evicts normalized detail and history entries and refetches only surviving history', async () => {
+  const client = createApolloClient({
+    endpoint: 'http://localhost:8000/api/v1/graphql',
+    getAccessToken: () => 'token',
+    refreshAccessToken: async () => null,
+  });
+  const query = gql`
+    query GarmentDeletionSnapshot($after: String) {
+      garmentHistory(first: 20, after: $after) {
+        items {
+          id
+          identifiers
+        }
+        pageInfo {
+          nextCursor
+        }
+      }
+      garmentDetail(id: "garment-1", first: 20, after: $after, language: "en") {
+        id
+        displayName
+        analyses {
+          items {
+            scanId
+          }
+          pageInfo {
+            nextCursor
+          }
+        }
+      }
+    }
+  `;
+  client.cache.writeQuery({
+    query,
+    variables: { after: null },
+    data: {
+      garmentHistory: {
+        __typename: 'GarmentHistoryConnection',
+        items: [
+          {
+            __typename: 'GarmentHistoryItemType',
+            id: 'garment-1',
+            identifiers: [],
+          },
+        ],
+        pageInfo: { __typename: 'PageInfo', nextCursor: null },
+      },
+      garmentDetail: {
+        __typename: 'GarmentDetailType',
+        id: 'garment-1',
+        displayName: 'Old garment',
+        analyses: {
+          __typename: 'GarmentAnalysisHistoryConnection',
+          items: [],
+          pageInfo: { __typename: 'PageInfo', nextCursor: null },
+        },
+      },
+    },
+  });
+  const querySpy = jest
+    .spyOn(client, 'query')
+    .mockResolvedValue({ data: {} } as never);
+  const gcSpy = jest.spyOn(client.cache, 'gc');
+  await applyRestWriteCacheEffect(
+    'deleteGarment',
+    REST_WRITE_REGISTRY.deleteGarment,
+    {
+      apolloClient: client,
+      garmentId: 'garment-1',
+    },
+  );
+
+  const garmentCacheId = client.cache.identify({
+    __typename: 'GarmentType',
+    id: 'garment-1',
+  });
+  expect(garmentCacheId).toBeDefined();
+  expect(client.cache.extract()).not.toHaveProperty(garmentCacheId!);
+  expect(client.cache.extract()).not.toHaveProperty(
+    'GarmentHistoryItemType:garment-1',
+  );
+  expect(
+    client.cache.readQuery({ query, variables: { after: null } }),
+  ).toBeNull();
+  expect(gcSpy).toHaveBeenCalled();
+  expect(querySpy).toHaveBeenCalledWith(
+    expect.objectContaining({ fetchPolicy: 'network-only' }),
+  );
+});
+
+test('cancel cache effect performs canonical network-only result synchronization even without an active query', async () => {
+  const client = createApolloClient({
+    endpoint: 'http://localhost:8000/api/v1/graphql',
+    getAccessToken: () => 'token',
+    refreshAccessToken: async () => null,
+  });
+  const querySpy = jest
+    .spyOn(client, 'query')
+    .mockResolvedValue({ data: {} } as never);
+  await applyRestWriteCacheEffect('cancelRun', REST_WRITE_REGISTRY.cancelRun, {
+    apolloClient: client,
+    scanId: 'scan-1',
+    language: 'es',
+  });
+
+  expect(querySpy).toHaveBeenCalledWith(
+    expect.objectContaining({
+      variables: { scanId: 'scan-1', language: 'es' },
+      fetchPolicy: 'network-only',
+    }),
+  );
 });

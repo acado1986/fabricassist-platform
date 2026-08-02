@@ -860,7 +860,7 @@ At completion, record:
 
 ### Current implementation record
 
-- **Release:** `v1.3.6` (to be created from the release commit).
+- **Release:** `v1.3.7` (to be created from the release commit).
 - **Migrated screens/documents:** result composite (`ResultComposite`), garment
   detail/history (`GarmentDetail`, `GarmentHistory`), conversation reads
   (`ScanMessages`), and image metadata (`ScanImageMetadata`).
@@ -885,3 +885,16 @@ At completion, record:
 
 Update the parent mixed GraphQL/REST/SSE task after each completed phase. Do not
 archive it until its remaining production rollout requirements are complete.
+
+## Cache synchronization hardening (2026-08-02)
+
+The shared Expo client now treats Apollo as the sole canonical GraphQL read
+cache. REST writes continue to execute through the generated TanStack-facing
+client, but successful writes apply exactly one typed cache effect. Garment
+deletions use `cache.identify`, evict both garment entity variants and detail
+roots, remove history references, run garbage collection, and network-refetch
+only surviving history. Run cancellation and all SSE terminal events use an
+explicit Apollo `network-only` `ResultComposite` query; reconnect recovery uses
+the same function. Logout, sign-in, and authentication failure clear both
+Apollo and TanStack authenticated state. Failed REST writes do not apply an
+effect.

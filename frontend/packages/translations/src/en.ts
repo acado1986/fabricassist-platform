@@ -91,6 +91,8 @@ export const en = {
       'We could not analyse this image. Please try a clearer photo.',
     analysisProviderFailed:
       'The analysis service could not complete this request. Please try again in a moment.',
+    analysisCancelledTitle: 'Analysis cancelled.',
+    analysisCancelled: 'This analysis was cancelled.',
     analysisFailedTitle: 'Analysis could not be completed.',
     viewResult: 'View care guidance',
     viewUploadedImages: 'View uploaded images',
