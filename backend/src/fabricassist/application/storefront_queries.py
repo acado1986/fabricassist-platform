@@ -115,6 +115,7 @@ class ConversationMessageView:
     role: str
     status: str
     text: str
+    run_id: UUID | None
     created_at: datetime
 
 

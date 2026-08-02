@@ -30,7 +30,7 @@ const mockPreview = jest.requireMock('@fabricassist/api-client')
   .imagePreviewApiV1ScansScanIdImagesImageIdPreviewGet as jest.Mock;
 
 jest.mock('@apollo/client', () => ({
-  useQuery: () => ({
+  useQuery: jest.fn(() => ({
     data: {
       garmentHistory: {
         items: [
@@ -44,13 +44,26 @@ jest.mock('@apollo/client', () => ({
             thumbnailScanId: 'scan-1',
             thumbnailImageId: 'image-1',
           },
+          {
+            analysedBefore: true,
+            cleanedBefore: false,
+            id: '63b5399e-6c88-47fa-a171-1dc596db4c50',
+            identifiers: ['FA-EXAMPLE-2'],
+            lastAnalysisAt: null,
+            thumbnailUrl: null,
+            thumbnailScanId: null,
+            thumbnailImageId: null,
+          },
         ],
       },
     },
     error: undefined,
     loading: false,
-  }),
+  })),
 }));
+
+const mockApolloQuery = jest.requireMock('@apollo/client')
+  .useQuery as jest.Mock;
 
 jest.mock('../i18n/TranslationProvider', () => ({
   useTranslation: () => ({
@@ -67,8 +80,8 @@ jest.mock('@tanstack/react-query', () => ({
   useMutation: (options: { onSuccess: () => Promise<void> }) => ({
     isError: false,
     isPending: false,
-    mutate: (garmentId: string) => {
-      mockMutate(garmentId);
+    mutate: (garmentIds: string[]) => {
+      mockMutate(garmentIds);
       void options.onSuccess();
     },
   }),
@@ -89,22 +102,31 @@ jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
 
-jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn() },
+  useFocusEffect: jest.fn(),
+}));
 jest.mock('@expo/vector-icons/Feather', () => 'Feather');
+
+beforeEach(() => {
+  mockMutate.mockClear();
+  mockPreview.mockClear();
+  mockApolloQuery.mockClear();
+});
 
 test('history list closes the dialog after confirmed garment deletion', async () => {
   const screen = await render(<CustomerHistory />);
 
-  await fireEvent.press(screen.getByLabelText('deleteGarment'));
+  await fireEvent.press(screen.getAllByLabelText('deleteGarment')[0]!);
 
   expect(mockMutate).not.toHaveBeenCalled();
   expect(screen.getByText('deleteGarmentConfirmDescription')).toBeTruthy();
 
   await fireEvent.press(screen.getByLabelText('deleteGarmentConfirmAction'));
 
-  expect(mockMutate).toHaveBeenCalledWith(
+  expect(mockMutate).toHaveBeenCalledWith([
     '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
-  );
+  ]);
   await waitFor(() => {
     expect(screen.queryByText('deleteGarmentConfirmDescription')).toBeNull();
   });
@@ -120,4 +142,36 @@ test('history list loads garment thumbnails through the preview endpoint', async
     client: expect.any(Object),
     path: { image_id: 'image-1', scan_id: 'scan-1' },
   });
+});
+
+test('history list confirms and deletes multiple selected garment histories', async () => {
+  const screen = await render(<CustomerHistory />);
+
+  await fireEvent.press(screen.getByLabelText('selectGarments'));
+  const garmentSelectors = screen.getAllByLabelText('selectGarmentForDeletion');
+  expect(garmentSelectors).toHaveLength(2);
+  await fireEvent.press(garmentSelectors[0]!);
+  await fireEvent.press(garmentSelectors[1]!);
+
+  expect(screen.getByText('selectedGarmentsCount')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('deleteSelectedGarments'));
+  expect(screen.getByText('deleteGarmentsConfirmDescription')).toBeTruthy();
+
+  await fireEvent.press(screen.getByLabelText('deleteGarmentsConfirmAction'));
+  expect(mockMutate).toHaveBeenLastCalledWith([
+    '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
+    '63b5399e-6c88-47fa-a171-1dc596db4c50',
+  ]);
+});
+
+test('history list requests a canonical network snapshot', async () => {
+  await render(<CustomerHistory />);
+
+  expect(mockApolloQuery).toHaveBeenLastCalledWith(
+    {},
+    expect.objectContaining({
+      fetchPolicy: 'network-only',
+      variables: { after: null, first: 20 },
+    }),
+  );
 });

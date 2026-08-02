@@ -51,6 +51,7 @@ NEXT_SIGNING_KEY = "next-signing-key-for-tests-000002"
 
 def settings() -> Settings:
     return Settings(
+        _env_file=None,  # type: ignore[call-arg]
         environment="alpha",
         deployment_profile=DeploymentProfile.ALPHA,
         job_dispatcher=JobDispatcherType.QSTASH,

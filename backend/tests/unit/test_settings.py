@@ -47,7 +47,8 @@ def alpha_settings(**overrides: object) -> Settings:
         "valkey_url": "",
     }
     values.update(overrides)
-    return Settings(**values)  # type: ignore[arg-type]
+    # Keep alpha-default assertions independent from a developer's repository `.env`.
+    return Settings(_env_file=None, **values)  # type: ignore[arg-type]
 
 
 def test_unregistered_model_provider_is_rejected() -> None:

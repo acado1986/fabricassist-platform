@@ -183,6 +183,7 @@ class ConversationMessageType:
     role: str
     status: str
     text: str
+    run_id: UUID | None
     created_at: datetime
 
 
@@ -627,7 +628,12 @@ def garment_detail_type(row: GarmentDetailView) -> GarmentDetailType:
 
 def message_type(row: ConversationMessageView) -> ConversationMessageType:
     return ConversationMessageType(
-        id=row.id, role=row.role, status=row.status, text=row.text, created_at=row.created_at
+        id=row.id,
+        role=row.role,
+        status=row.status,
+        text=row.text,
+        run_id=row.run_id,
+        created_at=row.created_at,
     )
 
 
@@ -702,7 +708,11 @@ def create_schema(settings: Settings) -> strawberry.Schema:
         MaxAliasesLimiter(max_alias_count=settings.graphql_max_aliases),
     ]
     if settings.environment == "production":
-        extensions.append(DisableIntrospection)
+        # Strawberry instantiates extension entries with the execution context
+        # when they are passed as classes. DisableIntrospection has a zero-arg
+        # constructor, so pass an instance explicitly for current Strawberry
+        # releases.
+        extensions.append(DisableIntrospection())
     return strawberry.Schema(query=Query, extensions=extensions)
 
 

@@ -34,6 +34,7 @@ type ConversationMessageType {
   role: String!
   status: String!
   text: String!
+  runId: UUID
   createdAt: DateTime!
 }
 

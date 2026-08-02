@@ -148,7 +148,16 @@ class StubStorefrontQueries(StorefrontQueryPort):
         first: int,
         after: MessageCursor | None,
     ) -> tuple[list[ConversationMessageView], bool]:
-        return [], False
+        return [
+            ConversationMessageView(
+                id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                role="user",
+                status="processing",
+                text="Any stains?",
+                run_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+                created_at=datetime(2026, 1, 3, tzinfo=UTC),
+            )
+        ], False
 
     async def get_analysis_revision(
         self, principal: StorefrontPrincipal, revision_id: UUID
@@ -323,6 +332,27 @@ def test_authenticated_graphql_http_returns_result_composite() -> None:
         "status": "processing",
         "progressPercent": 42,
     }
+
+
+def test_authenticated_graphql_http_returns_conversation_run_id() -> None:
+    with TestClient(make_http_app()) as client:
+        response = client.post(
+            "/api/v1/graphql",
+            headers={"Authorization": "Bearer integration-token"},
+            json={
+                "query": (
+                    "query($scanId: UUID!) { messages(scanId: $scanId) { "
+                    "items { id status runId } } }"
+                ),
+                "variables": {"scanId": "33333333-3333-3333-3333-333333333333"},
+            },
+        )
+
+    assert response.status_code == 200
+    assert "errors" not in response.json()
+    assert response.json()["data"]["messages"]["items"][0]["runId"] == (
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    )
 
 
 def test_authenticated_graphql_http_returns_garment_detail_without_thumbnail_url() -> None:

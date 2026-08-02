@@ -5,6 +5,7 @@ query ScanMessages($scanId: UUID!, $first: Int!, $after: String) {
       role
       status
       text
+      runId
       createdAt
     }
     pageInfo {

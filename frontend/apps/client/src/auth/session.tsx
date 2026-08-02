@@ -3,11 +3,12 @@ import {
   createClient,
   createApolloClient,
   createRestWriteClient,
-  refetchActiveGraphQLQueries,
+  applyRestWriteCacheEffect,
   bootstrapApiV1BootstrapGet,
   type FabricAssistApiClient,
 } from '@fabricassist/api-client';
 import type { ApolloClient } from '@apollo/client';
+import { useQueryClient } from '@tanstack/react-query';
 import { ApolloProvider } from '@apollo/client';
 import type { ReactNode } from 'react';
 import {
@@ -22,6 +23,7 @@ import { router } from 'expo-router';
 import { getApiBaseUrl } from '../config/environment';
 import { secureSession } from '../platform/SecureSession';
 import { restoreAccessToken } from './restoreSession';
+import { useTranslation } from '../i18n/TranslationProvider';
 
 type SessionContextValue = {
   refreshAccessToken: () => Promise<string | null>;
@@ -42,6 +44,10 @@ export function SessionProvider({
   children: ReactNode;
 }): ReactNode {
   const [token, setToken] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { locale } = useTranslation();
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
   const [isSessionReady, setIsSessionReady] = useState(false);
   const tokenRef = useRef<string | null>(null);
   const refreshInFlight = useRef<Promise<string | null> | null>(null);
@@ -100,6 +106,7 @@ export function SessionProvider({
         tokenRef.current = null;
         setToken(null);
         void apolloClientRef.current?.clearStore();
+        queryClient.clear();
       },
     });
     apolloClientRef.current = client;
@@ -108,22 +115,12 @@ export function SessionProvider({
   const [restWrites] = useState(() =>
     createRestWriteClient({
       client: apiClient,
-      applyEffect: async (_operation, effect) => {
-        if (effect.kind === 'clear-authenticated-cache') {
-          await apolloClient.clearStore();
-          return;
-        }
-        if (effect.kind === 'evict-and-refetch') {
-          apolloClient.cache.evict({
-            id: 'ROOT_QUERY',
-            fieldName:
-              effect.entity === 'GarmentType' ? 'garmentHistory' : 'scans',
-          });
-          apolloClient.cache.gc();
-        }
-        if (effect.kind === 'refetch' || effect.kind === 'evict-and-refetch') {
-          await refetchActiveGraphQLQueries(apolloClient, effect.queries);
-        }
+      getLanguage: () => localeRef.current,
+      applyEffect: async (operation, effect, context) => {
+        await applyRestWriteCacheEffect(operation, effect, {
+          ...context,
+          apolloClient,
+        });
       },
     }),
   );
@@ -150,6 +147,7 @@ export function SessionProvider({
     register: boolean,
   ): Promise<void> {
     await apolloClient.clearStore();
+    queryClient.clear();
     const operation = register
       ? anonymousWrites.register
       : anonymousWrites.login;
@@ -183,6 +181,7 @@ export function SessionProvider({
       // whenever the request reaches the API.
       await secureSession.clear();
       await apolloClient.clearStore();
+      queryClient.clear();
       tokenRef.current = null;
       setToken(null);
       router.replace('/login');

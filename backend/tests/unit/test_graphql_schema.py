@@ -92,6 +92,14 @@ def test_schema_has_query_resource_limits() -> None:
     assert extension_names >= {"QueryDepthLimiter", "MaxTokensLimiter", "MaxAliasesLimiter"}
 
 
+def test_production_schema_instantiates_introspection_guard() -> None:
+    settings = Settings(environment="test").model_copy(update={"environment": "production"})
+    schema = create_schema(settings)
+
+    extension_names = {type(extension).__name__ for extension in schema.extensions}
+    assert "DisableIntrospection" in extension_names
+
+
 def test_graphql_context_uses_strawberry_fastapi_base_context() -> None:
     from strawberry.fastapi import BaseContext
 

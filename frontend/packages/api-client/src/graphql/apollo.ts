@@ -11,6 +11,15 @@ import {
 import { onError } from '@apollo/client/link/error';
 import { RetryLink } from '@apollo/client/link/retry';
 import { getMainDefinition } from '@apollo/client/utilities';
+import {
+  GarmentHistoryDocument,
+  ResultCompositeDocument,
+} from './generated/graphql';
+import type {
+  CacheEffect,
+  RestWriteCacheEffectContext,
+  RestWriteOperation,
+} from '../rest-writes';
 
 export type ApolloClientOptions = {
   endpoint: string;
@@ -31,7 +40,139 @@ export async function refetchActiveGraphQLQueries(
         query.queryName !== undefined && requested.has(query.queryName),
     )
     .map((query) => query.refetch());
-  await Promise.all(activeQueries);
+  // Cache synchronization is opportunistic. A stale query can legitimately
+  // fail while a REST write has already succeeded (for example, when its
+  // scan was deleted or replaced), and that must not turn the successful
+  // write into a user-visible upload failure.
+  await Promise.allSettled(activeQueries);
+}
+
+export async function synchronizeCustomerResult(
+  client: ApolloClient<unknown>,
+  scanId: string,
+  language = 'en',
+): Promise<void> {
+  await client.query({
+    query: ResultCompositeDocument,
+    variables: { scanId, language },
+    fetchPolicy: 'network-only',
+  });
+}
+
+function removeFromRootConnection(
+  cache: ApolloClient<unknown>['cache'],
+  fieldName: string,
+  deletedId: string,
+): void {
+  cache.modify({
+    id: 'ROOT_QUERY',
+    fields: {
+      [fieldName](existing: unknown, helpers) {
+        const store = existing as { items?: unknown[] } | undefined;
+        if (!store?.items) return existing;
+        return {
+          ...store,
+          items: store.items.filter(
+            (item) =>
+              helpers.readField<string>('id', item as never) !== deletedId,
+          ),
+        };
+      },
+    },
+  });
+}
+
+function evictGarment(client: ApolloClient<unknown>, garmentId: string): void {
+  const { cache } = client;
+  for (const __typename of ['GarmentType', 'GarmentHistoryItemType']) {
+    const id = cache.identify({ __typename, id: garmentId });
+    if (id) cache.evict({ id });
+  }
+  cache.evict({ id: 'ROOT_QUERY', fieldName: 'garmentDetail' });
+  removeFromRootConnection(cache, 'garmentHistory', garmentId);
+  cache.gc();
+}
+
+function evictScan(client: ApolloClient<unknown>, scanId: string): void {
+  const { cache } = client;
+  for (const __typename of [
+    'ScanType',
+    'AnalysisRevisionType',
+    'CareResultType',
+    'AiRunType',
+    'IdentityCandidateType',
+  ]) {
+    const id = cache.identify({ __typename, id: scanId });
+    if (id) cache.evict({ id });
+  }
+  cache.evict({ id: 'ROOT_QUERY', fieldName: 'scanResult' });
+  cache.modify({
+    id: 'ROOT_QUERY',
+    fields: {
+      garmentHistory(existing: unknown, helpers) {
+        const store = existing as { items?: unknown[] } | undefined;
+        if (!store?.items) return existing;
+        return {
+          ...store,
+          items: store.items.filter(
+            (item) =>
+              helpers.readField('thumbnailScanId', item as never) !== scanId,
+          ),
+        };
+      },
+    },
+  });
+  cache.gc();
+}
+
+export async function applyRestWriteCacheEffect(
+  operation: RestWriteOperation,
+  effect: CacheEffect,
+  context: RestWriteCacheEffectContext,
+): Promise<void> {
+  const client = context.apolloClient;
+  if (effect.kind === 'clear-authenticated-cache') {
+    await client?.clearStore();
+    return;
+  }
+  if (effect.kind === 'noGraphQLEffect' || !client) return;
+
+  if (effect.kind === 'delete-garment' && context.garmentId) {
+    evictGarment(client, context.garmentId);
+    // History is the surviving canonical read. Never refetch the deleted detail.
+    await client
+      .query({
+        query: GarmentHistoryDocument,
+        variables: { first: 20, after: null },
+        fetchPolicy: 'network-only',
+      })
+      .catch(() => undefined);
+    return;
+  }
+  if (effect.kind === 'delete-scan' && context.scanId) {
+    evictScan(client, context.scanId);
+    return;
+  }
+  if (effect.kind === 'synchronize-result' && context.scanId) {
+    await synchronizeCustomerResult(client, context.scanId, context.language);
+    return;
+  }
+  if (effect.kind === 'refetch') {
+    const resultQuery =
+      effect.queries.includes('ResultComposite') && context.scanId
+        ? synchronizeCustomerResult(client, context.scanId, context.language)
+        : undefined;
+    const otherQueries = effect.queries.filter(
+      (queryName) => queryName !== 'ResultComposite',
+    );
+    const projections = [
+      ...(resultQuery ? [resultQuery] : []),
+      ...(otherQueries.length
+        ? [refetchActiveGraphQLQueries(client, otherQueries)]
+        : []),
+    ];
+    await Promise.allSettled(projections);
+  }
 }
 
 function isQuery(operation: Operation): boolean {
@@ -165,7 +306,12 @@ export function createApolloClient({
           fields: {
             garmentHistory: {
               keyArgs: false,
-              merge(existing, incoming) {
+              merge(existing, incoming, { args }) {
+                // The first page is a canonical snapshot. Replacing it is
+                // important after a garment deletion; appending every server
+                // response would resurrect deleted items from the memory
+                // cache. Only cursor-based pages append.
+                if (args?.after == null) return incoming;
                 const items = [...(existing?.items ?? [])];
                 const seen = new Set(
                   items.map((item: { id: string }) => item.id),
@@ -179,11 +325,22 @@ export function createApolloClient({
             messages: {
               keyArgs: ['scanId'],
               merge(existing, incoming) {
-                const items = [...(existing?.items ?? [])];
-                const seen = new Set(
-                  items.map((item: { id: string }) => item.id),
+                // Conversation polling returns the same message IDs with a
+                // newer status after the worker finishes. Replace those
+                // records instead of treating them as immutable, otherwise a
+                // queued/processing message remains stale in Apollo forever.
+                const incomingItems = incoming.items as { id: string }[];
+                const incomingById = new Map(
+                  incomingItems.map((item) => [item.id, item]),
                 );
-                for (const item of incoming.items as { id: string }[]) {
+                const existingItems = (existing?.items ?? []) as {
+                  id: string;
+                }[];
+                const seen = new Set(existingItems.map((item) => item.id));
+                const items = existingItems.map(
+                  (item) => incomingById.get(item.id) ?? item,
+                );
+                for (const item of incomingItems) {
                   if (!seen.has(item.id)) items.push(item);
                 }
                 return { ...incoming, items };

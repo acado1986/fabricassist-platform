@@ -1,16 +1,21 @@
 # Release gates
 
-## Current prerelease
+## Current production release
 
-The current cumulative prerelease is `v1.3.3` (2026-07-31). Its
+The current production release is `v1.3.8` (2026-08-02). Its
 release notes are maintained in the root [`CHANGELOG.md`](../../CHANGELOG.md).
 Create and push the immutable tag only after the working tree contains the
 intended release commit:
 
 ```bash
-git tag -a v0.1.0-alpha.30 -m "release: FabricAssist 0.1.0-alpha.30"
-git push origin v0.1.0-alpha.30
+git tag -a v1.3.8 -m "release: FabricAssist 1.3.7"
+git push origin v1.3.8
 ```
+
+This release contains the read-only GraphQL storefront implementation and its
+REST/SSE integration. The stable tag uses the protected `production` GitHub
+environment and the production deployment workflow; exact API and Pages URLs
+come from protected production environment variables and are not stored here.
 
 Pushing an stable `vMAJOR.MINOR.PATCH` tag starts the production deployment workflow. It runs
 quality checks, migrations, Render API deployment, Cloudflare Pages deployment,

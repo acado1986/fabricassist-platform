@@ -96,6 +96,8 @@ export const es: TranslationCatalog = {
       'No pudimos analizar la imagen. Prueba con una foto más clara.',
     analysisProviderFailed:
       'El servicio de análisis no pudo completar esta solicitud. Inténtalo de nuevo en unos instantes.',
+    analysisCancelledTitle: 'Análisis cancelado.',
+    analysisCancelled: 'Este análisis fue cancelado.',
     analysisFailedTitle: 'No se ha podido completar el análisis.',
     viewResult: 'Ver instrucciones de cuidado',
     viewUploadedImages: 'Ver imágenes subidas',
@@ -132,6 +134,15 @@ export const es: TranslationCatalog = {
     deleteGarmentConfirmAction: 'Eliminar historial',
     deleteGarmentRequestFailed:
       'No se ha podido eliminar este historial de prenda.',
+    selectGarments: 'Seleccionar prendas',
+    finishGarmentSelection: 'Terminar selección',
+    selectGarmentForDeletion: 'Seleccionar prenda para eliminar',
+    selectedGarmentsCount: '{count} seleccionadas',
+    deleteSelectedGarments: 'Eliminar seleccionadas',
+    deleteGarmentsConfirmTitle: '¿Eliminar los historiales seleccionados?',
+    deleteGarmentsConfirmDescription:
+      'Se eliminarán {count} prendas, sus análisis, conversaciones, historial de servicio y fotos privadas. Esta acción no se puede deshacer.',
+    deleteGarmentsConfirmAction: 'Eliminar historiales seleccionados',
     previousAnalyses: 'Análisis anteriores',
     previousAnalysesEmpty: 'Aún no tienes análisis anteriores.',
     loadMoreAnalyses: 'Cargar más análisis',
@@ -185,6 +196,10 @@ export const es: TranslationCatalog = {
     chatUser: 'Tú',
     chatAssistant: 'FabricAssist',
     chatSendFailed: 'No se pudo enviar tu pregunta. Vuelve a intentarlo.',
+    chatMessagesUnavailable:
+      'No se pudo cargar esta conversación. Actualiza e inténtalo de nuevo.',
+    chatResponseFailed:
+      'No se pudo preparar la respuesta segura. Vuelve a intentarlo.',
     chatQueued: 'Preparando una respuesta segura…',
     viewGarmentHistory: 'Ver historial de la prenda',
     historyUnavailable:

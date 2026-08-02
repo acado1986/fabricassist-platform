@@ -1,6 +1,6 @@
 # Implementation task: production v1 storefront API migration
 
-**Status:** Planned  
+**Status:** Implemented locally; production release prepared; external closeout pending
 **Created:** 2026-07-31  
 **Intended executor:** GPT-5.6 Luna (high reasoning)  
 **Suggested branch:** `feat/v1-storefront-graphql-reads`  
@@ -858,5 +858,43 @@ At completion, record:
 - migrations/indexes, configuration changes, rollback evidence, and remaining
   work.
 
+### Current implementation record
+
+- **Release:** `v1.3.7` (to be created from the release commit).
+- **Migrated screens/documents:** result composite (`ResultComposite`), garment
+  detail/history (`GarmentDetail`, `GarmentHistory`), conversation reads
+  (`ScanMessages`), and image metadata (`ScanImageMetadata`).
+- **Transport contract:** GraphQL is query-only; REST remains responsible for
+  writes, authentication/session operations, uploads, files/previews, AI
+  commands, feedback, identity decisions, review actions, and deletion; SSE
+  remains the transient run-progress transport.
+- **Cache and sync:** Apollo uses memory-only `InMemoryCache`; REST writes use
+  the typed cache-effect registry; initial load, reconnect, and terminal SSE
+  paths perform canonical network-only GraphQL synchronization.
+- **Baseline evidence:** simple REST list `7.47 ms` median / `10.01 ms` p95;
+  equivalent simple GraphQL list `11.28 ms` median / `13.72 ms` p95. The
+  composite GraphQL read measured `16.37 ms` median / `25.09 ms` p95 versus
+  `27.60 ms` median / `39.82 ms` p95 for three REST reads.
+- **Local evidence:** backend formatting, lint, Pyright, unit tests, migration
+  tests, frontend formatting/lint/typecheck/tests, web build, web E2E, GraphQL
+  drift, and OpenAPI drift passed. Migration `20260731_0022` is applied locally.
+- **Pending external evidence:** Android smoke (no connected device), iOS
+  smoke (macOS/Xcode required), and production SSE capacity/starvation testing
+  (deployed API URL and protected smoke credentials required). These remain
+  release-closeout blockers and are not claimed as passed.
+
 Update the parent mixed GraphQL/REST/SSE task after each completed phase. Do not
 archive it until its remaining production rollout requirements are complete.
+
+## Cache synchronization hardening (2026-08-02)
+
+The shared Expo client now treats Apollo as the sole canonical GraphQL read
+cache. REST writes continue to execute through the generated TanStack-facing
+client, but successful writes apply exactly one typed cache effect. Garment
+deletions use `cache.identify`, evict both garment entity variants and detail
+roots, remove history references, run garbage collection, and network-refetch
+only surviving history. Run cancellation and all SSE terminal events use an
+explicit Apollo `network-only` `ResultComposite` query; reconnect recovery uses
+the same function. Logout, sign-in, and authentication failure clear both
+Apollo and TanStack authenticated state. Failed REST writes do not apply an
+effect.

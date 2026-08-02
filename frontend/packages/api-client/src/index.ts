@@ -13,6 +13,8 @@ export type { Client as FabricAssistApiClient } from './generated/client';
 export {
   createApolloClient,
   refetchActiveGraphQLQueries,
+  synchronizeCustomerResult,
+  applyRestWriteCacheEffect,
 } from './graphql/apollo';
 export type { ApolloClientOptions } from './graphql/apollo';
 export { RunStreamLifecycle } from './run-stream';
@@ -21,6 +23,7 @@ export { createRestWriteClient, REST_WRITE_REGISTRY } from './rest-writes';
 export type {
   CacheEffect,
   RestWriteEffectHandler,
+  RestWriteCacheEffectContext,
   RestWriteOperation,
 } from './rest-writes';
 export {
@@ -31,6 +34,7 @@ export {
 } from './graphql/scalars';
 export {
   SseFrameParser,
+  parseRunEvent,
   streamRunEvents,
   type ParsedSseEvent,
   type RunEvent,

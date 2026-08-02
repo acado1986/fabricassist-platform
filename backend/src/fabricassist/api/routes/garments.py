@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import enqueue_deletion
@@ -367,6 +367,22 @@ async def delete_garment(
         )
         for run in runs:
             await session.delete(run)
+    # Merged temporary garment rows are retained as hidden tombstones. Clear
+    # their self-references before deleting the visible target garment so the
+    # RESTRICT self-FK cannot block an otherwise valid privacy deletion.
+    await session.execute(
+        update(Garment)
+        .where(
+            Garment.tenant_id == user.tenant_id,
+            Garment.merged_into_id == garment.id,
+        )
+        .values(
+            merged_into_id=None,
+            merged_at=None,
+            archived_at=func.coalesce(Garment.archived_at, func.now()),
+            user_id=None,
+        )
+    )
     await session.execute(
         delete(GarmentIdentityConfirmation).where(
             GarmentIdentityConfirmation.tenant_id == user.tenant_id,

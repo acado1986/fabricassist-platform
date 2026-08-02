@@ -91,6 +91,8 @@ export const en = {
       'We could not analyse this image. Please try a clearer photo.',
     analysisProviderFailed:
       'The analysis service could not complete this request. Please try again in a moment.',
+    analysisCancelledTitle: 'Analysis cancelled.',
+    analysisCancelled: 'This analysis was cancelled.',
     analysisFailedTitle: 'Analysis could not be completed.',
     viewResult: 'View care guidance',
     viewUploadedImages: 'View uploaded images',
@@ -125,6 +127,15 @@ export const en = {
       'This removes the garment, its analyses, conversations, service history, and private photos. This cannot be undone.',
     deleteGarmentConfirmAction: 'Delete history',
     deleteGarmentRequestFailed: 'Unable to delete this garment history.',
+    selectGarments: 'Select garments',
+    finishGarmentSelection: 'Done selecting',
+    selectGarmentForDeletion: 'Select garment for deletion',
+    selectedGarmentsCount: '{count} selected',
+    deleteSelectedGarments: 'Delete selected',
+    deleteGarmentsConfirmTitle: 'Delete selected garment histories?',
+    deleteGarmentsConfirmDescription:
+      'This removes {count} garments and their analyses, conversations, service history, and private photos. This cannot be undone.',
+    deleteGarmentsConfirmAction: 'Delete selected histories',
     previousAnalyses: 'Previous analyses',
     previousAnalysesEmpty: 'You have no previous analyses yet.',
     loadMoreAnalyses: 'Load more analyses',
@@ -176,6 +187,10 @@ export const en = {
     chatUser: 'You',
     chatAssistant: 'FabricAssist',
     chatSendFailed: 'Your question could not be sent. Please try again.',
+    chatMessagesUnavailable:
+      'This conversation could not be loaded. Please refresh and try again.',
+    chatResponseFailed:
+      'The safe answer could not be prepared. Please try again.',
     chatQueued: 'Preparing a safe answer…',
     viewGarmentHistory: 'View garment history',
     historyUnavailable: 'Available once this scan is linked to a garment.',
