@@ -187,6 +187,10 @@ export const en = {
     chatUser: 'You',
     chatAssistant: 'FabricAssist',
     chatSendFailed: 'Your question could not be sent. Please try again.',
+    chatMessagesUnavailable:
+      'This conversation could not be loaded. Please refresh and try again.',
+    chatResponseFailed:
+      'The safe answer could not be prepared. Please try again.',
     chatQueued: 'Preparing a safe answer…',
     viewGarmentHistory: 'View garment history',
     historyUnavailable: 'Available once this scan is linked to a garment.',

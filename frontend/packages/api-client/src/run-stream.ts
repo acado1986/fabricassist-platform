@@ -48,7 +48,12 @@ export class RunStreamLifecycle {
   }
 
   markEventId(eventId: string | undefined): void {
-    if (eventId) this.lastEventId = eventId;
+    if (eventId) {
+      this.lastEventId = eventId;
+      // A delivered durable event proves the connection made useful progress.
+      // Do not let an earlier outage keep the backoff unnecessarily high.
+      this.retryAttempt = 0;
+    }
   }
 
   async handleTerminal(): Promise<void> {
@@ -71,7 +76,6 @@ export class RunStreamLifecycle {
     try {
       await this.options.recover();
       if (!this.active || this.terminal || this.paused) return;
-      this.retryAttempt = 0;
       this.controller = new AbortController();
       await this.options.open(this.controller.signal, this.lastEventId);
       if (

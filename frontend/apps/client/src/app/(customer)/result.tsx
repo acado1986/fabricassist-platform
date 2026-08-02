@@ -385,8 +385,11 @@ export default function Result(): ReactNode {
                     accessibilityRole="button"
                     onPress={() =>
                       router.push({
-                        pathname: `/garments/${candidate.garmentId}`,
-                        params: { decisionScanId: scanId },
+                        pathname: '/garments/[garmentId]',
+                        params: {
+                          decisionScanId: scanId,
+                          garmentId: candidate.garmentId,
+                        },
                       })
                     }
                     style={({ pressed }) => [

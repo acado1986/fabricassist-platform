@@ -2,7 +2,24 @@
 
 All notable changes to FabricAssist are documented here.
 
-## [1.3.7] - 2026-08-02
+## [1.3.8] - 2026-08-02
+
+### Added
+
+- Delivered assistant chat responses through durable per-run SSE streams while retaining GraphQL canonical recovery.
+- Added conversation run identifiers to the GraphQL read contract and generated frontend types.
+
+### Fixed
+
+- Prevented chat messages and streamed responses from leaking between garment scans during route changes.
+- Made GraphQL message-load failures visible instead of rendering an apparently empty conversation.
+- Fixed Apollo message merging so refreshed canonical messages replace stale records without losing new messages.
+- Made backend settings tests independent from the developer's local `.env` values.
+
+### Deployment
+
+This patch release is deployed by pushing the immutable tag `v1.3.8`.
+
 
 ### Added
 
@@ -119,6 +136,7 @@ tag-triggered workflow runs quality gates, applies migrations, deploys the API
 and web application, and executes hosted smoke tests. Production stable release
 remains a separate exact `vMAJOR.MINOR.PATCH` workflow.
 
+[1.3.8]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.8
 [1.3.7]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.7
 [1.3.6]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.6
 [1.3.5]: https://github.com/acado1986/fabricassist-platform/releases/tag/v1.3.5

@@ -2,14 +2,14 @@
 
 ## Current production release
 
-The current production release is `v1.3.7` (2026-08-02). Its
+The current production release is `v1.3.8` (2026-08-02). Its
 release notes are maintained in the root [`CHANGELOG.md`](../../CHANGELOG.md).
 Create and push the immutable tag only after the working tree contains the
 intended release commit:
 
 ```bash
-git tag -a v1.3.7 -m "release: FabricAssist 1.3.7"
-git push origin v1.3.7
+git tag -a v1.3.8 -m "release: FabricAssist 1.3.7"
+git push origin v1.3.8
 ```
 
 This release contains the read-only GraphQL storefront implementation and its

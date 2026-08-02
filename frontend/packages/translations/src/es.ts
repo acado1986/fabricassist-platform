@@ -196,6 +196,10 @@ export const es: TranslationCatalog = {
     chatUser: 'Tú',
     chatAssistant: 'FabricAssist',
     chatSendFailed: 'No se pudo enviar tu pregunta. Vuelve a intentarlo.',
+    chatMessagesUnavailable:
+      'No se pudo cargar esta conversación. Actualiza e inténtalo de nuevo.',
+    chatResponseFailed:
+      'No se pudo preparar la respuesta segura. Vuelve a intentarlo.',
     chatQueued: 'Preparando una respuesta segura…',
     viewGarmentHistory: 'Ver historial de la prenda',
     historyUnavailable:

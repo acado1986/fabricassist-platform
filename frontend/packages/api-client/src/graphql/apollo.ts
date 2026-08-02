@@ -325,11 +325,22 @@ export function createApolloClient({
             messages: {
               keyArgs: ['scanId'],
               merge(existing, incoming) {
-                const items = [...(existing?.items ?? [])];
-                const seen = new Set(
-                  items.map((item: { id: string }) => item.id),
+                // Conversation polling returns the same message IDs with a
+                // newer status after the worker finishes. Replace those
+                // records instead of treating them as immutable, otherwise a
+                // queued/processing message remains stale in Apollo forever.
+                const incomingItems = incoming.items as { id: string }[];
+                const incomingById = new Map(
+                  incomingItems.map((item) => [item.id, item]),
                 );
-                for (const item of incoming.items as { id: string }[]) {
+                const existingItems = (existing?.items ?? []) as {
+                  id: string;
+                }[];
+                const seen = new Set(existingItems.map((item) => item.id));
+                const items = existingItems.map(
+                  (item) => incomingById.get(item.id) ?? item,
+                );
+                for (const item of incomingItems) {
                   if (!seen.has(item.id)) items.push(item);
                 }
                 return { ...incoming, items };

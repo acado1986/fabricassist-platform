@@ -9,12 +9,43 @@ export type RunEvent = {
 
 export type ParsedSseEvent = { id?: string; event: string; data: string };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Parse and validate the durable event envelope before a screen consumes it. */
+export function parseRunEvent(data: string): RunEvent | null {
+  try {
+    const value: unknown = JSON.parse(data);
+    if (!isRecord(value) || !isRecord(value.data)) return null;
+    if (
+      typeof value.schema_version !== 'number' ||
+      typeof value.event_id !== 'string' ||
+      typeof value.run_id !== 'string' ||
+      typeof value.sequence !== 'number' ||
+      !Number.isInteger(value.sequence) ||
+      typeof value.timestamp !== 'string'
+    )
+      return null;
+    return {
+      schema_version: value.schema_version,
+      event_id: value.event_id,
+      run_id: value.run_id,
+      sequence: value.sequence,
+      timestamp: value.timestamp,
+      data: value.data,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Incremental SSE parser: accepts partial and multiple event frames. */
 export class SseFrameParser {
   private buffer = '';
 
   push(chunk: string): ParsedSseEvent[] {
-    this.buffer += chunk.replace(/\r\n/g, '\n');
+    this.buffer += chunk.replace(/\r\n?/g, '\n');
     const frames = this.buffer.split('\n\n');
     this.buffer = frames.pop() ?? '';
     return frames.flatMap((frame) => {

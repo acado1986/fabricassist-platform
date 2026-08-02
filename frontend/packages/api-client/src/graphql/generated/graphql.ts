@@ -74,6 +74,7 @@ export type ConversationMessageType = {
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['UUID']['output'];
   role: Scalars['String']['output'];
+  runId?: Maybe<Scalars['UUID']['output']>;
   status: Scalars['String']['output'];
   text: Scalars['String']['output'];
 };
@@ -308,6 +309,7 @@ export type ScanMessagesQuery = {
       role: string;
       status: string;
       text: string;
+      runId?: string | null;
       createdAt: string;
     }>;
     pageInfo: { __typename?: 'PageInfo'; nextCursor?: string | null };
@@ -592,6 +594,7 @@ export const ScanMessagesDocument = {
                         name: { kind: 'Name', value: 'status' },
                       },
                       { kind: 'Field', name: { kind: 'Name', value: 'text' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'runId' } },
                       {
                         kind: 'Field',
                         name: { kind: 'Name', value: 'createdAt' },

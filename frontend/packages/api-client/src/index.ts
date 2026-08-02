@@ -34,6 +34,7 @@ export {
 } from './graphql/scalars';
 export {
   SseFrameParser,
+  parseRunEvent,
   streamRunEvents,
   type ParsedSseEvent,
   type RunEvent,

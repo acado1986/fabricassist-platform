@@ -211,6 +211,65 @@ test('Apollo replaces the canonical first garment-history page', () => {
   ]);
 });
 
+test('Apollo replaces polled conversation message status and text', () => {
+  const client = createApolloClient({
+    endpoint: 'http://localhost:8000/api/v1/graphql',
+    getAccessToken: () => 'token',
+    refreshAccessToken: async () => null,
+  });
+  const query = gql`
+    query ScanMessagesSnapshot($scanId: UUID!) {
+      messages(scanId: $scanId, first: 100, after: null) {
+        items {
+          id
+          role
+          status
+          text
+        }
+        pageInfo {
+          nextCursor
+        }
+      }
+    }
+  `;
+  const variables = { scanId: 'scan-1' };
+  const message = (status: string, text: string) => ({
+    __typename: 'ConversationMessageType',
+    id: 'message-1',
+    role: 'user',
+    status,
+    text,
+  });
+
+  client.cache.writeQuery({
+    query,
+    variables,
+    data: {
+      messages: {
+        __typename: 'ConversationMessageConnection',
+        items: [message('processing', 'any stains')],
+        pageInfo: { __typename: 'PageInfo', nextCursor: null },
+      },
+    },
+  });
+  client.cache.writeQuery({
+    query,
+    variables,
+    data: {
+      messages: {
+        __typename: 'ConversationMessageConnection',
+        items: [message('completed', 'any stains')],
+        pageInfo: { __typename: 'PageInfo', nextCursor: null },
+      },
+    },
+  });
+
+  const cached = client.cache.readQuery<{
+    messages: { items: { status: string }[] };
+  }>({ query, variables });
+  expect(cached?.messages.items[0]?.status).toBe('completed');
+});
+
 test('mixed cache effects synchronize every declared projection', async () => {
   const client = createApolloClient({
     endpoint: 'http://localhost:8000/api/v1/graphql',
