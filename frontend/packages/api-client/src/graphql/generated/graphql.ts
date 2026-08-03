@@ -46,6 +46,13 @@ export type AiRunType = {
   status: Scalars['String']['output'];
 };
 
+export type AnalysisBranchSummaryType = {
+  __typename?: 'AnalysisBranchSummaryType';
+  branch: Scalars['String']['output'];
+  schemaVersion?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+};
+
 export type AnalysisRevisionType = {
   __typename?: 'AnalysisRevisionType';
   createdAt: Scalars['DateTime']['output'];
@@ -55,11 +62,21 @@ export type AnalysisRevisionType = {
   status: Scalars['String']['output'];
 };
 
+export type CareActionType = {
+  __typename?: 'CareActionType';
+  code: Scalars['String']['output'];
+  evidencePaths: Array<Scalars['String']['output']>;
+  maximumTemperatureC?: Maybe<Scalars['Int']['output']>;
+  permission: Scalars['String']['output'];
+  process?: Maybe<Scalars['String']['output']>;
+  professionalOnly: Scalars['Boolean']['output'];
+  reasonKey: Scalars['String']['output'];
+};
+
 export type CareResultType = {
   __typename?: 'CareResultType';
-  data: Scalars['JSON']['output'];
   id: Scalars['UUID']['output'];
-  language: Scalars['String']['output'];
+  result: GarmentAnalysisResultType;
   status: Scalars['String']['output'];
 };
 
@@ -86,6 +103,16 @@ export type CurrentUserType = {
   role: Scalars['String']['output'];
 };
 
+export type EvidenceConflictType = {
+  __typename?: 'EvidenceConflictType';
+  explanationKey: Scalars['String']['output'];
+  fieldPath: Scalars['String']['output'];
+  id: Scalars['UUID']['output'];
+  resolutionCode: Scalars['String']['output'];
+  selectedValue?: Maybe<Scalars['String']['output']>;
+  severity: Scalars['String']['output'];
+};
+
 export type GarmentAnalysisHistoryConnection = {
   __typename?: 'GarmentAnalysisHistoryConnection';
   items: Array<GarmentAnalysisHistoryType>;
@@ -100,6 +127,35 @@ export type GarmentAnalysisHistoryType = {
   status: Scalars['String']['output'];
   thumbnailImageId?: Maybe<Scalars['UUID']['output']>;
   thumbnailScanId?: Maybe<Scalars['UUID']['output']>;
+};
+
+export type GarmentAnalysisResultType = {
+  __typename?: 'GarmentAnalysisResultType';
+  allowedActions: Array<CareActionType>;
+  branches: Array<AnalysisBranchSummaryType>;
+  category: Scalars['String']['output'];
+  clearerImageRequests: Array<Scalars['String']['output']>;
+  colors: Array<Scalars['String']['output']>;
+  conflicts: Array<EvidenceConflictType>;
+  features: Array<Scalars['String']['output']>;
+  historyEventIds: Array<Scalars['UUID']['output']>;
+  issues: Array<GarmentIssueType>;
+  labelWarnings: Array<Scalars['String']['output']>;
+  materials: Array<MaterialType>;
+  outcome: Scalars['String']['output'];
+  overallCondition: Scalars['String']['output'];
+  pattern: Scalars['String']['output'];
+  preferenceSource: Scalars['String']['output'];
+  professionalOnlyActions: Array<CareActionType>;
+  prohibitedActions: Array<CareActionType>;
+  schemaVersion: Scalars['String']['output'];
+  stainSteps: Array<StainStepType>;
+  subtype?: Maybe<Scalars['String']['output']>;
+  uncertainties: Array<Scalars['String']['output']>;
+  unknownActions: Array<CareActionType>;
+  versions: Array<VersionType>;
+  visibleLabelText: Array<LabelTextType>;
+  warnings: Array<Scalars['String']['output']>;
 };
 
 export type GarmentConnection = {
@@ -142,6 +198,20 @@ export type GarmentHistoryItemType = {
   thumbnailUrl?: Maybe<Scalars['String']['output']>;
 };
 
+export type GarmentIssueType = {
+  __typename?: 'GarmentIssueType';
+  causeState: Scalars['String']['output'];
+  confidence: Scalars['Int']['output'];
+  confirmedCause?: Maybe<Scalars['String']['output']>;
+  id: Scalars['UUID']['output'];
+  kind: Scalars['String']['output'];
+  location: Scalars['String']['output'];
+  observedDescription: Scalars['String']['output'];
+  severity: Scalars['String']['output'];
+  sourceImageIds: Array<Scalars['UUID']['output']>;
+  suspectedCauses: Array<Scalars['String']['output']>;
+};
+
 export type GarmentType = {
   __typename?: 'GarmentType';
   activeResultId?: Maybe<Scalars['UUID']['output']>;
@@ -160,6 +230,22 @@ export type IdentityCandidateType = {
   status: Scalars['String']['output'];
   thumbnailImageId?: Maybe<Scalars['UUID']['output']>;
   thumbnailScanId?: Maybe<Scalars['UUID']['output']>;
+};
+
+export type LabelTextType = {
+  __typename?: 'LabelTextType';
+  confidence: Scalars['Int']['output'];
+  imageId: Scalars['UUID']['output'];
+  language: Scalars['String']['output'];
+  text: Scalars['String']['output'];
+};
+
+export type MaterialType = {
+  __typename?: 'MaterialType';
+  confidence: Scalars['Int']['output'];
+  material: Scalars['String']['output'];
+  percentage?: Maybe<Scalars['Float']['output']>;
+  sourceImageIds: Array<Scalars['UUID']['output']>;
 };
 
 export type PageInfo = {
@@ -289,10 +375,25 @@ export type ServiceEventType = {
   note?: Maybe<Scalars['String']['output']>;
 };
 
+export type StainStepType = {
+  __typename?: 'StainStepType';
+  actionCode: Scalars['String']['output'];
+  claimId: Scalars['UUID']['output'];
+  status: Scalars['String']['output'];
+  text?: Maybe<Scalars['String']['output']>;
+  violationCodes: Array<Scalars['String']['output']>;
+};
+
 export type UsageSummary = {
   __typename?: 'UsageSummary';
   estimatedCostUsd: Scalars['String']['output'];
   modelRunCount: Scalars['Int']['output'];
+};
+
+export type VersionType = {
+  __typename?: 'VersionType';
+  name: Scalars['String']['output'];
+  value: Scalars['String']['output'];
 };
 
 export type ScanMessagesQueryVariables = Exact<{
@@ -348,8 +449,32 @@ export type GarmentDetailQuery = {
       __typename?: 'CareResultType';
       id: string;
       status: string;
-      language: string;
-      data: unknown;
+      result: {
+        __typename?: 'GarmentAnalysisResultType';
+        outcome: string;
+        category: string;
+        overallCondition: string;
+        uncertainties: Array<string>;
+        allowedActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+        }>;
+        prohibitedActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+        }>;
+        conflicts: Array<{
+          __typename?: 'EvidenceConflictType';
+          id: string;
+          fieldPath: string;
+          severity: string;
+          explanationKey: string;
+        }>;
+      };
     } | null;
     analyses: {
       __typename?: 'GarmentAnalysisHistoryConnection';
@@ -449,8 +574,112 @@ export type ResultCompositeQuery = {
       __typename?: 'CareResultType';
       id: string;
       status: string;
-      language: string;
-      data: unknown;
+      result: {
+        __typename?: 'GarmentAnalysisResultType';
+        schemaVersion: string;
+        outcome: string;
+        warnings: Array<string>;
+        category: string;
+        subtype?: string | null;
+        colors: Array<string>;
+        pattern: string;
+        features: Array<string>;
+        overallCondition: string;
+        labelWarnings: Array<string>;
+        uncertainties: Array<string>;
+        clearerImageRequests: Array<string>;
+        historyEventIds: Array<string>;
+        preferenceSource: string;
+        issues: Array<{
+          __typename?: 'GarmentIssueType';
+          id: string;
+          kind: string;
+          severity: string;
+          location: string;
+          observedDescription: string;
+          confidence: number;
+          suspectedCauses: Array<string>;
+          confirmedCause?: string | null;
+          causeState: string;
+        }>;
+        visibleLabelText: Array<{
+          __typename?: 'LabelTextType';
+          imageId: string;
+          text: string;
+          language: string;
+          confidence: number;
+        }>;
+        materials: Array<{
+          __typename?: 'MaterialType';
+          material: string;
+          percentage?: number | null;
+          confidence: number;
+        }>;
+        allowedActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+          process?: string | null;
+          reasonKey: string;
+          professionalOnly: boolean;
+        }>;
+        prohibitedActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+          process?: string | null;
+          reasonKey: string;
+          professionalOnly: boolean;
+        }>;
+        unknownActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+          process?: string | null;
+          reasonKey: string;
+          professionalOnly: boolean;
+        }>;
+        professionalOnlyActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+          process?: string | null;
+          reasonKey: string;
+          professionalOnly: boolean;
+        }>;
+        conflicts: Array<{
+          __typename?: 'EvidenceConflictType';
+          id: string;
+          fieldPath: string;
+          selectedValue?: string | null;
+          resolutionCode: string;
+          explanationKey: string;
+          severity: string;
+        }>;
+        branches: Array<{
+          __typename?: 'AnalysisBranchSummaryType';
+          branch: string;
+          status: string;
+          schemaVersion?: string | null;
+        }>;
+        stainSteps: Array<{
+          __typename?: 'StainStepType';
+          claimId: string;
+          status: string;
+          text?: string | null;
+          actionCode: string;
+          violationCodes: Array<string>;
+        }>;
+        versions: Array<{
+          __typename?: 'VersionType';
+          name: string;
+          value: string;
+        }>;
+      };
     } | null;
     garment?: {
       __typename?: 'GarmentType';
@@ -784,9 +1013,108 @@ export const GarmentDetailDocument = {
                       },
                       {
                         kind: 'Field',
-                        name: { kind: 'Name', value: 'language' },
+                        name: { kind: 'Name', value: 'result' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'outcome' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'category' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'overallCondition' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'allowedActions' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: {
+                                kind: 'Name',
+                                value: 'prohibitedActions',
+                              },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'uncertainties' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'conflicts' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'id' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'fieldPath' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'severity' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'explanationKey',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                          ],
+                        },
                       },
-                      { kind: 'Field', name: { kind: 'Name', value: 'data' } },
                     ],
                   },
                 },
@@ -1185,9 +1513,449 @@ export const ResultCompositeDocument = {
                       },
                       {
                         kind: 'Field',
-                        name: { kind: 'Name', value: 'language' },
+                        name: { kind: 'Name', value: 'result' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'schemaVersion' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'outcome' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'warnings' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'category' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'subtype' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'colors' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'pattern' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'features' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'overallCondition' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'issues' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'id' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'kind' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'severity' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'location' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'observedDescription',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'confidence' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'suspectedCauses',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'confirmedCause',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'causeState' },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'visibleLabelText' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'imageId' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'text' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'language' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'confidence' },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'materials' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'material' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'percentage' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'confidence' },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'labelWarnings' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'allowedActions' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'process' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'reasonKey' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'professionalOnly',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: {
+                                kind: 'Name',
+                                value: 'prohibitedActions',
+                              },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'process' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'reasonKey' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'professionalOnly',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'unknownActions' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'process' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'reasonKey' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'professionalOnly',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: {
+                                kind: 'Name',
+                                value: 'professionalOnlyActions',
+                              },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'process' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'reasonKey' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'professionalOnly',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'uncertainties' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: {
+                                kind: 'Name',
+                                value: 'clearerImageRequests',
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'conflicts' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'id' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'fieldPath' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'selectedValue',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'resolutionCode',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'explanationKey',
+                                    },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'severity' },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'branches' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'branch' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'status' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'schemaVersion',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'stainSteps' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'claimId' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'status' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'text' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'actionCode' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'violationCodes',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'historyEventIds' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'preferenceSource' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'versions' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'name' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'value' },
+                                  },
+                                ],
+                              },
+                            },
+                          ],
+                        },
                       },
-                      { kind: 'Field', name: { kind: 'Name', value: 'data' } },
                     ],
                   },
                 },

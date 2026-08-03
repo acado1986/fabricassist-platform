@@ -161,8 +161,122 @@ class UsageView:
 class CareResultView:
     id: UUID
     status: str
+    result: GarmentAnalysisResultView
+
+
+@dataclass(frozen=True)
+class EvidenceReferenceView:
+    field_path: str
+    source_kind: str
+    certainty: str
+    confidence: int
+    source_image_ids: list[UUID]
+    original_text: str | None
+    uncertainty_reason: str | None
+
+
+@dataclass(frozen=True)
+class GarmentIssueView:
+    id: UUID
+    kind: str
+    severity: str
+    location: str
+    observed_description: str
+    confidence: int
+    source_image_ids: list[UUID]
+    suspected_causes: list[str]
+    confirmed_cause: str | None
+    cause_state: str
+
+
+@dataclass(frozen=True)
+class LabelTextView:
+    image_id: UUID
+    text: str
     language: str
-    data: dict[str, object]
+    confidence: int
+
+
+@dataclass(frozen=True)
+class MaterialView:
+    material: str
+    percentage: float | None
+    confidence: int
+    source_image_ids: list[UUID]
+
+
+@dataclass(frozen=True)
+class CareActionView:
+    code: str
+    permission: str
+    maximum_temperature_c: int | None
+    process: str | None
+    evidence_paths: list[str]
+    reason_key: str
+    professional_only: bool
+
+
+@dataclass(frozen=True)
+class ConflictView:
+    id: UUID
+    field_path: str
+    selected_value: str | None
+    resolution_code: str
+    explanation_key: str
+    severity: str
+
+
+@dataclass(frozen=True)
+class BranchSummaryView:
+    branch: str
+    status: str
+    schema_version: str | None
+
+
+@dataclass(frozen=True)
+class StainStepView:
+    claim_id: UUID
+    status: str
+    text: str | None
+    action_code: str
+    violation_codes: list[str]
+
+
+@dataclass(frozen=True)
+class VersionView:
+    name: str
+    value: str
+
+
+@dataclass(frozen=True)
+class GarmentAnalysisResultView:
+    """Current, provider-free result projection for GraphQL and Expo clients."""
+
+    schema_version: str
+    outcome: str
+    warnings: list[str]
+    category: str
+    subtype: str | None
+    colors: list[str]
+    pattern: str
+    features: list[str]
+    overall_condition: str
+    issues: list[GarmentIssueView]
+    visible_label_text: list[LabelTextView]
+    materials: list[MaterialView]
+    label_warnings: list[str]
+    allowed_actions: list[CareActionView]
+    prohibited_actions: list[CareActionView]
+    unknown_actions: list[CareActionView]
+    professional_only_actions: list[CareActionView]
+    uncertainties: list[str]
+    clearer_image_requests: list[str]
+    conflicts: list[ConflictView]
+    branches: list[BranchSummaryView]
+    stain_steps: list[StainStepView]
+    history_event_ids: list[UUID]
+    preference_source: str
+    versions: list[VersionView]
 
 
 @dataclass(frozen=True)

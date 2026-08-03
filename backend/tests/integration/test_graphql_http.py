@@ -15,7 +15,6 @@ from fabricassist.application.garment_history_cursor import GarmentHistoryCursor
 from fabricassist.application.storefront_cursors import GarmentCursor, MessageCursor, ScanCursor
 from fabricassist.application.storefront_queries import (
     AnalysisRevisionView,
-    CareResultView,
     ConversationMessageView,
     GarmentAnalysisHistoryView,
     GarmentDetailView,
@@ -112,12 +111,7 @@ class StubStorefrontQueries(StorefrontQueryPort):
             analysed_before=True,
             cleaned_before=False,
             active_analysis=None,
-            active_result=CareResultView(
-                id=UUID("55555555-5555-5555-5555-555555555555"),
-                status="released",
-                language=language,
-                data={"title": "Safe result"},
-            ),
+            active_result=None,
             analyses=[
                 GarmentAnalysisHistoryView(
                     scan_id=UUID("66666666-6666-6666-6666-666666666666"),
@@ -334,7 +328,7 @@ def test_authenticated_graphql_http_returns_garment_detail_without_thumbnail_url
                 "query": (
                     "query($garmentId: UUID!) { garmentDetail(id: $garmentId) { "
                     "id identifiers thumbnailImageId analyses { items { scanId resultAvailable } "
-                    "pageInfo { nextCursor } } serviceEvents { kind } activeResult { data } } }"
+                    "pageInfo { nextCursor } } serviceEvents { kind } activeResult { id } } }"
                 ),
                 "variables": {"garmentId": "44444444-4444-4444-4444-444444444444"},
             },

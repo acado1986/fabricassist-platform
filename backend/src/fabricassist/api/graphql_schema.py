@@ -46,20 +46,29 @@ from fabricassist.application.storefront_cursors import (
 )
 from fabricassist.application.storefront_queries import (
     AnalysisRevisionView,
+    BranchSummaryView,
+    CareActionView,
     CareResultView,
+    ConflictView,
     ConversationMessageView,
     GarmentAnalysisHistoryView,
+    GarmentAnalysisResultView,
     GarmentDetailView,
     GarmentHistoryView,
+    GarmentIssueView,
     GarmentView,
     IdentityCandidateView,
     ImageMetadataView,
+    LabelTextView,
+    MaterialView,
     ResultCompositeView,
     RunView,
     ScanView,
     ServiceEventView,
+    StainStepView,
     StorefrontPrincipal,
     StorefrontQueryPort,
+    VersionView,
 )
 from fabricassist.settings import Settings
 
@@ -223,11 +232,112 @@ class UsageSummary:
 
 
 @strawberry.type
+class GarmentIssueType:
+    id: UUID
+    kind: str
+    severity: str
+    location: str
+    observed_description: str
+    confidence: int
+    source_image_ids: list[UUID]
+    suspected_causes: list[str]
+    confirmed_cause: str | None
+    cause_state: str
+
+
+@strawberry.type
+class LabelTextType:
+    image_id: UUID
+    text: str
+    language: str
+    confidence: int
+
+
+@strawberry.type
+class MaterialType:
+    material: str
+    percentage: float | None
+    confidence: int
+    source_image_ids: list[UUID]
+
+
+@strawberry.type
+class CareActionType:
+    code: str
+    permission: str
+    maximum_temperature_c: int | None
+    process: str | None
+    evidence_paths: list[str]
+    reason_key: str
+    professional_only: bool
+
+
+@strawberry.type
+class EvidenceConflictType:
+    id: UUID
+    field_path: str
+    selected_value: str | None
+    resolution_code: str
+    explanation_key: str
+    severity: str
+
+
+@strawberry.type
+class AnalysisBranchSummaryType:
+    branch: str
+    status: str
+    schema_version: str | None
+
+
+@strawberry.type
+class StainStepType:
+    claim_id: UUID
+    status: str
+    text: str | None
+    action_code: str
+    violation_codes: list[str]
+
+
+@strawberry.type
+class VersionType:
+    name: str
+    value: str
+
+
+@strawberry.type
+class GarmentAnalysisResultType:
+    schema_version: str
+    outcome: str
+    warnings: list[str]
+    category: str
+    subtype: str | None
+    colors: list[str]
+    pattern: str
+    features: list[str]
+    overall_condition: str
+    issues: list[GarmentIssueType]
+    visible_label_text: list[LabelTextType]
+    materials: list[MaterialType]
+    label_warnings: list[str]
+    allowed_actions: list[CareActionType]
+    prohibited_actions: list[CareActionType]
+    unknown_actions: list[CareActionType]
+    professional_only_actions: list[CareActionType]
+    uncertainties: list[str]
+    clearer_image_requests: list[str]
+    conflicts: list[EvidenceConflictType]
+    branches: list[AnalysisBranchSummaryType]
+    stain_steps: list[StainStepType]
+    history_event_ids: list[UUID]
+    preference_source: str
+    versions: list[VersionType]
+
+
+@strawberry.type
 class CareResultType:
     id: UUID
     status: str
-    language: str
-    data: JSON
+    result: GarmentAnalysisResultType
 
 
 @strawberry.type
@@ -670,9 +780,75 @@ def ai_run_type(row: RunView) -> AiRunType:
     )
 
 
+def garment_issue_type(row: GarmentIssueView) -> GarmentIssueType:
+    return GarmentIssueType(**row.__dict__)
+
+
+def label_text_type(row: LabelTextView) -> LabelTextType:
+    return LabelTextType(**row.__dict__)
+
+
+def material_type(row: MaterialView) -> MaterialType:
+    return MaterialType(**row.__dict__)
+
+
+def care_action_type(row: CareActionView) -> CareActionType:
+    return CareActionType(**row.__dict__)
+
+
+def conflict_type(row: ConflictView) -> EvidenceConflictType:
+    return EvidenceConflictType(**row.__dict__)
+
+
+def branch_summary_type(row: BranchSummaryView) -> AnalysisBranchSummaryType:
+    return AnalysisBranchSummaryType(**row.__dict__)
+
+
+def stain_step_type(row: StainStepView) -> StainStepType:
+    return StainStepType(**row.__dict__)
+
+
+def version_type(row: VersionView) -> VersionType:
+    return VersionType(**row.__dict__)
+
+
+def garment_analysis_result_type(row: GarmentAnalysisResultView) -> GarmentAnalysisResultType:
+    return GarmentAnalysisResultType(
+        schema_version=row.schema_version,
+        outcome=row.outcome,
+        warnings=row.warnings,
+        category=row.category,
+        subtype=row.subtype,
+        colors=row.colors,
+        pattern=row.pattern,
+        features=row.features,
+        overall_condition=row.overall_condition,
+        issues=[garment_issue_type(item) for item in row.issues],
+        visible_label_text=[label_text_type(item) for item in row.visible_label_text],
+        materials=[material_type(item) for item in row.materials],
+        label_warnings=row.label_warnings,
+        allowed_actions=[care_action_type(item) for item in row.allowed_actions],
+        prohibited_actions=[care_action_type(item) for item in row.prohibited_actions],
+        unknown_actions=[care_action_type(item) for item in row.unknown_actions],
+        professional_only_actions=[
+            care_action_type(item) for item in row.professional_only_actions
+        ],
+        uncertainties=row.uncertainties,
+        clearer_image_requests=row.clearer_image_requests,
+        conflicts=[conflict_type(item) for item in row.conflicts],
+        branches=[branch_summary_type(item) for item in row.branches],
+        stain_steps=[stain_step_type(item) for item in row.stain_steps],
+        history_event_ids=row.history_event_ids,
+        preference_source=row.preference_source,
+        versions=[version_type(item) for item in row.versions],
+    )
+
+
 def care_result_type(row: CareResultView) -> CareResultType:
     return CareResultType(
-        id=row.id, status=row.status, language=row.language, data=cast(JSON, row.data)
+        id=row.id,
+        status=row.status,
+        result=garment_analysis_result_type(row.result),
     )
 
 

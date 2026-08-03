@@ -28,8 +28,28 @@ query GarmentDetail(
     activeResult {
       id
       status
-      language
-      data
+      result {
+        outcome
+        category
+        overallCondition
+        allowedActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        prohibitedActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        uncertainties
+        conflicts {
+          id
+          fieldPath
+          severity
+          explanationKey
+        }
+      }
     }
     analyses {
       items {

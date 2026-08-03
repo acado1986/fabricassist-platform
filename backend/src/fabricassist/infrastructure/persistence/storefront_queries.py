@@ -33,6 +33,8 @@ from fabricassist.application.storefront_queries import (
     StorefrontQueryPort,
     UsageView,
 )
+from fabricassist.domain.garment_analysis.models import FabricAssistAnalysisResult
+from fabricassist.infrastructure.persistence.garment_analysis_projection import analysis_result_view
 from fabricassist.infrastructure.persistence.models import (
     AiRun,
     AnalysisRevision,
@@ -46,7 +48,6 @@ from fabricassist.infrastructure.persistence.models import (
     GarmentObservation,
     GarmentServiceEvent,
     ModelRun,
-    RenderedAnswer,
     Scan,
     ScanImage,
 )
@@ -743,21 +744,20 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
         )
         if result_row is None:
             return None
-        rendered = await self._session.scalar(
-            select(RenderedAnswer).where(
-                RenderedAnswer.care_result_id == result_row.id,
-                RenderedAnswer.tenant_id == principal.tenant_id,
-                RenderedAnswer.language == language,
-                RenderedAnswer.template_version == "rich-result-v2",
-            )
-        )
-        if rendered is None:
+        # Phase 9 deliberately reads only the versioned v2 canonical projection.
+        # Old rendered JSON is not a transport fallback; Phase 10 transforms retained
+        # results before enabling this feature for production traffic.
+        payload = result_row.canonical_data.get("garment_analysis_result")
+        if not isinstance(payload, dict):
+            return None
+        try:
+            canonical = FabricAssistAnalysisResult.model_validate(payload)
+        except ValueError:
             return None
         return CareResultView(
             id=result_row.id,
             status=result_row.status,
-            language=language,
-            data=cast(dict[str, object], rendered.answer),
+            result=analysis_result_view(canonical),
         )
 
     async def get_result_composite(

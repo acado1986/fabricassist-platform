@@ -64,6 +64,17 @@ def test_schema_exposes_canonical_queries_only() -> None:
     assert "mutation" not in sdl.lower()
 
 
+def test_care_result_uses_a_typed_v2_projection_without_json_fallback() -> None:
+    sdl = create_schema(Settings(environment="test")).as_str()
+
+    care_result = sdl[sdl.index("type CareResultType") : sdl.index("type IdentityCandidateType")]
+    assert "result: GarmentAnalysisResultType!" in care_result
+    assert "data:" not in care_result
+    assert "type GarmentAnalysisResultType" in sdl
+    assert "prohibitedActions: [CareActionType!]!" in sdl
+    assert "stainSteps: [StainStepType!]!" in sdl
+
+
 def test_identity_candidate_exposes_safe_thumbnail_identifiers() -> None:
     candidate = IdentityCandidateView(
         id=uuid4(),
