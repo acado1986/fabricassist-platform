@@ -40,6 +40,25 @@ def test_application_and_domain_do_not_import_infrastructure_sdks() -> None:
     assert violations == []
 
 
+def test_garment_analysis_domain_isolation() -> None:
+    domain_root = SOURCE / "domain" / "garment_analysis"
+    forbidden = (
+        "fastapi",
+        "sqlalchemy",
+        "celery",
+        "redis",
+        "boto3",
+        "google.genai",
+        "httpx",
+    )
+    violations: list[str] = []
+    for path in python_sources(domain_root):
+        for module in imports(path):
+            if module in forbidden or module.startswith(tuple(f"{name}." for name in forbidden)):
+                violations.append(f"{path.relative_to(BACKEND)} imports {module}")
+    assert violations == []
+
+
 def test_application_capabilities_do_not_read_global_settings() -> None:
     capability_services = (
         "analysis.py",

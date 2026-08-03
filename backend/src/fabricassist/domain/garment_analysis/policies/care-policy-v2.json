@@ -1,0 +1,10 @@
+{
+  "version": "care-policy-v2",
+  "rules": [
+    "photographed-label-authority",
+    "prohibition-wins",
+    "no-domestic-detergent-without-water-permission",
+    "sensitive-material-review",
+    "professional-processes-are-professional-only"
+  ]
+}

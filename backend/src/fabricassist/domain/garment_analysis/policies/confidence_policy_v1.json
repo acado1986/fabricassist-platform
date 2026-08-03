@@ -1,0 +1,7 @@
+{
+  "version": "confidence-policy-v1",
+  "critical_label_permission": 90,
+  "critical_label_temperature": 90,
+  "composition": 80,
+  "garment_observation": 60
+}
