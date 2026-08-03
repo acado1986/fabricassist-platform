@@ -18,6 +18,10 @@ ADR-017 establishes one unified v1 API with read-only GraphQL, REST-only
 writes, shared application services, and canonical SSE recovery.
 ADR-018 converts retained ordered GraphQL connections to versioned opaque
 keyset cursors with a hash-bound, exact Phase 6 migration approval.
+ADR-019 accepts the bounded garment-analysis module, native asyncio structured
+concurrency, PostgreSQL branch-state authority, and the deterministic v2 base
+care plan; it refines ADR-009's mandatory planner decision and defers graph
+engines behind an explicit adoption threshold.
 
 The historical alpha plan and inventory are archived under
 [`../archive/`](../archive/). Active prerelease operations live under
