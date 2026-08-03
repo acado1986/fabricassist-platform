@@ -127,6 +127,9 @@ class Settings(BaseSettings):
     max_images_per_scan: int = Field(default=8, ge=1, le=20)
     analysis_lease_minutes: int = Field(default=5, ge=1, le=30)
     evidence_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
+    garment_analysis_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
+    garment_analysis_gemini_model: str = ""
+    garment_analysis_openai_model: str = ""
     care_planner_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
     chat_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
     openai_responses_base_url: str = ""
@@ -364,6 +367,7 @@ class Settings(BaseSettings):
                 )
         selected_model_capabilities = {
             self.evidence_provider,
+            self.garment_analysis_provider,
             self.care_planner_provider,
             self.chat_provider,
         }

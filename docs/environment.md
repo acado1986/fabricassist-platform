@@ -225,3 +225,12 @@ make check-alpha-config
 After changing adapter selectors, restart the API and worker. For the prerelease profile, save
 the values in Render before running the protected live smoke; changing the
 repository example alone does not change Render's environment.
+
+### Garment-analysis v2 provider preparation
+
+`FABRICASSIST_GARMENT_ANALYSIS_PROVIDER` selects the inactive v2 branch adapter
+(`mock`, `gemini`, or `openai_responses`) and defaults to `mock`, which makes no
+network calls. `FABRICASSIST_GARMENT_ANALYSIS_GEMINI_MODEL` and
+`FABRICASSIST_GARMENT_ANALYSIS_OPENAI_MODEL` are optional branch-specific model
+overrides. These settings do not route production analysis before the coordinated
+v2 cutover.

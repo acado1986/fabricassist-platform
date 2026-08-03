@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Protocol
+from typing import Generic, Protocol, TypeVar
 from uuid import UUID
 
 from fabricassist.application.garment_analysis.commands import (
@@ -23,6 +23,77 @@ from fabricassist.application.garment_analysis.queries import (
     FabricAssistAnalysisResult,
     GetGarmentAnalysis,
 )
+from fabricassist.domain.garment_analysis.models import (
+    GarmentInspection,
+    LabelExtraction,
+    StainTreatment,
+)
+
+
+@dataclass(frozen=True)
+class ProviderImage:
+    """Normalized image bytes authorized and routed by the caller."""
+
+    image_id: UUID
+    jpeg_bytes: bytes
+    role: str
+    viewpoint: str = "unknown"
+    label_scope: str = "unknown"
+
+
+@dataclass(frozen=True)
+class GarmentInspectionRequest:
+    images: tuple[ProviderImage, ...]
+    attempt_number: int
+
+
+@dataclass(frozen=True)
+class LabelExtractionRequest:
+    images: tuple[ProviderImage, ...]
+    attempt_number: int
+
+
+@dataclass(frozen=True)
+class StainTreatmentRequest:
+    images: tuple[ProviderImage, ...]
+    attempt_number: int
+
+
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class ModelInvocation(Generic[T]):
+    value: T
+    provider: str
+    model: str
+    prompt_version: str
+    prompt_checksum: str
+    schema_version: str
+    latency_ms: int
+    attempt_number: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_tokens: int | None = None
+    thought_tokens: int | None = None
+    tool_tokens: int | None = None
+    response_model_version: str | None = None
+    response_id: str | None = None
+
+
+class GarmentVisionProvider(Protocol):
+    """Task-specific vision port; provider payloads and SDK objects never escape."""
+
+    async def inspect_garment(
+        self, request: GarmentInspectionRequest
+    ) -> ModelInvocation[GarmentInspection]: ...
+    async def extract_labels(
+        self, request: LabelExtractionRequest
+    ) -> ModelInvocation[LabelExtraction]: ...
+    async def analyze_stain(
+        self, request: StainTreatmentRequest
+    ) -> ModelInvocation[StainTreatment]: ...
 
 
 @dataclass(frozen=True)
