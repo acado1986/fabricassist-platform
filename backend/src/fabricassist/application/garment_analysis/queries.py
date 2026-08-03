@@ -26,6 +26,7 @@ class GetGarmentAnalysis:
 class AnalysisReference:
     """Stable identifiers returned by module commands without ORM leakage."""
 
+    tenant_id: UUID
     scan_id: UUID
     run_id: UUID
     revision_id: UUID

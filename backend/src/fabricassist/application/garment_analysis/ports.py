@@ -151,11 +151,20 @@ class CorrectionRepository(Protocol):
 
 
 class ImageAssetRepository(Protocol):
-    """Authorized image access stays behind a port and never returns storage keys."""
+    """Load only authorized, already-routed normalized images for a branch.
 
-    async def image_ids_for_revision(
-        self, *, tenant_id: UUID, revision_id: UUID
-    ) -> tuple[UUID, ...]: ...
+    Implementations own the revision-image join and object-storage lookup.  A
+    workflow never receives an object key, ORM image row, or a general-purpose
+    storage client, which keeps concurrent branch tasks independent.
+    """
+
+    async def branch_images(
+        self,
+        *,
+        tenant_id: UUID,
+        revision_id: UUID,
+        branch: AnalysisBranch,
+    ) -> tuple[ProviderImage, ...]: ...
 
 
 @dataclass(frozen=True)
@@ -212,7 +221,13 @@ class BranchCompletion:
 
 
 class BranchStateRepository(Protocol):
-    """Durable branch state with transaction ownership left to the caller."""
+    """Durable branch state for one workflow operation.
+
+    Production implementations must open and commit a separate short unit of
+    work for each method invocation.  The interface intentionally has no
+    session argument because an ``AsyncSession`` must never be shared by the
+    parallel garment and label tasks.
+    """
 
     async def claim_branch(
         self,
@@ -232,6 +247,16 @@ class BranchStateRepository(Protocol):
         self,
         *,
         tenant_id: UUID,
+        run_id: UUID,
         claim: BranchClaim,
         completion: BranchCompletion,
     ) -> bool: ...
+
+    async def mark_not_provided(
+        self,
+        *,
+        tenant_id: UUID,
+        run_id: UUID,
+        revision_id: UUID,
+        branch: AnalysisBranch,
+    ) -> None: ...

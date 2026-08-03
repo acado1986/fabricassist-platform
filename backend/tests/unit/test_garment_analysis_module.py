@@ -96,8 +96,13 @@ def ids() -> tuple[UUID, UUID, UUID, UUID, UUID]:
 
 @pytest.fixture
 def service(ids: tuple[UUID, UUID, UUID, UUID, UUID]) -> DefaultGarmentAnalysisService:
-    scan_id, run_id, revision_id, _tenant_id, _user_id = ids
-    reference = AnalysisReference(scan_id=scan_id, run_id=run_id, revision_id=revision_id)
+    scan_id, run_id, revision_id, tenant_id, _user_id = ids
+    reference = AnalysisReference(
+        tenant_id=tenant_id,
+        scan_id=scan_id,
+        run_id=run_id,
+        revision_id=revision_id,
+    )
     return DefaultGarmentAnalysisService(
         analysis_repository=InMemoryAnalysisRepository(reference),
         workflow=FakeWorkflow(reference),

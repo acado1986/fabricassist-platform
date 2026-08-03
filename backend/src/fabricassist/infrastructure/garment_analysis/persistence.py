@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fabricassist.application.garment_analysis import (
     AnalysisBranch,
@@ -16,6 +16,8 @@ from fabricassist.application.garment_analysis import (
     BranchState,
 )
 from fabricassist.infrastructure.persistence.models import (
+    AiRun,
+    AiRunEvent,
     AnalysisBranchResult,
     AnalysisRevision,
     ModelRun,
@@ -155,10 +157,59 @@ class SqlAlchemyGarmentAnalysisRepository:
             for row in rows
         )
 
+    async def mark_not_provided(
+        self,
+        *,
+        tenant_id: UUID,
+        run_id: UUID | None = None,
+        revision_id: UUID,
+        branch: AnalysisBranch,
+    ) -> None:
+        """Record a routed-but-absent branch without consuming a model attempt.
+
+        A missing label is an input condition, not a failed provider invocation;
+        leaving the attempt counter at zero preserves the two-call cap for a
+        successor revision that receives a new image.
+        """
+        revision = await self._session.scalar(
+            select(AnalysisRevision.id).where(
+                AnalysisRevision.id == revision_id,
+                AnalysisRevision.tenant_id == tenant_id,
+            )
+        )
+        if revision is None:
+            return
+        inserted = (
+            await self._session.execute(
+                insert(AnalysisBranchResult)
+                .values(
+                    id=uuid4(),
+                    tenant_id=tenant_id,
+                    analysis_revision_id=revision_id,
+                    branch_name=branch.value,
+                    status="not_provided",
+                    attempt_count=0,
+                    uncertain_fields=[],
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[
+                        AnalysisBranchResult.analysis_revision_id,
+                        AnalysisBranchResult.branch_name,
+                    ]
+                )
+                .returning(AnalysisBranchResult.id)
+            )
+        ).scalar_one_or_none()
+        if inserted is not None and run_id is not None:
+            await self._append_branch_progress_event(
+                tenant_id=tenant_id, run_id=run_id, branch=branch, status="not_provided"
+            )
+
     async def complete_branch(
         self,
         *,
         tenant_id: UUID,
+        run_id: UUID | None = None,
         claim: BranchClaim,
         completion: BranchCompletion,
         now: datetime | None = None,
@@ -191,6 +242,26 @@ class SqlAlchemyGarmentAnalysisRepository:
                     uncertain_fields=list(completion.uncertain_fields),
                     overall_confidence=completion.overall_confidence,
                     error_category=completion.error_category,
+                    provider=(
+                        completion.invocation.provider
+                        if completion.invocation is not None
+                        else AnalysisBranchResult.provider
+                    ),
+                    model=(
+                        completion.invocation.model
+                        if completion.invocation is not None
+                        else AnalysisBranchResult.model
+                    ),
+                    prompt_version=(
+                        completion.invocation.prompt_version
+                        if completion.invocation is not None
+                        else AnalysisBranchResult.prompt_version
+                    ),
+                    schema_version=(
+                        completion.invocation.schema_version
+                        if completion.invocation is not None
+                        else AnalysisBranchResult.schema_version
+                    ),
                     claim_token=None,
                     lease_expires_at=None,
                     completed_at=completed_at,
@@ -241,5 +312,118 @@ class SqlAlchemyGarmentAnalysisRepository:
                     completed_at=completed_at,
                 )
             )
+        if run_id is not None:
+            await self._append_branch_progress_event(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                branch=claim.branch,
+                status=completion.status,
+            )
         await self._session.flush()
         return True
+
+    async def _append_branch_progress_event(
+        self, *, tenant_id: UUID, run_id: UUID, branch: AnalysisBranch, status: str
+    ) -> None:
+        """Append an ordered branch event inside the same transaction.
+
+        Locking the parent run serializes the ``max(sequence) + 1`` allocation
+        across the concurrently completing branch transactions.
+        """
+        run = await self._session.scalar(
+            select(AiRun).where(AiRun.id == run_id, AiRun.tenant_id == tenant_id).with_for_update()
+        )
+        if run is None:
+            raise RuntimeError("Claimed branch run disappeared")
+        next_sequence = (
+            int(
+                (
+                    await self._session.scalar(
+                        select(func.coalesce(func.max(AiRunEvent.sequence), 0)).where(
+                            AiRunEvent.run_id == run_id
+                        )
+                    )
+                )
+                or 0
+            )
+            + 1
+        )
+        self._session.add(
+            AiRunEvent(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                run_id=run_id,
+                sequence=next_sequence,
+                event_type="analysis.progress",
+                data={"branch": branch.value, "status": status},
+            )
+        )
+
+
+class SqlAlchemyGarmentAnalysisBranchStore:
+    """Session-factory wrapper safe for concurrent asyncio workflow branches.
+
+    Every claim, completion, and read receives a fresh session and commits its
+    own short transaction.  This is the adapter a future composition root must
+    pass to ``AsyncioGarmentAnalysisWorkflow``; the session-bound repository
+    remains available for callers that already own one explicit transaction.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def claim_branch(
+        self,
+        *,
+        tenant_id: UUID,
+        revision_id: UUID,
+        branch: AnalysisBranch,
+        request_fingerprint: str,
+        lease_seconds: int,
+    ) -> BranchClaim | None:
+        async with self._session_factory() as session, session.begin():
+            return await SqlAlchemyGarmentAnalysisRepository(session).claim_branch(
+                tenant_id=tenant_id,
+                revision_id=revision_id,
+                branch=branch,
+                request_fingerprint=request_fingerprint,
+                lease_seconds=lease_seconds,
+            )
+
+    async def branch_states(self, *, tenant_id: UUID, revision_id: UUID) -> tuple[BranchState, ...]:
+        async with self._session_factory() as session:
+            return await SqlAlchemyGarmentAnalysisRepository(session).branch_states(
+                tenant_id=tenant_id, revision_id=revision_id
+            )
+
+    async def complete_branch(
+        self,
+        *,
+        tenant_id: UUID,
+        run_id: UUID,
+        claim: BranchClaim,
+        completion: BranchCompletion,
+    ) -> bool:
+        async with self._session_factory() as session, session.begin():
+            return await SqlAlchemyGarmentAnalysisRepository(session).complete_branch(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                claim=claim,
+                completion=completion,
+            )
+
+    async def mark_not_provided(
+        self,
+        *,
+        tenant_id: UUID,
+        run_id: UUID,
+        revision_id: UUID,
+        branch: AnalysisBranch,
+    ) -> None:
+        async with self._session_factory() as session, session.begin():
+            await SqlAlchemyGarmentAnalysisRepository(session).mark_not_provided(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                revision_id=revision_id,
+                branch=branch,
+            )

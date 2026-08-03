@@ -76,6 +76,7 @@ class DefaultGarmentAnalysisService:
         result = await self._workflow.resume(
             ResumeWorkflowRequest(
                 reference=AnalysisReference(
+                    tenant_id=command.tenant_id,
                     scan_id=command.scan_id,
                     run_id=command.run_id,
                     revision_id=command.revision_id,
