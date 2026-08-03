@@ -1,14 +1,8 @@
 {
-  "executor": "fabricassist.application.analysis.analyse_scan",
+  "executor": "fabricassist.application.garment_analysis.GarmentAnalysisWorkflow",
   "required_keyword_parameters": [
-    "database",
-    "storage",
-    "scan_id",
-    "evidence_provider",
-    "care_planning_provider",
-    "product_information_provider",
-    "hot_cache",
-    "policy"
+    "self",
+    "request"
   ],
   "characteristics": [
     "creates a tenant-owned analysis revision",

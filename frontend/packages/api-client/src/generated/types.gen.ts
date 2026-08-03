@@ -2109,12 +2109,7 @@ export type ScanResultApiV1ScansScanIdResultGetData = {
          */
         scan_id: string;
     };
-    query?: {
-        /**
-         * Language
-         */
-        language?: 'en' | 'es';
-    };
+    query?: never;
     url: '/api/v1/scans/{scan_id}/result';
 };
 

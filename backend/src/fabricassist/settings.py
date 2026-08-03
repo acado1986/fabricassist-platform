@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     publication_recovery_interval_seconds: int = Field(default=30, ge=5, le=3_600)
     publication_recovery_batch_size: int = Field(default=100, ge=1, le=1_000)
     deletion_max_attempts: int = Field(default=5, ge=1, le=100)
-    default_image_retention_days: int = Field(default=7, ge=1, le=365)
+    default_image_retention_days: int = Field(default=30, ge=1, le=365)
     s3_endpoint_url: str = "http://fabricassist-minio:9000"
     s3_public_endpoint_url: str = "http://localhost:9000"
     s3_region: str = "us-east-1"
@@ -128,6 +128,8 @@ class Settings(BaseSettings):
     analysis_lease_minutes: int = Field(default=5, ge=1, le=30)
     evidence_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
     garment_analysis_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
+    garment_analysis_enabled: bool = True
+    garment_analysis_privacy_approved: bool = False
     garment_analysis_gemini_model: str = ""
     garment_analysis_openai_model: str = ""
     garment_analysis_stain_enabled: bool = False

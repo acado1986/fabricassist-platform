@@ -3535,20 +3535,6 @@
               "title": "Scan Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "language",
-            "required": false,
-            "schema": {
-              "default": "en",
-              "enum": [
-                "en",
-                "es"
-              ],
-              "title": "Language",
-              "type": "string"
-            }
           }
         ],
         "responses": {

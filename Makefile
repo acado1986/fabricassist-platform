@@ -240,5 +240,5 @@ iac-check: ## Format and validate the OpenTofu staging baseline.
 	tofu -chdir=infrastructure/terraform/staging init -backend=false
 	tofu -chdir=infrastructure/terraform/staging validate
 
-release-check: check security-check frontend-build ## Run non-cloud Phase 19 release gates.
-	@printf '%s\n' 'Run migration-test, E2E, Android/iOS, IaC, load, and restore gates per docs/runbooks/release.md.'
+release-check: check check-openapi-drift check-graphql-drift migration-test security-check frontend-build ## Run non-cloud Phase 10 release gates.
+	@printf '%s\n' 'Run E2E, Android/iOS, IaC, load, backup/restore, provider approval, and deployment smoke gates per docs/runbooks/release.md.'

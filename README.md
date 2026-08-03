@@ -232,10 +232,11 @@ then validates both the schema and every source image ID locally.
 
 ## Independent model capability interfaces
 
-Application orchestration depends independently on `VisionEvidenceProvider`,
-`CarePlanningProvider`, and `ConversationProvider`. The no-network mock, Gemini,
-and OpenAI **Responses** adapters are selected by
-`FABRICASSIST_EVIDENCE_PROVIDER`, `FABRICASSIST_CARE_PLANNER_PROVIDER`, and
+Garment analysis is executed only through the v2 `GarmentVisionProvider` facade;
+the deterministic policy derives the base care plan without a planning call.
+The no-network mock, Gemini, and OpenAI **Responses** adapters are selected by
+`FABRICASSIST_GARMENT_ANALYSIS_PROVIDER`. Conversation remains a separate typed
+capability selected by
 `FABRICASSIST_CHAT_PROVIDER`; neither application services nor care rules contain
 SDK, endpoint, header, credential, or provider-selection logic. Each live adapter lives under
 `backend/src/fabricassist/infrastructure/vision/providers/`, returns the same

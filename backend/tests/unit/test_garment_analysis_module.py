@@ -187,19 +187,23 @@ async def test_facade_exposes_query_history_and_correction_contracts(
     assert correction.scan_id == scan_id
 
 
-def test_current_executor_characterization_fixture_remains_explicit() -> None:
-    """Pin v1's public execution shape without importing it from the new seam."""
-    from fabricassist.application.analysis import analyse_scan
+def test_current_executor_characterization_fixture_is_the_v2_workflow() -> None:
+    """The worker seam exposes only the public v2 workflow protocol."""
+    from fabricassist.application.garment_analysis import GarmentAnalysisWorkflow
 
     fixture = cast(
         dict[str, object],
         json.loads((FIXTURES / "current_executor_contract.json").read_text()),
     )
-    assert fixture["executor"] == "fabricassist.application.analysis.analyse_scan"
+    assert fixture["executor"] == (
+        "fabricassist.application.garment_analysis.GarmentAnalysisWorkflow"
+    )
     required_parameters = fixture["required_keyword_parameters"]
     assert isinstance(required_parameters, list)
     typed_parameters: list[str] = []
     for parameter in cast(list[object], required_parameters):
         assert isinstance(parameter, str)
         typed_parameters.append(parameter)
-    assert set(typed_parameters).issubset(inspect.signature(analyse_scan).parameters)
+    assert set(typed_parameters).issubset(
+        inspect.signature(GarmentAnalysisWorkflow.execute).parameters
+    )

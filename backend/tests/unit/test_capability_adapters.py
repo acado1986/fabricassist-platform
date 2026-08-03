@@ -327,8 +327,8 @@ async def test_committed_unpublished_intent_is_republished_on_retry() -> None:
             return self.operation
 
         def add(self, value: object) -> None:
-            assert isinstance(value, AnalysisJobOperation)
-            self.operation = value
+            if isinstance(value, AnalysisJobOperation):
+                self.operation = value
 
         async def commit(self) -> None:
             self.commits += 1

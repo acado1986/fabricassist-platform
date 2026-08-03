@@ -12,6 +12,10 @@ from fabricassist.application.garment_analysis.commands import (
     ResumeGarmentAnalysis,
     StartGarmentAnalysis,
 )
+from fabricassist.application.garment_analysis.orchestration import (
+    AsyncioGarmentAnalysisWorkflow,
+    GarmentAnalysisWorkflowPolicy,
+)
 from fabricassist.application.garment_analysis.ports import (
     BranchClaim,
     BranchCompletion,
@@ -19,6 +23,8 @@ from fabricassist.application.garment_analysis.ports import (
     BranchState,
     BranchStateRepository,
     FinalizationRepository,
+    GarmentAnalysisRequest,
+    GarmentAnalysisWorkflow,
     GarmentInspectionRequest,
     GarmentVisionProvider,
     ImageAssetRepository,
@@ -43,6 +49,7 @@ from fabricassist.application.garment_analysis.service import (
 
 __all__ = [
     "AnalysisBranch",
+    "AsyncioGarmentAnalysisWorkflow",
     "AnalysisProgress",
     "AnalysisReference",
     "BranchClaim",
@@ -56,8 +63,11 @@ __all__ = [
     "FabricAssistAnalysisResult",
     "FinalizationRepository",
     "GarmentAnalysisService",
+    "GarmentAnalysisWorkflowPolicy",
     "GetGarmentAnalysis",
     "GarmentInspectionRequest",
+    "GarmentAnalysisRequest",
+    "GarmentAnalysisWorkflow",
     "GarmentVisionProvider",
     "ImageAssetRepository",
     "LabelExtractionRequest",

@@ -27,31 +27,19 @@ from fabricassist.application.limits import (
     LimitBackendUnavailable,
 )
 from fabricassist.application.object_storage import ObjectStorage
-from fabricassist.application.policies import (
-    AnalysisExecutionPolicy,
-    ConversationPolicy,
-    JobExecutionPolicy,
-)
-from fabricassist.application.vision import VisionProviderError
-from fabricassist.infrastructure.cache.factory import create_hot_cache
+from fabricassist.application.policies import ConversationPolicy, JobExecutionPolicy
 from fabricassist.infrastructure.concurrency.factory import create_concurrency_gate
 from fabricassist.infrastructure.database import Database
+from fabricassist.infrastructure.garment_analysis import create_garment_analysis_workflow
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 from fabricassist.infrastructure.persistence.models import (
     AnalysisJobOperation,
     ConversationMessage,
     Scan,
 )
-from fabricassist.infrastructure.product_information.factory import (
-    create_product_information_provider,
-)
 from fabricassist.infrastructure.storage.factory import create_object_storage
 from fabricassist.infrastructure.telemetry import measure_job
-from fabricassist.infrastructure.vision.providers import (
-    create_care_planning_provider,
-    create_conversation_provider,
-    create_evidence_provider,
-)
+from fabricassist.infrastructure.vision.providers import create_conversation_provider
 from fabricassist.settings import Settings
 
 
@@ -85,19 +73,12 @@ async def _execute_analysis_job(
         result = await execute_checkpoint(
             session=session,
             message=message,
-            database=database,
-            storage=storage,
             execution_policy=JobExecutionPolicy(
                 stage_budget_seconds=settings.job_stage_budget_seconds
             ),
-            analysis_policy=AnalysisExecutionPolicy(
-                hot_cache_ttl_seconds=settings.cache_hot_ttl_seconds,
-                product_cache_minutes=settings.product_cache_minutes,
+            garment_analysis_workflow=create_garment_analysis_workflow(
+                database=database, storage=storage, settings=settings
             ),
-            evidence_provider=create_evidence_provider(settings),
-            care_planning_provider=create_care_planning_provider(settings),
-            product_information_provider=create_product_information_provider(settings),
-            hot_cache=create_hot_cache(settings),
             concurrency_gate=create_concurrency_gate(settings),
         )
         if result.continuation is None:
@@ -178,9 +159,6 @@ def execute_analysis_job_task(self: Any, payload: str) -> None:
         TemporaryJobError,
     ) as error:
         raise self.retry(exc=error, countdown=30) from error
-    except VisionProviderError as error:
-        asyncio.run(_mark_analysis_failed(database, UUID(scan_id), error.code))
-        raise
     except Exception:
         asyncio.run(_mark_analysis_failed(database, UUID(scan_id), "ANALYSIS_INTERNAL_ERROR"))
         raise

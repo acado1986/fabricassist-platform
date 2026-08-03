@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.jobs import (
@@ -16,8 +16,11 @@ from fabricassist.application.jobs import (
     PermanentJobDispatchError,
 )
 from fabricassist.infrastructure.persistence.models import (
+    AiRunImage,
     AnalysisJobOperation,
+    AnalysisRevision,
     ConversationMessage,
+    RevisionImage,
     Scan,
 )
 
@@ -107,10 +110,55 @@ async def enqueue_analysis(
         .with_for_update()
     )
     if operation is None:
+        revision_id = uuid4()
+        latest_revision = await session.scalar(
+            select(func.max(AnalysisRevision.revision_number)).where(
+                AnalysisRevision.scan_id == scan.id,
+                AnalysisRevision.tenant_id == scan.tenant_id,
+            )
+        )
+        revision = AnalysisRevision(
+            id=revision_id,
+            tenant_id=scan.tenant_id,
+            scan_id=scan.id,
+            garment_id=scan.garment_id,
+            revision_number=int(latest_revision or 0) + 1,
+            supersedes_revision_id=scan.active_analysis_revision_id,
+            status="queued",
+            module_version="garment-analysis-v2",
+            workflow_version="asyncio-garment-analysis-v2",
+            merged_schema_version="merged-garment-assessment-v2",
+            care_policy_version="care-policy-v2",
+            confidence_policy_version="confidence-policy-v1",
+            retry_policy_version="branch-at-most-two-v1",
+            effective_feature_flags={"stain_analysis": False},
+        )
+        session.add(revision)
+        if run_id is not None:
+            image_ids = list(
+                (
+                    await session.scalars(
+                        select(AiRunImage.image_id).where(
+                            AiRunImage.run_id == run_id,
+                            AiRunImage.tenant_id == scan.tenant_id,
+                        )
+                    )
+                ).all()
+            )
+        else:
+            image_ids = []
+        for image_id in image_ids:
+            session.add(
+                RevisionImage(
+                    tenant_id=scan.tenant_id,
+                    revision_id=revision_id,
+                    image_id=image_id,
+                )
+            )
         operation = AnalysisJobOperation(
             id=uuid4(),
             scan_id=scan.id,
-            revision_id=uuid4(),
+            revision_id=revision_id,
             operation_key=operation_key,
             stage=INITIAL_ANALYSIS_STAGE,
             correlation_id=correlation_id,

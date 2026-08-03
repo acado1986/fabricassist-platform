@@ -15,8 +15,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.ai_runs import transition_run
-from fabricassist.application.analysis import analyse_scan
-from fabricassist.application.cache import HotCache
+from fabricassist.application.garment_analysis import (
+    AnalysisReference,
+    GarmentAnalysisRequest,
+    GarmentAnalysisWorkflow,
+)
 from fabricassist.application.jobs import (
     ANALYSIS_STAGES,
     AnalysisJobMessage,
@@ -31,17 +34,7 @@ from fabricassist.application.limits import (
     ConcurrencyLimitExceeded,
     LimitBackendUnavailable,
 )
-from fabricassist.application.object_storage import (
-    ObjectNotFoundError,
-    ObjectStorage,
-    PermanentObjectStorageError,
-    RetryableObjectStorageError,
-)
-from fabricassist.application.planning import CarePlanningProvider
-from fabricassist.application.policies import AnalysisExecutionPolicy, JobExecutionPolicy
-from fabricassist.application.product_information import ProductInformationProvider
-from fabricassist.application.vision import VisionEvidenceProvider, VisionProviderError
-from fabricassist.infrastructure.database import Database
+from fabricassist.application.policies import JobExecutionPolicy
 from fabricassist.infrastructure.persistence.models import (
     AiRun,
     AnalysisJobOperation,
@@ -102,13 +95,7 @@ async def execute_checkpoint(
     session: AsyncSession,
     message: AnalysisJobMessage,
     execution_policy: JobExecutionPolicy,
-    analysis_policy: AnalysisExecutionPolicy | None = None,
-    database: Database | None = None,
-    storage: ObjectStorage | None = None,
-    evidence_provider: VisionEvidenceProvider | None = None,
-    care_planning_provider: CarePlanningProvider | None = None,
-    product_information_provider: ProductInformationProvider | None = None,
-    hot_cache: HotCache | None = None,
+    garment_analysis_workflow: GarmentAnalysisWorkflow | None = None,
     concurrency_gate: ConcurrencyGate | None = None,
 ) -> CheckpointResult:
     """Claim one durable stage and return its unpublished continuation.
@@ -197,16 +184,7 @@ async def execute_checkpoint(
         await session.commit()
         return CheckpointResult(StageResult.COMPLETE, _message(continuation))
 
-    if (
-        database is None
-        or storage is None
-        or evidence_provider is None
-        or care_planning_provider is None
-        or product_information_provider is None
-        or hot_cache is None
-        or concurrency_gate is None
-        or analysis_policy is None
-    ):
+    if garment_analysis_workflow is None or concurrency_gate is None:
         raise TemporaryJobError("analysis runtime dependencies are unavailable")
     operation.status = "processing"
     scan.analysis_stage = message.stage
@@ -230,21 +208,19 @@ async def execute_checkpoint(
     await session.commit()
     try:
         async with asyncio.timeout(max(1, execution_policy.stage_budget_seconds - 5)):
-            async with concurrency_gate.slot(
-                tenant_id=str(scan.tenant_id),
-                operation="analysis",
-            ):
-                await analyse_scan(
-                    database=database,
-                    storage=storage,
-                    scan_id=message.scan_id,
-                    evidence_provider=evidence_provider,
-                    care_planning_provider=care_planning_provider,
-                    product_information_provider=product_information_provider,
-                    hot_cache=hot_cache,
-                    policy=analysis_policy,
+            async with concurrency_gate.slot(tenant_id=str(scan.tenant_id), operation="analysis"):
+                await garment_analysis_workflow.execute(
+                    GarmentAnalysisRequest(
+                        reference=AnalysisReference(
+                            tenant_id=scan.tenant_id,
+                            scan_id=scan.id,
+                            run_id=operation.run_id or operation.id,
+                            revision_id=message.revision_id,
+                        ),
+                        correlation_id=operation.correlation_id,
+                    )
                 )
-    except (TimeoutError, RetryableObjectStorageError) as error:
+    except TimeoutError as error:
         # A retry must be able to claim this row immediately. Leaving it in
         # ``processing`` until its old lease expires turns a bounded transport
         # retry into a customer-visible spinner.
@@ -265,10 +241,11 @@ async def execute_checkpoint(
         scan.analysis_stage = message.stage
         await session.commit()
         raise TemporaryJobError("analysis concurrency is temporarily unavailable") from error
-    except (ObjectNotFoundError, PermanentObjectStorageError, VisionProviderError) as error:
-        error_code = (
-            error.code if isinstance(error, VisionProviderError) else "ANALYSIS_STORAGE_ERROR"
-        )
+    except Exception as error:
+        # Branch-level provider/storage failures are normally classified and
+        # persisted by the workflow. Only an unexpected composition failure
+        # reaches this checkpoint-level terminal path.
+        error_code = "ANALYSIS_EXECUTION_ERROR"
         operation.status = "failed"
         operation.completed_at = datetime.now(UTC)
         operation.lease_expires_at = None
@@ -291,45 +268,12 @@ async def execute_checkpoint(
             "Analysis execution failed permanently",
             extra={
                 "error_type": type(error).__name__,
-                "provider_error_code": error.code
-                if isinstance(error, VisionProviderError)
-                else None,
-                "provider_http_status": error.provider_http_status
-                if isinstance(error, VisionProviderError)
-                else None,
-                "provider_message": error.provider_message
-                if isinstance(error, VisionProviderError)
-                else None,
+                "provider_error_code": None,
+                "provider_http_status": None,
+                "provider_message": None,
             },
         )
         raise AnalysisExecutionError(error_code, error) from error
-    except Exception as error:
-        # Persist a safe terminal code before returning a non-retryable delivery
-        # response. The underlying exception type is retained only in structured
-        # server logs with the request correlation context.
-        operation.status = "failed"
-        operation.completed_at = datetime.now(UTC)
-        operation.lease_expires_at = None
-        scan.status = "failed"
-        scan.analysis_stage = "failed"
-        scan.analysis_error_code = "ANALYSIS_INTERNAL_ERROR"
-        scan.progress_percent = 100
-        if operation.run_id is not None:
-            run = await session.get(AiRun, operation.run_id, with_for_update=True)
-            if run is not None:
-                await transition_run(
-                    session,
-                    run=run,
-                    status="failed",
-                    event_type="run.failed",
-                    error_code="ANALYSIS_INTERNAL_ERROR",
-                )
-        await session.commit()
-        logger.exception(
-            "Analysis execution failed unexpectedly",
-            extra={"error_type": type(error).__name__},
-        )
-        raise AnalysisExecutionError("ANALYSIS_INTERNAL_ERROR", error) from error
     operation.status = "completed"
     operation.completed_at = datetime.now(UTC)
     operation.lease_expires_at = None

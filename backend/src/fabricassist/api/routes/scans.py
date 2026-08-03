@@ -6,7 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
@@ -15,14 +15,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.ai_runs import AiRunStateError, create_analysis_run
-from fabricassist.application.analysis import TEMPLATE_VERSION, render_rich_result
 from fabricassist.application.job_orchestration import enqueue_analysis
 from fabricassist.application.jobs import JobDispatcher
 from fabricassist.application.lifecycle import enqueue_deletion, ensure_review_case
 from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.application.policies import UploadPolicy
-from fabricassist.domain.care import CareValidationReport, ProposedCarePlan
-from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
+from fabricassist.domain.evidence import ImageRole
 from fabricassist.domain.garment_analysis.image_routing import (
     ImageViewpoint,
     LabelScope,
@@ -35,7 +33,6 @@ from fabricassist.infrastructure.persistence.models import (
     Garment,
     GarmentIdentifier,
     IdempotencyRecord,
-    RenderedAnswer,
     Scan,
     ScanImage,
     User,
@@ -588,7 +585,6 @@ async def scan_result(
     scan_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    language: Literal["en", "es"] = "en",
 ) -> ResultResponse:
     scan = await owned_scan(session, user, scan_id)
     if scan.active_result_id is None:
@@ -596,35 +592,13 @@ async def scan_result(
     result = await session.get(CareResult, scan.active_result_id)
     if result is None:
         raise HTTPException(409, "Analysis result is not available yet.")
-    rendered = await session.scalar(
-        select(RenderedAnswer).where(
-            RenderedAnswer.care_result_id == result.id,
-            RenderedAnswer.language == language,
-            RenderedAnswer.template_version == TEMPLATE_VERSION,
-        )
-    )
-    if rendered is None:
-        canonical = result.canonical_data
-        answer = render_rich_result(
-            GarmentEvidenceDossier.model_validate(canonical["dossier"]),
-            ProposedCarePlan.model_validate(canonical["proposal"]),
-            CareValidationReport.model_validate(canonical["validation"]),
-            language,
-        )
-        rendered = RenderedAnswer(
-            id=uuid4(),
-            tenant_id=result.tenant_id,
-            care_result_id=result.id,
-            language=language,
-            template_version=TEMPLATE_VERSION,
-            answer=answer,
-        )
-        session.add(rendered)
-        await session.commit()
+    canonical = result.canonical_data.get("garment_analysis_result")
+    if not isinstance(canonical, dict):
+        raise HTTPException(410, "Historical result is unavailable in the current contract.")
     return ResultResponse(
         scan_id=scan.id,
         status=result.status,
-        result=rendered.answer if rendered else result.canonical_data,
+        result=cast(dict[str, object], canonical),
     )
 
 

@@ -21,7 +21,15 @@ from fabricassist.infrastructure.persistence.models import (
     AiRunEvent,
     AnalysisBranchResult,
     AnalysisRevision,
+    CareResult,
+    Garment,
     ModelRun,
+    Scan,
+)
+from fabricassist.infrastructure.telemetry import (
+    GARMENT_ANALYSIS_BRANCH_LATENCY,
+    GARMENT_ANALYSIS_BRANCH_TOKENS,
+    GARMENT_ANALYSIS_BRANCHES,
 )
 
 _CLAIMABLE_STATUSES = ("pending", "retryable_failed")
@@ -322,6 +330,18 @@ class SqlAlchemyGarmentAnalysisRepository:
                 status=completion.status,
             )
         await self._session.flush()
+        provider = completion.invocation.provider if completion.invocation is not None else "none"
+        GARMENT_ANALYSIS_BRANCHES.labels(
+            branch=claim.branch.value, status=completion.status, provider=provider
+        ).inc()
+        if completion.invocation is not None and completion.invocation.latency_ms is not None:
+            GARMENT_ANALYSIS_BRANCH_LATENCY.labels(
+                branch=claim.branch.value, provider=provider
+            ).observe(completion.invocation.latency_ms / 1000)
+        if completion.invocation is not None and completion.invocation.total_tokens is not None:
+            GARMENT_ANALYSIS_BRANCH_TOKENS.labels(
+                branch=claim.branch.value, provider=provider
+            ).observe(completion.invocation.total_tokens)
         return True
 
     async def _append_branch_progress_event(
@@ -466,7 +486,6 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
         )
         from fabricassist.domain.garment_analysis.stain_policy import validate_stain_treatment
         from fabricassist.infrastructure.persistence.models import (
-            CareResult,
             EvidenceConflictRecord,
             EvidenceCorrection,
             EvidenceDossier,
@@ -540,6 +559,9 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
                                 **report.payload,
                                 "stain": validated.model_dump(mode="json"),
                             }
+            await self._publish_active_result(
+                revision=revision, care_result=existing, outcome=existing.status
+            )
             return FabricAssistAnalysisResult(
                 reference=reference,
                 status=existing.status,
@@ -565,6 +587,12 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
         if label_row.status == "permanent_failed":
             revision.status = "failed"
             revision.finalized_at = datetime.now(UTC)
+            scan = await self._session.get(Scan, revision.scan_id, with_for_update=True)
+            if scan is not None:
+                scan.status = "failed"
+                scan.analysis_stage = "failed"
+                scan.analysis_error_code = "LABEL_EXTRACTION_FAILED"
+                scan.progress_percent = 100
             return FabricAssistAnalysisResult(reference=reference, status="failed")
         inspection_row = branches[AnalysisBranch.GARMENT_INSPECTION.value]
         inspection = (
@@ -760,11 +788,52 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
         revision.merged_schema_version = result.assessment.schema_version
         revision.care_policy_version = result.care_policy.care_policy_version
         revision.finalized_at = datetime.now(UTC)
+        await self._publish_active_result(
+            revision=revision,
+            care_result=care_result,
+            outcome=result.care_policy.outcome.value,
+        )
         return FabricAssistAnalysisResult(
             reference=reference,
             status=care_result.status,
             canonical_data=care_result.canonical_data,
         )
+
+    async def _publish_active_result(
+        self,
+        *,
+        revision: AnalysisRevision,
+        care_result: CareResult,
+        outcome: str,
+    ) -> None:
+        """Advance only the v2 active pointers after canonical persistence.
+
+        The result row and revision are locked by ``finalize_if_ready``; the scan
+        lock makes duplicate finalization deliveries deterministic and keeps the
+        GraphQL projection from observing a legacy rendered answer.
+        """
+        scan = await self._session.get(Scan, revision.scan_id, with_for_update=True)
+        if scan is None:
+            return
+        scan.active_analysis_revision_id = revision.id
+        scan.active_result_id = care_result.id
+        scan.analysis_stage = "completed"
+        scan.progress_percent = 100
+        scan.analysis_error_code = None
+        scan.status = {
+            "passed": "completed",
+            "passed_with_warnings": "completed",
+            "needs_better_image": "needs_better_image",
+            "needs_review": "needs_review",
+            "blocked": "needs_review",
+        }.get(outcome, "failed")
+        if scan.status != "completed":
+            scan.analysis_error_code = outcome.upper()
+        if revision.garment_id is not None:
+            garment = await self._session.get(Garment, revision.garment_id, with_for_update=True)
+            if garment is not None:
+                garment.active_analysis_revision_id = revision.id
+                garment.active_result_id = care_result.id
 
 
 class SqlAlchemyGarmentAnalysisFinalizationStore:
