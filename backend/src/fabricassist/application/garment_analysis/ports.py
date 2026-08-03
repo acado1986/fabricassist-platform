@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
 from typing import Protocol
 from uuid import UUID
 
@@ -82,3 +85,82 @@ class ImageAssetRepository(Protocol):
     async def image_ids_for_revision(
         self, *, tenant_id: UUID, revision_id: UUID
     ) -> tuple[UUID, ...]: ...
+
+
+@dataclass(frozen=True)
+class BranchClaim:
+    """A branch lease returned only to the worker that atomically acquired it."""
+
+    branch_result_id: UUID
+    branch: AnalysisBranch
+    attempt_number: int
+    claim_token: UUID
+
+
+@dataclass(frozen=True)
+class BranchState:
+    branch_result_id: UUID
+    branch: AnalysisBranch
+    status: str
+    attempt_count: int
+    lease_expires_at: datetime | None
+
+
+@dataclass(frozen=True)
+class BranchInvocation:
+    """Safe, normalized usage metadata for a single provider call."""
+
+    provider: str
+    model: str
+    prompt_version: str
+    schema_version: str
+    request_fingerprint: str
+    image_count: int
+    role_counts: Mapping[str, int]
+    latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_tokens: int | None = None
+    thought_tokens: int | None = None
+    tool_tokens: int | None = None
+    response_model_version: str | None = None
+    estimated_cost_usd: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class BranchCompletion:
+    """Validated terminal branch data; provider objects never cross this port."""
+
+    status: str
+    result_payload: Mapping[str, object] | None = None
+    uncertain_fields: tuple[str, ...] = ()
+    overall_confidence: int | None = None
+    error_category: str | None = None
+    invocation: BranchInvocation | None = None
+
+
+class BranchStateRepository(Protocol):
+    """Durable branch state with transaction ownership left to the caller."""
+
+    async def claim_branch(
+        self,
+        *,
+        tenant_id: UUID,
+        revision_id: UUID,
+        branch: AnalysisBranch,
+        request_fingerprint: str,
+        lease_seconds: int,
+    ) -> BranchClaim | None: ...
+
+    async def branch_states(
+        self, *, tenant_id: UUID, revision_id: UUID
+    ) -> tuple[BranchState, ...]: ...
+
+    async def complete_branch(
+        self,
+        *,
+        tenant_id: UUID,
+        claim: BranchClaim,
+        completion: BranchCompletion,
+    ) -> bool: ...

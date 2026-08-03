@@ -462,9 +462,12 @@ any network request.
 - revision number and parent/superseded revision nullable
 - triggering image IDs and evidence-delta metadata
 - status, active flag/pointer, created/finalized timestamps
+- pinned module/workflow, merged-schema, care/confidence/retry-policy versions,
+  and materially effective feature flags
 
-Prior revisions are never overwritten. Incremental extraction may process only
-new images, while activation requires validation of the fully merged dossier and
+Prior revisions are never overwritten. A delivery always resumes the workflow
+version pinned on its revision rather than adopting changed deployment settings.
+Incremental extraction may process only new images, while activation requires validation of the fully merged dossier and
 plan.
 
 #### `garment_observations`
@@ -494,23 +497,39 @@ a performed/completed service event exists.
 
 Index exact SHA-256. Perceptual hash lookup may initially use a narrowed candidate set and Hamming distance in application code; optimize only after measuring volume.
 
+#### `analysis_branch_results`
+
+- tenant and analysis-revision IDs, stable branch name, and unique
+  `(analysis_revision_id, branch_name)` constraint
+- normalized state (`pending`, `running`, `completed`, failure/input states),
+  attempt count capped at two, opaque claim token, and lease timestamps
+- provider/model/prompt/schema/preprocessing versions, request fingerprint,
+  confidence, uncertainty paths, validated result JSONB, and safe error category
+- started/completed timestamps
+
+This is the sole durable execution and business-read authority for a v2 branch.
+The claim token prevents a stale worker response from overwriting a branch after
+another delivery has reclaimed an expired lease. It stores validated JSON only,
+never framework checkpoints or provider SDK objects.
+
+#### `behavior_versions`
+
+- tenant ID, immutable behavior type/version/checksum, active or retired state,
+  and creation time
+
+This registry tracks module, workflow, prompt, schema, preprocessing, policy,
+and materially effective feature-flag assets that are not rulesets.
+
 #### `model_runs`
 
-- `id UUID PK`
-- `scan_id UUID FK`
-- `provider`
-- `model`
-- `operation`
-- `prompt_version`
-- `schema_version`
-- request fingerprint
-- latency
-- input/output token counts nullable
-- estimated cost nullable
-- status and error category
-- timestamps
+- `id UUID PK`, tenant/scan IDs, nullable analysis-revision and branch-result IDs
+- provider/model/operation, prompt/schema/response-model versions, and request fingerprint
+- retry number, image count, routed role counts, latency, input/output/total,
+  cached/thought/tool token counts, estimated cost, status/error, and completion time
 
-Do not store secret headers or raw presigned URLs.
+`model_runs` is immutable provider-usage audit data. It is linked to, but never
+supersedes, `analysis_branch_results` as branch-state authority. Do not store
+secret headers, raw provider objects, or raw presigned URLs.
 
 #### `label_extractions`
 

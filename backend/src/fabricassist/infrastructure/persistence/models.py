@@ -381,7 +381,14 @@ class AnalysisRevision(Base):
     __tablename__ = "analysis_revisions"
     __table_args__ = (
         UniqueConstraint("scan_id", "revision_number", name="uq_analysis_revisions_scan_number"),
+        CheckConstraint(
+            "char_length(module_version) >= 1", name="ck_analysis_revisions_module_version"
+        ),
+        CheckConstraint(
+            "char_length(workflow_version) >= 1", name="ck_analysis_revisions_workflow_version"
+        ),
         Index("ix_analysis_revisions_tenant_id", "tenant_id"),
+        Index("ix_analysis_revisions_tenant_workflow", "tenant_id", "workflow_version"),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -398,6 +405,29 @@ class AnalysisRevision(Base):
         Uuid, ForeignKey("analysis_revisions.id", ondelete="SET NULL")
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="processing")
+    # Values are pinned at revision creation so redelivery cannot adopt changed settings.
+    module_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="garment-analysis-v1"
+    )
+    workflow_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="garment-analysis-v1"
+    )
+    merged_schema_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    care_policy_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    confidence_policy_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    retry_policy_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    effective_feature_flags: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -416,9 +446,114 @@ class RevisionImage(Base):
     )
 
 
+class AnalysisBranchResult(Base):
+    """The sole durable state for a garment-analysis provider branch.
+
+    The lease token prevents a stale worker from completing work reclaimed by a
+    later delivery. Result payloads are validated JSON, never provider SDK objects.
+    """
+
+    __tablename__ = "analysis_branch_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "analysis_revision_id", "branch_name", name="uq_analysis_branch_revision_name"
+        ),
+        CheckConstraint(
+            "branch_name IN ('garment_inspection', 'label_extraction', 'stain_treatment')",
+            name="ck_analysis_branch_results_name",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'retryable_failed', "
+            "'permanent_failed', 'needs_input', 'not_provided')",
+            name="ck_analysis_branch_results_status",
+        ),
+        CheckConstraint(
+            "attempt_count BETWEEN 0 AND 2", name="ck_analysis_branch_results_attempt_count"
+        ),
+        CheckConstraint(
+            "overall_confidence BETWEEN 0 AND 100 OR overall_confidence IS NULL",
+            name="ck_analysis_branch_results_confidence",
+        ),
+        CheckConstraint(
+            "(status = 'running' AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL) "
+            "OR (status <> 'running' AND claim_token IS NULL)",
+            name="ck_analysis_branch_results_lease_state",
+        ),
+        CheckConstraint(
+            "status <> 'completed' OR result_payload IS NOT NULL",
+            name="ck_analysis_branch_results_completed_payload",
+        ),
+        Index("ix_analysis_branch_results_tenant_status", "tenant_id", "status"),
+        Index("ix_analysis_branch_results_revision_status", "analysis_revision_id", "status"),
+        Index("ix_analysis_branch_results_lease", "status", "lease_expires_at"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    branch_name: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    claim_token: Mapped[UUID | None] = mapped_column(Uuid)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    provider: Mapped[str | None] = mapped_column(String(100))
+    model: Mapped[str | None] = mapped_column(String(200))
+    prompt_version: Mapped[str | None] = mapped_column(String(100))
+    schema_version: Mapped[str | None] = mapped_column(String(100))
+    preprocessing_version: Mapped[str | None] = mapped_column(String(100))
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    overall_confidence: Mapped[int | None] = mapped_column(Integer)
+    uncertain_fields: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    result_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_category: Mapped[str | None] = mapped_column(String(100))
+    started_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class BehaviorVersion(Base):
+    """Immutable registry for workflow behavior assets outside ruleset_versions."""
+
+    __tablename__ = "behavior_versions"
+    __table_args__ = (
+        CheckConstraint(
+            "behavior_type IN ('module', 'workflow', 'prompt', 'schema', 'preprocessing', "
+            "'confidence_policy', 'retry_policy', 'stain_policy', 'feature_flags')",
+            name="ck_behavior_versions_type",
+        ),
+        CheckConstraint("status IN ('active', 'retired')", name="ck_behavior_versions_status"),
+        UniqueConstraint(
+            "tenant_id", "behavior_type", "version", name="uq_behavior_versions_tenant_type_version"
+        ),
+        Index("ix_behavior_versions_tenant_type", "tenant_id", "behavior_type"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    behavior_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    version: Mapped[str] = mapped_column(String(100), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
 class ModelRun(Base):
     __tablename__ = "model_runs"
-    __table_args__ = (Index("ix_model_runs_tenant_scan", "tenant_id", "scan_id"),)
+    __table_args__ = (
+        Index("ix_model_runs_tenant_scan", "tenant_id", "scan_id"),
+        Index("ix_model_runs_revision_branch", "analysis_revision_id", "analysis_branch_result_id"),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
@@ -426,6 +561,15 @@ class ModelRun(Base):
     scan_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
     )
+    analysis_revision_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE")
+    )
+    analysis_branch_result_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_branch_results.id", ondelete="CASCADE")
+    )
+    retry_number: Mapped[int | None] = mapped_column(Integer)
+    image_count: Mapped[int | None] = mapped_column(Integer)
+    role_counts: Mapped[dict[str, int] | None] = mapped_column(JSONB)
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -436,8 +580,14 @@ class ModelRun(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    cached_tokens: Mapped[int | None] = mapped_column(Integer)
+    thought_tokens: Mapped[int | None] = mapped_column(Integer)
+    tool_tokens: Mapped[int | None] = mapped_column(Integer)
+    response_model_version: Mapped[str | None] = mapped_column(String(100))
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     error_category: Mapped[str | None] = mapped_column(String(100))
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )

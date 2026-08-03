@@ -104,7 +104,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0022"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0023"
 
     reset_database(engine)
     command.upgrade(config, "20260729_0018")
@@ -124,6 +124,30 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     assert {
         "ix_analysis_job_operations_unpublished",
     } <= {index["name"] for index in current.get_indexes("analysis_job_operations")}
+    assert {"analysis_branch_results", "behavior_versions"} <= set(current.get_table_names())
+    assert {
+        "module_version",
+        "workflow_version",
+        "merged_schema_version",
+        "care_policy_version",
+        "confidence_policy_version",
+        "retry_policy_version",
+        "effective_feature_flags",
+        "finalized_at",
+    } <= {column["name"] for column in current.get_columns("analysis_revisions")}
+    assert {
+        "analysis_revision_id",
+        "analysis_branch_result_id",
+        "retry_number",
+        "image_count",
+        "role_counts",
+        "total_tokens",
+        "cached_tokens",
+        "thought_tokens",
+        "tool_tokens",
+        "response_model_version",
+        "completed_at",
+    } <= {column["name"] for column in current.get_columns("model_runs")}
     assert {
         "viewpoint",
         "label_scope",
@@ -147,7 +171,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0022"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0023"
     engine.dispose()
 
 

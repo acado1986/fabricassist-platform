@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.infrastructure.persistence.models import (
+    AnalysisBranchResult,
     CanonicalPlanCache,
     ConversationMessage,
     EvidenceCacheEntry,
@@ -114,13 +115,27 @@ async def durable_metrics(session: AsyncSession) -> bytes:
         ).all():
             lines.append(_sample(metric_name, count, status=status))
 
-    model_count, latency_sum, input_tokens, output_tokens, cost = (
+    lines.extend(
+        [
+            "# HELP fabricassist_analysis_branches_durable_total Durable branch state by status.",
+            "# TYPE fabricassist_analysis_branches_durable_total gauge",
+        ]
+    )
+    for status, count in (
+        await session.execute(
+            select(AnalysisBranchResult.status, func.count()).group_by(AnalysisBranchResult.status)
+        )
+    ).all():
+        lines.append(_sample("fabricassist_analysis_branches_durable_total", count, status=status))
+
+    model_count, latency_sum, input_tokens, output_tokens, total_tokens, cost = (
         await session.execute(
             select(
                 func.count(ModelRun.id),
                 func.coalesce(func.sum(ModelRun.latency_ms), 0),
                 func.coalesce(func.sum(ModelRun.input_tokens), 0),
                 func.coalesce(func.sum(ModelRun.output_tokens), 0),
+                func.coalesce(func.sum(ModelRun.total_tokens), 0),
                 func.coalesce(func.sum(ModelRun.estimated_cost_usd), 0),
             )
         )
@@ -139,6 +154,9 @@ async def durable_metrics(session: AsyncSession) -> bytes:
             "# HELP fabricassist_model_output_tokens_total Persisted output token usage.",
             "# TYPE fabricassist_model_output_tokens_total counter",
             _sample("fabricassist_model_output_tokens_total", output_tokens),
+            "# HELP fabricassist_model_total_tokens_total Persisted total model token usage.",
+            "# TYPE fabricassist_model_total_tokens_total counter",
+            _sample("fabricassist_model_total_tokens_total", total_tokens),
             "# HELP fabricassist_model_estimated_cost_usd_total Persisted estimated model cost.",
             "# TYPE fabricassist_model_estimated_cost_usd_total counter",
             _sample(

@@ -12,6 +12,13 @@ from fabricassist.application.garment_analysis.commands import (
     ResumeGarmentAnalysis,
     StartGarmentAnalysis,
 )
+from fabricassist.application.garment_analysis.ports import (
+    BranchClaim,
+    BranchCompletion,
+    BranchInvocation,
+    BranchState,
+    BranchStateRepository,
+)
 from fabricassist.application.garment_analysis.queries import (
     AnalysisProgress,
     AnalysisReference,
@@ -29,7 +36,12 @@ __all__ = [
     "AnalysisBranch",
     "AnalysisProgress",
     "AnalysisReference",
+    "BranchClaim",
+    "BranchCompletion",
+    "BranchInvocation",
     "BranchProgress",
+    "BranchState",
+    "BranchStateRepository",
     "CleaningEvent",
     "DefaultGarmentAnalysisService",
     "FabricAssistAnalysisResult",
