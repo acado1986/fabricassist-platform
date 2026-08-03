@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fabricassist.application.garment_analysis import (
     AnalysisBranch,
+    AnalysisReference,
     BranchClaim,
     BranchCompletion,
     BranchState,
@@ -426,4 +427,273 @@ class SqlAlchemyGarmentAnalysisBranchStore:
                 run_id=run_id,
                 revision_id=revision_id,
                 branch=branch,
+            )
+
+
+class SqlAlchemyGarmentAnalysisFinalizationRepository:
+    """Finalize a settled v2 revision in one transaction without provider calls.
+
+    This adapter is intentionally not composed into production until the Phase 10
+    cutover.  Its idempotent `CareResult` lookup makes a duplicate finalization
+    delivery return the immutable first result rather than rewriting evidence.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def finalize_if_ready(self, *, reference: AnalysisReference):
+        from fabricassist.application.garment_analysis import FabricAssistAnalysisResult
+        from fabricassist.domain.garment_analysis.cleaning_history import (
+            CleaningOutcome,
+            ServiceLifecycleKind,
+        )
+        from fabricassist.domain.garment_analysis.cleaning_history import (
+            GarmentServiceEvent as DomainServiceEvent,
+        )
+        from fabricassist.domain.garment_analysis.finalization import finalize_analysis
+        from fabricassist.domain.garment_analysis.models import (
+            BranchReference,
+            ConflictSeverity,
+            CorrectionConfirmation,
+            CorrectionSource,
+            GarmentInspection,
+            LabelExtraction,
+        )
+        from fabricassist.domain.garment_analysis.models import (
+            EvidenceCorrection as DomainEvidenceCorrection,
+        )
+        from fabricassist.infrastructure.persistence.models import (
+            CareResult,
+            EvidenceConflictRecord,
+            EvidenceCorrection,
+            EvidenceDossier,
+            GarmentServiceEvent,
+            ProposedPlan,
+            ValidationReport,
+        )
+
+        revision = await self._session.scalar(
+            select(AnalysisRevision)
+            .where(
+                AnalysisRevision.id == reference.revision_id,
+                AnalysisRevision.tenant_id == reference.tenant_id,
+            )
+            .with_for_update()
+        )
+        if revision is None:
+            return None
+        existing = await self._session.scalar(
+            select(CareResult).where(
+                CareResult.tenant_id == reference.tenant_id,
+                CareResult.analysis_revision_id == revision.id,
+            )
+        )
+        if existing is not None:
+            return FabricAssistAnalysisResult(
+                reference=reference,
+                status=existing.status,
+                canonical_data=existing.canonical_data,
+            )
+        rows = list(
+            (
+                await self._session.scalars(
+                    select(AnalysisBranchResult).where(
+                        AnalysisBranchResult.tenant_id == reference.tenant_id,
+                        AnalysisBranchResult.analysis_revision_id == revision.id,
+                    )
+                )
+            ).all()
+        )
+        branches = {row.branch_name: row for row in rows}
+        required = {AnalysisBranch.GARMENT_INSPECTION.value, AnalysisBranch.LABEL_EXTRACTION.value}
+        if not required.issubset(branches) or any(
+            branches[name].status in {"pending", "running", "retryable_failed"} for name in required
+        ):
+            return None
+        label_row = branches[AnalysisBranch.LABEL_EXTRACTION.value]
+        if label_row.status == "permanent_failed":
+            revision.status = "failed"
+            revision.finalized_at = datetime.now(UTC)
+            return FabricAssistAnalysisResult(reference=reference, status="failed")
+        inspection_row = branches[AnalysisBranch.GARMENT_INSPECTION.value]
+        inspection = (
+            GarmentInspection.model_validate(inspection_row.result_payload)
+            if inspection_row.status == "completed" and inspection_row.result_payload is not None
+            else None
+        )
+        label = (
+            LabelExtraction.model_validate(label_row.result_payload)
+            if label_row.status == "completed" and label_row.result_payload is not None
+            else None
+        )
+        history: tuple[DomainServiceEvent, ...] = ()
+        if revision.garment_id is not None:
+            event_rows = list(
+                (
+                    await self._session.scalars(
+                        select(GarmentServiceEvent).where(
+                            GarmentServiceEvent.tenant_id == reference.tenant_id,
+                            GarmentServiceEvent.garment_id == revision.garment_id,
+                        )
+                    )
+                ).all()
+            )
+            history = tuple(
+                DomainServiceEvent(
+                    event_id=row.id,
+                    garment_id=row.garment_id,
+                    exact_garment_confirmed=row.exact_garment_confirmed,
+                    lifecycle_kind=ServiceLifecycleKind(row.kind),
+                    outcome=CleaningOutcome(row.outcome),
+                    method=row.method,
+                    water_temperature_c=row.water_temperature_c,
+                    cycle=row.cycle,
+                    detergent_category=row.detergent_category,
+                    detergent_text=row.detergent_text,
+                    stain_products=tuple(row.stain_products),
+                    drying_method=row.drying_method,
+                    ironing_method=row.ironing_method,
+                    observed_effects=tuple(row.observed_effects),
+                    confirmed_by=row.confirmed_by,
+                    occurred_at=row.occurred_at,
+                    detail_schema_version=row.detail_schema_version,
+                    detail_snapshot=row.detail_snapshot,
+                    invalidated=row.invalidated,
+                    superseded_by_event_id=row.superseded_by_event_id,
+                )
+                for row in event_rows
+            )
+        correction_rows = list(
+            (
+                await self._session.scalars(
+                    select(EvidenceCorrection).where(
+                        EvidenceCorrection.tenant_id == reference.tenant_id,
+                        EvidenceCorrection.corrected_revision_id == revision.id,
+                        EvidenceCorrection.confirmation == "accepted",
+                        EvidenceCorrection.field_path != "unknown",
+                    )
+                )
+            ).all()
+        )
+        corrections = tuple(
+            DomainEvidenceCorrection(
+                correction_id=row.id,
+                revision_id=revision.id,
+                field_path=row.field_path,
+                previous_value=row.previous_value,
+                corrected_value=row.corrected_value,
+                source_image_id=row.source_image_id,
+                source=CorrectionSource(row.source),
+                reason=row.reason,
+                confirmation=CorrectionConfirmation(row.confirmation),
+                supersedes_correction_id=row.supersedes_correction_id,
+            )
+            for row in correction_rows
+        )
+        result = finalize_analysis(
+            revision_id=revision.id,
+            branch_references=tuple(
+                BranchReference(
+                    branch_name=row.branch_name,
+                    result_id=row.id,
+                    schema_version=row.schema_version or "unknown",
+                )
+                for row in rows
+                if row.status == "completed" and row.result_payload is not None
+            ),
+            garment_inspection=inspection,
+            label_extraction=label,
+            history=history,
+            corrections=corrections,
+            versions={
+                "module": revision.module_version,
+                "workflow": revision.workflow_version,
+                "confidence_policy": revision.confidence_policy_version,
+                "retry_policy": revision.retry_policy_version,
+            },
+        )
+        dossier = EvidenceDossier(
+            id=uuid4(),
+            tenant_id=reference.tenant_id,
+            analysis_revision_id=revision.id,
+            payload=result.assessment.model_dump(mode="json"),
+        )
+        proposal = ProposedPlan(
+            id=uuid4(),
+            tenant_id=reference.tenant_id,
+            analysis_revision_id=revision.id,
+            retry_number=0,
+            payload={
+                "schema_version": "deterministic-care-proposal-v2",
+                "care_policy": result.care_policy.model_dump(mode="json"),
+                "recommendation": result.recommendation.model_dump(mode="json"),
+            },
+        )
+        self._session.add_all((dossier, proposal))
+        await self._session.flush()
+        report = ValidationReport(
+            id=uuid4(),
+            tenant_id=reference.tenant_id,
+            proposed_plan_id=proposal.id,
+            payload={
+                "schema_version": "deterministic-care-validation-v2",
+                "outcome": result.care_policy.outcome.value,
+                "warnings": list(result.care_policy.warnings),
+                "conflicts": [
+                    conflict.model_dump(mode="json") for conflict in result.care_policy.conflicts
+                ],
+                "policy_version": result.care_policy.care_policy_version,
+                "policy_checksum": result.care_policy.policy_checksum,
+            },
+        )
+        self._session.add(report)
+        await self._session.flush()
+        canonical = result.model_dump(mode="json")
+        care_result = CareResult(
+            id=uuid4(),
+            tenant_id=reference.tenant_id,
+            analysis_revision_id=revision.id,
+            dossier_id=dossier.id,
+            proposed_plan_id=proposal.id,
+            validation_report_id=report.id,
+            status=result.care_policy.outcome.value,
+            canonical_data={"garment_analysis_result": canonical},
+        )
+        self._session.add(care_result)
+        for conflict in result.assessment.conflicts:
+            self._session.add(
+                EvidenceConflictRecord(
+                    id=conflict.conflict_id,
+                    tenant_id=reference.tenant_id,
+                    analysis_revision_id=revision.id,
+                    field_path=conflict.field_path,
+                    values=list(conflict.values),
+                    evidence=[item.model_dump(mode="json") for item in conflict.evidence],
+                    selected_value=conflict.selected_value,
+                    resolution_code=conflict.resolution_code,
+                    explanation_key=conflict.explanation_key,
+                    safety_critical=conflict.severity is ConflictSeverity.SAFETY,
+                )
+            )
+        revision.status = result.care_policy.outcome.value
+        revision.merged_schema_version = result.assessment.schema_version
+        revision.care_policy_version = result.care_policy.care_policy_version
+        revision.finalized_at = datetime.now(UTC)
+        return FabricAssistAnalysisResult(
+            reference=reference,
+            status=care_result.status,
+            canonical_data=care_result.canonical_data,
+        )
+
+
+class SqlAlchemyGarmentAnalysisFinalizationStore:
+    """Transaction-per-call wrapper used by parallel/re-delivered workflows."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def finalize_if_ready(self, *, reference: AnalysisReference):
+        async with self._session_factory() as session, session.begin():
+            return await SqlAlchemyGarmentAnalysisFinalizationRepository(session).finalize_if_ready(
+                reference=reference
             )

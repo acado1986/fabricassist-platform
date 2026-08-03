@@ -264,3 +264,107 @@ def test_branch_claims_are_tenant_scoped_and_transactional() -> None:
             await database.close()
 
     asyncio.run(scenario())
+
+
+def test_deterministic_finalization_is_idempotent_and_never_needs_a_planning_run() -> None:
+    assert TEST_DATABASE_URL is not None
+
+    async def scenario() -> None:
+        from fabricassist.application.garment_analysis.queries import AnalysisReference
+        from fabricassist.domain.garment_analysis.models import (
+            EvidenceCertainty,
+            EvidenceSourceKind,
+            FieldEvidence,
+            LabelExtraction,
+            Permission,
+            WashInstruction,
+        )
+        from fabricassist.infrastructure.garment_analysis.persistence import (
+            SqlAlchemyGarmentAnalysisFinalizationRepository,
+        )
+        from fabricassist.infrastructure.persistence.models import CareResult
+
+        database = Database(_test_database_url())
+        try:
+            tenant_id, scan_id, revision_id = await _create_revision(database)
+            label_evidence = FieldEvidence(
+                field_path="care.wash",
+                source_kind=EvidenceSourceKind.PHOTOGRAPHED_LABEL,
+                source_image_ids=(uuid4(),),
+                certainty=EvidenceCertainty.OBSERVED,
+                confidence=99,
+            )
+            label = LabelExtraction(
+                wash=WashInstruction(
+                    permission=Permission.ALLOWED,
+                    maximum_temperature_c=30,
+                    evidence=label_evidence,
+                ),
+                overall_confidence=99,
+            )
+            async with database.session_factory() as session, session.begin():
+                session.add_all(
+                    (
+                        AnalysisBranchResult(
+                            id=uuid4(),
+                            tenant_id=tenant_id,
+                            analysis_revision_id=revision_id,
+                            branch_name="garment_inspection",
+                            status="not_provided",
+                            attempt_count=0,
+                            uncertain_fields=[],
+                        ),
+                        AnalysisBranchResult(
+                            id=uuid4(),
+                            tenant_id=tenant_id,
+                            analysis_revision_id=revision_id,
+                            branch_name="label_extraction",
+                            status="completed",
+                            attempt_count=1,
+                            schema_version="label-extraction-v2",
+                            result_payload=label.model_dump(mode="json"),
+                            uncertain_fields=[],
+                        ),
+                    )
+                )
+            reference = AnalysisReference(
+                tenant_id=tenant_id,
+                scan_id=scan_id,
+                run_id=uuid4(),
+                revision_id=revision_id,
+            )
+            async with database.session_factory() as session, session.begin():
+                first = await SqlAlchemyGarmentAnalysisFinalizationRepository(
+                    session
+                ).finalize_if_ready(reference=reference)
+                assert first is not None
+                assert first.status == "passed"
+                assert "garment_analysis_result" in first.canonical_data
+            async with database.session_factory() as session, session.begin():
+                second = await SqlAlchemyGarmentAnalysisFinalizationRepository(
+                    session
+                ).finalize_if_ready(reference=reference)
+                assert second is not None
+                assert second.canonical_data == first.canonical_data
+            async with database.session_factory() as session:
+                assert (
+                    await session.scalar(
+                        select(func.count(CareResult.id)).where(
+                            CareResult.analysis_revision_id == revision_id
+                        )
+                    )
+                    == 1
+                )
+                assert (
+                    await session.scalar(
+                        select(func.count(ModelRun.id)).where(
+                            ModelRun.analysis_revision_id == revision_id,
+                            ModelRun.operation == "care_planning",
+                        )
+                    )
+                    == 0
+                )
+        finally:
+            await database.close()
+
+    asyncio.run(scenario())

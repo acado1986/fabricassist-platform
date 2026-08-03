@@ -208,11 +208,13 @@ def _workflow(
     *,
     lease_seconds: int = 10,
     timeout_seconds: float = 1,
+    finalization_repository: object | None = None,
 ) -> AsyncioGarmentAnalysisWorkflow:
     return AsyncioGarmentAnalysisWorkflow(
         branch_repository=repository,
         image_repository=images,
         provider=provider,
+        finalization_repository=finalization_repository,  # type: ignore[arg-type]
         policy=GarmentAnalysisWorkflowPolicy(
             lease_seconds=lease_seconds,
             branch_timeout_seconds=timeout_seconds,
@@ -249,6 +251,43 @@ async def test_required_branches_start_concurrently_and_return_only_progress() -
         AnalysisBranch.LABEL_EXTRACTION,
     }
     assert all(stored.status == "completed" for stored in repository.branches.values())
+
+
+class RecordingFinalizationRepository:
+    def __init__(self) -> None:
+        self.references: list[AnalysisReference] = []
+
+    async def finalize_if_ready(self, *, reference: AnalysisReference):
+        from fabricassist.application.garment_analysis.queries import FabricAssistAnalysisResult
+
+        self.references.append(reference)
+        return FabricAssistAnalysisResult(
+            reference=reference,
+            status="passed",
+            canonical_data={"kind": "deterministic"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_settled_required_branches_finalize_without_a_planning_call() -> None:
+    repository = InMemoryBranchRepository()
+    provider = RecordingProvider()
+    finalization = RecordingFinalizationRepository()
+    reference = _reference()
+
+    result = await _workflow(
+        repository,
+        InMemoryImageRepository(_images()),
+        provider,
+        finalization_repository=finalization,
+    ).execute(_execute_request(reference))
+
+    assert result.status == "passed"
+    assert finalization.references == [reference]
+    assert provider.calls == [
+        (AnalysisBranch.GARMENT_INSPECTION, 1),
+        (AnalysisBranch.LABEL_EXTRACTION, 1),
+    ]
 
 
 @pytest.mark.asyncio

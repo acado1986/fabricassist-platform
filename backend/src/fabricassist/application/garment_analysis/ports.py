@@ -150,6 +150,14 @@ class CorrectionRepository(Protocol):
     async def record_correction(self, command: RecordAnalysisCorrection) -> AnalysisReference: ...
 
 
+class FinalizationRepository(Protocol):
+    """Atomically persist a deterministic v2 result once required branches settle."""
+
+    async def finalize_if_ready(
+        self, *, reference: AnalysisReference
+    ) -> FabricAssistAnalysisResult | None: ...
+
+
 class ImageAssetRepository(Protocol):
     """Load only authorized, already-routed normalized images for a branch.
 

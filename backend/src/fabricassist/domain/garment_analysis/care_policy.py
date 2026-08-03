@@ -119,8 +119,29 @@ def _instruction_actions(assessment: MergedGarmentAssessment) -> list[CareAction
         )
 
     for code, instruction, temperature, process, professional_only in (
-        ("bleach", label.bleach, None, None, False),
-        ("tumble_dry", label.tumble_dry, None, None, False),
+        (
+            "bleach",
+            label.bleach,
+            None,
+            label.bleach.allowed_type.value if label.bleach else None,
+            False,
+        ),
+        (
+            "tumble_dry",
+            label.tumble_dry,
+            None,
+            label.tumble_dry.heat.value if label.tumble_dry else None,
+            False,
+        ),
+        (
+            "natural_dry",
+            label.natural_drying,
+            None,
+            ",".join(method.value for method in label.natural_drying.methods)
+            if label.natural_drying
+            else None,
+            False,
+        ),
         (
             "iron",
             label.ironing,

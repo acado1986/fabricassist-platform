@@ -23,6 +23,7 @@ from fabricassist.application.garment_analysis.ports import (
     BranchReanalysisRequest,
     BranchState,
     BranchStateRepository,
+    FinalizationRepository,
     GarmentAnalysisRequest,
     GarmentInspectionRequest,
     GarmentVisionProvider,
@@ -92,11 +93,13 @@ class AsyncioGarmentAnalysisWorkflow:
         branch_repository: BranchStateRepository,
         image_repository: ImageAssetRepository,
         provider: GarmentVisionProvider,
+        finalization_repository: FinalizationRepository | None = None,
         policy: GarmentAnalysisWorkflowPolicy | None = None,
     ) -> None:
         self._branch_repository = branch_repository
         self._image_repository = image_repository
         self._provider = provider
+        self._finalization_repository = finalization_repository
         self._policy = policy or GarmentAnalysisWorkflowPolicy()
 
     async def execute(self, request: GarmentAnalysisRequest) -> WorkflowResult:
@@ -113,6 +116,10 @@ class AsyncioGarmentAnalysisWorkflow:
 
     async def _run_required(self, reference: AnalysisReference) -> WorkflowResult:
         await self._run_branches(reference, _REQUIRED_BRANCHES)
+        if self._finalization_repository is not None:
+            finalized = await self._finalization_repository.finalize_if_ready(reference=reference)
+            if finalized is not None:
+                return finalized
         return await self._progress(reference)
 
     async def _run_branches(

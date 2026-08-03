@@ -733,8 +733,23 @@ class GarmentServiceEvent(Base):
         CheckConstraint(
             "kind IN ('planned', 'performed', 'completed')", name="ck_garment_service_events_kind"
         ),
+        CheckConstraint(
+            "outcome IN ('successful', 'damaging', 'unknown')",
+            name="ck_garment_service_events_outcome",
+        ),
+        CheckConstraint(
+            "water_temperature_c BETWEEN 10 AND 95 OR water_temperature_c IS NULL",
+            name="ck_garment_service_events_water_temperature",
+        ),
         Index("ix_garment_service_events_garment_created", "garment_id", "created_at"),
         Index("ix_garment_service_events_tenant_id", "tenant_id"),
+        Index(
+            "ix_garment_service_events_tenant_garment_outcome",
+            "tenant_id",
+            "garment_id",
+            "outcome",
+            "occurred_at",
+        ),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -746,6 +761,31 @@ class GarmentServiceEvent(Base):
     user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
+    method: Mapped[str] = mapped_column(String(80), nullable=False, server_default="unknown")
+    water_temperature_c: Mapped[int | None] = mapped_column(Integer)
+    cycle: Mapped[str | None] = mapped_column(String(80))
+    detergent_category: Mapped[str | None] = mapped_column(String(120))
+    detergent_text: Mapped[str | None] = mapped_column(String(500))
+    stain_products: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    drying_method: Mapped[str | None] = mapped_column(String(80))
+    ironing_method: Mapped[str | None] = mapped_column(String(80))
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False, server_default="unknown")
+    observed_effects: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    confirmed_by: Mapped[str] = mapped_column(String(80), nullable=False, server_default="unknown")
+    occurred_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    detail_schema_version: Mapped[str] = mapped_column(
+        String(80), nullable=False, server_default="service-event-v1"
+    )
+    detail_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    exact_garment_confirmed: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    invalidated: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    superseded_by_event_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garment_service_events.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -1178,14 +1218,27 @@ class EvidenceCorrection(Base):
 
     __tablename__ = "evidence_corrections"
     __table_args__ = (
+        CheckConstraint(
+            "source IN ('customer', 'operator', 'system')", name="ck_evidence_corrections_source"
+        ),
+        CheckConstraint(
+            "confirmation IN ('pending_review', 'accepted', 'rejected')",
+            name="ck_evidence_corrections_confirmation",
+        ),
         Index("ix_evidence_corrections_tenant_revision", "tenant_id", "corrected_revision_id"),
+        Index(
+            "ix_evidence_corrections_tenant_original_field",
+            "tenant_id",
+            "original_revision_id",
+            "field_path",
+        ),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
     )
-    review_case_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("review_cases.id", ondelete="CASCADE"), nullable=False
+    review_case_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("review_cases.id", ondelete="CASCADE")
     )
     original_revision_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("analysis_revisions.id", ondelete="RESTRICT"), nullable=False
@@ -1198,6 +1251,51 @@ class EvidenceCorrection(Base):
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     correction: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    field_path: Mapped[str] = mapped_column(String(160), nullable=False, server_default="unknown")
+    previous_value: Mapped[Any | None] = mapped_column(JSONB)
+    corrected_value: Mapped[Any | None] = mapped_column(JSONB)
+    source_image_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("scan_images.id", ondelete="SET NULL")
+    )
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="operator")
+    confirmation: Mapped[str] = mapped_column(String(20), nullable=False, server_default="accepted")
+    supersedes_correction_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("evidence_corrections.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class EvidenceConflictRecord(Base):
+    """Immutable v2 conflict projection; branch payloads remain untouched."""
+
+    __tablename__ = "evidence_conflicts"
+    __table_args__ = (
+        CheckConstraint("char_length(field_path) >= 1", name="ck_evidence_conflicts_field_path"),
+        UniqueConstraint(
+            "analysis_revision_id",
+            "field_path",
+            "resolution_code",
+            name="uq_evidence_conflicts_revision_field_resolution",
+        ),
+        Index("ix_evidence_conflicts_tenant_revision", "tenant_id", "analysis_revision_id"),
+        Index("ix_evidence_conflicts_tenant_safety", "tenant_id", "safety_critical"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    field_path: Mapped[str] = mapped_column(String(160), nullable=False)
+    values: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    selected_value: Mapped[Any | None] = mapped_column(JSONB)
+    resolution_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    explanation_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    safety_critical: Mapped[bool] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )

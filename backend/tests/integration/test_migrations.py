@@ -104,7 +104,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     command.upgrade(config, "20260721_0001")
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0023"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0024"
 
     reset_database(engine)
     command.upgrade(config, "20260729_0018")
@@ -125,6 +125,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
         "ix_analysis_job_operations_unpublished",
     } <= {index["name"] for index in current.get_indexes("analysis_job_operations")}
     assert {"analysis_branch_results", "behavior_versions"} <= set(current.get_table_names())
+    assert "evidence_conflicts" in current.get_table_names()
     assert {
         "module_version",
         "workflow_version",
@@ -162,6 +163,25 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
         "preprocessing_version",
         "normalized_object_key",
     } <= {column["name"] for column in current.get_columns("scan_images")}
+    assert {
+        "method",
+        "water_temperature_c",
+        "outcome",
+        "occurred_at",
+        "detail_schema_version",
+        "detail_snapshot",
+        "exact_garment_confirmed",
+        "invalidated",
+    } <= {column["name"] for column in current.get_columns("garment_service_events")}
+    assert {
+        "field_path",
+        "previous_value",
+        "corrected_value",
+        "source_image_id",
+        "source",
+        "confirmation",
+        "supersedes_correction_id",
+    } <= {column["name"] for column in current.get_columns("evidence_corrections")}
     command.downgrade(config, "20260729_0018")
     downgraded = inspect(engine)
     assert "dispatch_correlation_id" not in {
@@ -171,7 +191,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0023"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0024"
     engine.dispose()
 
 

@@ -214,3 +214,82 @@ def test_sensitive_confirmed_label_material_forces_review() -> None:
     )
     assert policy.outcome == ValidationOutcome.NEEDS_REVIEW
     assert "SENSITIVE_MATERIAL_REQUIRES_REVIEW" in policy.warnings
+
+
+def test_finalization_preserves_history_conflicts_but_label_limits_win() -> None:
+    from fabricassist.domain.garment_analysis.finalization import finalize_analysis
+    from fabricassist.domain.garment_analysis.models import (
+        BranchReference,
+        TumbleDryInstruction,
+    )
+
+    no_tumble = TumbleDryInstruction(
+        permission=Permission.PROHIBITED,
+        evidence=evidence("care.tumble_dry.permission"),
+    )
+    label = LabelExtraction(
+        wash=WashInstruction(
+            permission=Permission.ALLOWED,
+            maximum_temperature_c=30,
+            evidence=evidence("care.wash"),
+        ),
+        tumble_dry=no_tumble,
+        overall_confidence=99,
+    )
+    historical = GarmentServiceEvent(
+        event_id=uuid4(),
+        garment_id=uuid4(),
+        exact_garment_confirmed=True,
+        lifecycle_kind=ServiceLifecycleKind.COMPLETED,
+        outcome=CleaningOutcome.SUCCESSFUL,
+        method="water_wash",
+        water_temperature_c=40,
+        drying_method="tumble_dry",
+        confirmed_by="operator",
+        occurred_at=datetime.now(UTC),
+        detail_schema_version="service-event-v2",
+    )
+    result = finalize_analysis(
+        revision_id=uuid4(),
+        branch_references=(
+            BranchReference(
+                branch_name="label_extraction", result_id=uuid4(), schema_version="label-v2"
+            ),
+        ),
+        garment_inspection=None,
+        label_extraction=label,
+        history=(historical,),
+    )
+
+    selected = {item.field_path: item.value for item in result.assessment.selected_facts}
+    assert selected["care.wash.maximum_temperature_c"] == 30
+    assert selected["care.tumble_dry.permission"] == "prohibited"
+    assert result.care_policy.action("water_wash").maximum_temperature_c == 30  # type: ignore[union-attr]
+    assert result.care_policy.action("tumble_dry").permission is Permission.PROHIBITED  # type: ignore[union-attr]
+    assert {conflict.field_path for conflict in result.assessment.conflicts} == {
+        "care.wash.maximum_temperature_c",
+        "care.tumble_dry.permission",
+    }
+
+
+def test_natural_drying_is_a_policy_action() -> None:
+    from fabricassist.domain.garment_analysis.models import (
+        NaturalDryingInstruction,
+        NaturalDryingMethod,
+    )
+
+    label = LabelExtraction(
+        natural_drying=NaturalDryingInstruction(
+            permission=Permission.ALLOWED,
+            methods=(NaturalDryingMethod.DRY_FLAT, NaturalDryingMethod.SHADE),
+            evidence=evidence("care.natural_drying"),
+        ),
+        overall_confidence=99,
+    )
+    policy = derive_safety_envelope(
+        MergedGarmentAssessment(revision_id=uuid4(), label_extraction=label)
+    )
+    action = policy.action("natural_dry")
+    assert action is not None
+    assert action.permission is Permission.ALLOWED
+    assert action.process == "dry_flat,shade"
