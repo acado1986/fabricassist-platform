@@ -1,7 +1,7 @@
 """Persist explicit image routing metadata and local quality signals.
 
-Revision ID: 20260803_0022
-Revises: 20260731_0021
+Revision ID: 20260803_0026
+Revises: 20260731_0022
 """
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20260803_0022"
-down_revision = "20260731_0021"
+revision = "20260803_0026"
+down_revision = "20260731_0022"
 branch_labels = None
 depends_on = None
 

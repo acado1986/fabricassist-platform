@@ -1377,3 +1377,410 @@ Brace-expanded entries are concise candidate file lists, not literal filenames c
 - `frontend/packages/translations/src/{en,es,types}.ts`
 - generated `docs/api/openapi.json`, `docs/api/graphql/schema.graphql`, `frontend/packages/api-client/src/generated/*.ts`, and `frontend/packages/api-client/src/graphql/generated/*` only through `make openapi`/`make graphql`—never by hand.
 - `.env.example`, `.env.alpha.example`, `.env.production.example`, `docs/environment.md`, `docs/architecture.md`, `docs/requirements.md`, and relevant runbooks when configuration/behavior is implemented.
+
+## 41. Post-implementation audit remediation plan
+
+**Audit status:** release blocked; the Phase 10 cutover is not complete.
+
+**Prepared:** 2026-08-03
+
+This section supersedes any earlier implication that Phase 10 is ready to
+deploy. It records the repository and production-state findings discovered
+after Phases 0–10 were committed. A later implementation agent must complete
+the remediation phases below in order. Do not deploy the current branch, run
+the production migration workflow, or mark Phase 10 accepted until every exit
+gate in this section is satisfied.
+
+### 41.1 Confirmed blockers
+
+#### RBL-001 — Published Alembic revision is missing from the branch
+
+Production is stamped at `20260731_0022`. The migration originally published
+under that revision was:
+
+```text
+backend/migrations/versions/20260731_0022_garment_merge_reference.py
+```
+
+It is recoverable verbatim from commit
+`dc6e701c90992d0bb7eddaa801929a2599f0d317`. The current branch no longer
+contains that revision and instead starts the garment-analysis migration chain
+at `20260803_0026`, whose `down_revision` is `20260731_0021`. An existing
+database stamped at `20260731_0022` therefore has no valid continuation in the
+current migration graph.
+
+This is a production release blocker. Never fix it by changing the production
+`alembic_version` row, running `alembic stamp`, resetting the production
+database, or editing the historical migration contents.
+
+#### RBL-002 — Operator correction still executes the legacy planner
+
+The production correction endpoint calls the legacy lifecycle at:
+
+- `backend/src/fabricassist/api/routes/reviews.py:170-192`; and
+- `backend/src/fabricassist/application/lifecycle.py:111-218`.
+
+That path invokes `CarePlanningProvider`, the v1 validator, and
+`render_rich_result()`. It writes legacy top-level
+`dossier`/`proposal`/`validation` canonical data, while the current result
+endpoint requires `canonical_data["garment_analysis_result"]` at
+`backend/src/fabricassist/api/routes/scans.py:595`. Consequently, after a
+correction, the active result can become unavailable to the customer with HTTP
+410.
+
+This also violates the clean-cutover acceptance criteria requiring one current
+executor and removal of `application/analysis.py`, mandatory planner wiring,
+and duplicate correction finalization.
+
+#### RBL-003 — Contextual conversation is incompatible with v2 results
+
+V2 finalization stores a `MergedGarmentAssessment` as the evidence-dossier
+payload and stores policy/recommendation data inside the v2 canonical result.
+`application/conversations.py` still reads legacy top-level `proposal` and
+`validation` keys, then validates the v2 assessment as the legacy
+`GarmentEvidenceDossier`. The schemas are incompatible. A v2 conversation can
+therefore spend a provider call and fail before deterministic claim validation,
+while the provider receives an empty validated-plan context.
+
+The concrete incompatible reads are at
+`backend/src/fabricassist/application/conversations.py:101-103`; the invalid
+legacy dossier validation occurs at line 181. A direct Pydantic validation
+check confirmed that a persisted v2 `MergedGarmentAssessment` raises
+`ValidationError` when validated as the legacy `GarmentEvidenceDossier`.
+
+#### RBL-004 — Material feature flags are not pinned to the revision
+
+Revision creation currently hard-codes
+`effective_feature_flags={"stain_analysis": false}`, while runtime composition
+uses the current process value of
+`settings.garment_analysis_stain_enabled`. A deployment setting change can
+therefore change the behavior of an in-progress revision, and its persisted
+audit snapshot can disagree with what actually executed.
+
+The hard-coded snapshot is at
+`backend/src/fabricassist/application/job_orchestration.py:134`; the live
+process-setting read is at
+`backend/src/fabricassist/infrastructure/garment_analysis/runtime.py:34`.
+
+#### RBL-005 — Required Phase 10 evidence remains pending
+
+`docs/evaluations/garment-analysis-v2.md` still records product thresholds,
+token/latency budgets, provider privacy approval, and backup/restore evidence
+as pending. `make release-check` runs the non-cloud automated subset and
+explicitly excludes E2E/native, IaC, load, backup/restore, provider approval,
+and deployment smoke gates. A passing `make release-check` alone is not Phase
+10 acceptance.
+
+The pending rows are at `docs/evaluations/garment-analysis-v2.md:20-24`; the
+limited local target and its explicit external-gate reminder are at
+`Makefile:243-244`.
+
+### 41.2 Remediation phase R0 — Freeze and inventory
+
+**Objective:** preserve production state and determine which migration IDs have
+been applied in every durable environment before changing the branch.
+
+1. Block deployment of the current branch and record the block in the release
+   approval artifact.
+2. Read and record `alembic_version` from production, staging, alpha, and every
+   non-disposable shared database.
+3. Determine whether any durable environment has applied any of
+   `20260803_0026` through `20260803_0029`.
+4. Take a production backup and verify that the backup artifact is readable.
+5. Preserve the exact application image/version currently serving production.
+6. Do not mutate production schema or migration state during inventory.
+
+**Exit gate:** every durable environment has a recorded revision, owner, backup
+reference, and remediation classification. If a durable environment already
+applied a garment-analysis revision that will be renamed, stop and design an
+explicit reconciliation for that environment; do not orphan it silently.
+
+### 41.3 Remediation phase R1 — Restore and linearize Alembic history
+
+**Objective:** make the repository contain the published production history and
+one valid forward chain.
+
+1. Restore
+   `backend/migrations/versions/20260731_0022_garment_merge_reference.py`
+   byte-for-byte from commit `dc6e701c90992d0bb7eddaa801929a2599f0d317`.
+2. Preserve its identifiers:
+
+   ```python
+   revision = "20260731_0022"
+   down_revision = "20260731_0021"
+   ```
+
+3. Because the current garment-analysis migrations have not been deployed to
+   production, allocate fresh unpublished IDs after the restored revision. The
+   proposed clean sequence is:
+
+   | Migration | New revision | Down revision |
+   |---|---|---|
+   | garment-analysis image routing | `20260803_0026` | `20260731_0022` |
+   | garment-analysis branch state | `20260803_0027` | `20260803_0026` |
+   | garment-analysis history/conflicts | `20260803_0028` | `20260803_0027` |
+   | garment-analysis cutover | `20260803_0029` | `20260803_0028` |
+
+4. Rename each file and update its module docstring, `revision`, and
+   `down_revision`. Do not change the upgrade/downgrade behavior in the same
+   mechanical commit unless a test proves a separate migration bug.
+5. Update all hard-coded revision/head references in migration tests,
+   evaluation records, runbooks, and release evidence.
+6. Run `alembic heads`, `alembic branches`, and `alembic history`; require one
+   linear head at `20260803_0029` and no missing or duplicate revisions.
+
+**Commit when ready:**
+`fix(migrations): restore published revision and rebase garment analysis chain`.
+
+**Exit gate:** production's `20260731_0022` is present in the repository and is
+the direct ancestor of every garment-analysis migration.
+
+### 41.4 Remediation phase R2 — Prove production-origin upgrades
+
+**Objective:** demonstrate the exact upgrade path production will use.
+
+Add or extend migration integration tests to:
+
+1. Upgrade an empty database through `20260731_0022` and assert the historical
+   `garments.merged_into_id`, `garments.merged_at`, FK, and index.
+2. Populate representative retained scans, garments, results, service events,
+   and queued/running legacy jobs at `20260731_0022`.
+3. Upgrade that database from `20260731_0022` to the new head without stamping.
+4. Assert all v2 tables, columns, constraints, behavior-version rows, and
+   transformed result projections.
+5. Assert legacy jobs and their related scans/runs receive a consistent durable
+   cancelled/reanalysis-required state; no scan remains indefinitely queued or
+   processing after its legacy job is made obsolete.
+6. Assert the new typed reader can read every transformed retained result, or
+   returns the explicitly approved historical-unavailable projection.
+7. Run the same migration against an isolated recent production backup when
+   operational policy permits it.
+
+**Verification:** `make migration-test`, followed by the isolated
+backup/restore drill. Do not claim production compatibility based only on an
+empty-database migration.
+
+**Exit gate:** both empty-database and `20260731_0022` upgrade paths pass, and an
+isolated production-shaped restore reaches the new head successfully.
+
+### 41.5 Remediation phase R3 — Replace legacy review correction
+
+**Objective:** make every correction create a valid v2 successor revision
+without a planning-model call.
+
+1. Route the review correction command through the public
+   `fabricassist.application.garment_analysis` facade.
+2. Persist an append-only typed correction overlay with actor, reason, field
+   path, previous/corrected values, source image, authority, confirmation, and
+   supersession metadata.
+3. Create a version-pinned successor revision and preserve prior image
+   membership.
+4. Rebuild the complete merged v2 assessment from branch artifacts, accepted
+   overlays, exact-garment history, and existing authoritative evidence.
+5. Re-run deterministic v2 policy, candidate-claim validation, and v2 result
+   projection. Do not invoke `CarePlanningProvider`.
+6. Write only the current `garment_analysis_result` canonical projection and
+   atomically advance active pointers after successful validation.
+7. Remove review-route planner injection and old provider construction from
+   `api/main.py`.
+8. Delete `application/analysis.py`, obsolete planning provider/factory paths,
+   legacy renderer use, and obsolete tests only after repository-wide search
+   proves no production caller remains.
+9. Replace raw operator JSON dossier editing with permitted typed correction
+   fields; safety-critical label/material corrections require clearer evidence
+   or the approved operator authority path.
+
+**Required tests:** correction to successor revision, immutable original,
+tenant authorization, deterministic policy re-evaluation, approval, customer
+REST/GraphQL read, no HTTP 410, and zero planning-model calls.
+
+**Commit when ready:**
+`fix(review): finalize corrections through garment analysis v2`.
+
+### 41.6 Remediation phase R4 — Move conversation to the v2 policy
+
+**Objective:** construct and validate contextual chat entirely from current v2
+artifacts.
+
+1. Build conversation context from the strict v2 assessment, care policy,
+   recommendation, validation report, confirmed service history, rolling
+   summary, recent messages, and relevant revision images.
+2. Remove reads of legacy top-level `proposal` and `validation` keys.
+3. Remove legacy `GarmentEvidenceDossier` validation for v2 assessments.
+4. Validate every actionable chat claim with the v2
+   `validate_candidate_claims()`/care-policy envelope; do not recreate a narrow
+   v1 proposed plan merely to reuse the old validator.
+5. Validate context before recording or invoking a provider model run so an
+   incompatible/missing context spends no provider call.
+6. Preserve blocked proposals as audit data while withholding unsafe claims
+   from customer-visible text and SSE chunks.
+
+**Required tests:** successful v2 context construction, photographed
+prohibition contradiction, empty/malformed context without provider call,
+revision linkage, cancellation, retry, and tenant isolation.
+
+**Commit when ready:**
+`fix(conversations): validate claims against v2 care policy`.
+
+### 41.7 Remediation phase R5 — Resume from pinned behavior
+
+**Objective:** make revision metadata authoritative for every retry and
+redelivery decision.
+
+1. Build the effective feature/version snapshot from the resolved module
+   configuration before dispatch; never hard-code the stain flag.
+2. Persist workflow, module, provider, model, prompt, schema, preprocessing,
+   confidence, retry, care, stain, and rendering versions plus materially
+   effective flags on the revision.
+3. Change workflow resume to load the persisted snapshot and select only an
+   implementation/provider/policy compatible with it.
+4. Do not allow changed process settings to alter an in-progress revision.
+5. If the deployed binary cannot execute a pinned version, fail closed with a
+   durable operator-visible category or cancel according to the runbook; never
+   silently adopt current settings.
+
+**Required tests:** start with stain disabled/enabled, change live settings,
+redeliver, and prove the stored revision behavior is unchanged; assert audit
+metadata matches actual provider calls.
+
+**Commit when ready:**
+`fix(garment-analysis): resume from pinned revision behavior`.
+
+### 41.8 Remediation phase R6 — Complete API and frontend cutover
+
+**Objective:** deliver the typed correction/reanalysis experience promised by
+Phase 9 without legacy JSON contracts.
+
+1. Expose stable REST commands for permitted correction and branch reanalysis,
+   with idempotency and tenant ownership.
+2. Keep GraphQL as the typed current read projection and expose stable branch,
+   conflict, uncertainty, clearer-image, correction, history, and outcome
+   fields only.
+3. Regenerate OpenAPI, GraphQL documents, and clients; do not hand-edit
+   generated files.
+4. Connect the garment-analysis feature to correction and branch-reanalysis
+   commands.
+5. Remove raw dossier/result JSON editing and all manual provider/result casts
+   from customer and operator screens.
+6. Add component/accessibility tests for quality guidance, parallel progress,
+   observed/inferred facts, conflicts, corrections, reanalysis, history
+   influence, and stain-step validation.
+7. Add Playwright coverage for the critical scan/result/review flow and record
+   Android smoke evidence.
+
+**Commit when ready:**
+`feat(garment-analysis): complete correction and reanalysis cutover`.
+
+### 41.9 Remediation phase R7 — Close Phase 10 evidence
+
+**Objective:** replace pending templates with measured and approved evidence.
+
+1. Record the synthetic/licensed fixture-set checksum, owner, date,
+   provider/model, sample size, and complete normalized outcomes.
+2. Obtain textile-owner approval for the deterministic policy checksum.
+3. Set and meet product-approved clearer-image and review-rate thresholds.
+4. Measure model calls, branch retries, tokens, latency, and budget behavior on
+   the same fixture set.
+5. Complete provider privacy/retention/region approval before enabling a live
+   provider.
+6. Run load, worker-crash, Valkey-loss, QStash recovery, provider-outage,
+   deletion/derivative, and backup/restore drills.
+7. Run generated-contract drift, web E2E, Android smoke, available iOS checks,
+   IaC validation, and deployed-environment smoke.
+8. Keep unavailable external gates explicitly pending; do not encode approval
+   as a boolean without the referenced signed record.
+
+`make release-check` may remain the deterministic local subset, but the release
+workflow must fail when the required production approval/evidence manifest is
+missing or pending.
+
+**Commit when ready:**
+`test(garment-analysis): close production readiness gates`.
+
+### 41.10 Remediation phase R8 — Coordinated production release
+
+**Objective:** deploy the repaired migration chain and corrected v2 runtime as
+one compatible unit.
+
+1. Build immutable API, worker, web, and mobile artifacts and record their
+   digests.
+2. Verify the pre-cutover backup and isolated restore evidence.
+3. Drain or durably cancel all legacy analysis jobs and confirm no queued or
+   running legacy operations remain.
+4. Run the normal production Alembic upgrade from `20260731_0022` to the new
+   head. Do not stamp or edit migration state manually.
+5. Deploy the compatible API and worker, then the coordinated generated web and
+   mobile client contract.
+6. Enable the fail-closed gate only after database, provider, worker, SSE,
+   result, correction, conversation, and deletion smoke checks pass.
+7. Monitor branch errors/retries, clearer-image/review rates, model usage,
+   latency, active-pointer consistency, database errors, and object deletion.
+8. Roll back only through a compatible forward fix or the verified backup
+   restore procedure. Never mix the old application/client with an
+   incompatible transformed schema.
+
+**Final exit gate:** one current v2 executor/reader/contract remains; production
+is at the repaired migration head; review corrections and conversations use the
+same v2 policy; pinned revisions resume deterministically; all required release
+evidence is approved; and no legacy runtime fallback is production-reachable.
+
+### 41.11 Required implementation order and commit sequence
+
+Execute remediation phases strictly in this order:
+
+```text
+R0 inventory/freeze
+  -> R1 migration history repair
+  -> R2 production-origin migration proof
+  -> R3 review correction cutover
+  -> R4 contextual conversation cutover
+  -> R5 pinned behavior repair
+  -> R6 API/frontend completion
+  -> R7 release evidence
+  -> R8 coordinated production release
+```
+
+Recommended focused commits:
+
+```text
+fix(migrations): restore published revision and rebase garment analysis chain
+test(migrations): prove upgrade from production revision 20260731_0022
+fix(review): finalize corrections through garment analysis v2
+fix(conversations): validate claims against v2 care policy
+fix(garment-analysis): resume from pinned revision behavior
+feat(garment-analysis): complete correction and reanalysis cutover
+test(garment-analysis): close production readiness gates
+```
+
+Each commit must leave its applicable tests passing. Do not combine the
+mechanical Alembic-history repair with runtime behavior changes, and do not
+start the production release phase while any prior remediation phase is open.
+
+### 41.12 Audit verdict and validation record
+
+**Verdict:** the plan is not correctly or completely implemented. Phases 0–8
+have substantial implementation and test coverage, and the primary
+new-analysis worker uses v2. The coordinated cutover remains incomplete because
+legacy review execution is production-reachable, contextual conversation is
+broken for v2 results, revision behavior is not fully pinned, the published
+production migration history is absent, and required operational acceptance
+evidence is pending.
+
+The audit ran `make release-check` successfully for its automated local subset:
+
+- backend unit tests: 230 passed;
+- frontend tests: 20 passed;
+- integration tests: 15 passed and 3 skipped;
+- security/configuration tests: 35 passed;
+- Ruff formatting/lint, Pyright, frontend lint/typecheck, OpenAPI drift,
+  GraphQL drift, migrations, security checks, and the frontend container build
+  passed; and
+- ESLint reported one generated-file warning and no errors.
+
+The working tree was clean when that audit began. It is intentionally modified
+afterward by this remediation-plan documentation update.
+
+The audit did not run or approve web E2E/native smoke, load, IaC,
+backup/restore, live-provider, privacy, or deployed-environment smoke gates.
+Those require their documented environments, credentials, owners, and signed
+evidence and remain mandatory before Phase 10 acceptance.

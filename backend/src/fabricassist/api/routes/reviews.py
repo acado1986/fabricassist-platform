@@ -10,9 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fabricassist.application.lifecycle import apply_human_correction, audit
-from fabricassist.application.planning import CarePlanningProvider
-from fabricassist.domain.evidence import GarmentEvidenceDossier
+from fabricassist.application.lifecycle import apply_human_correction_v2, audit
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
     EvidenceDossier,
@@ -44,8 +42,10 @@ class ReviewDetail(ReviewResponse):
 
 class CorrectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    dossier: GarmentEvidenceDossier
+    field_path: str = Field(pattern=r"^[a-z][a-z0-9_.\[\]-]{0,159}$")
+    corrected_value: object
     reason: str = Field(min_length=3, max_length=2000)
+    source_image_id: UUID | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -65,10 +65,6 @@ async def get_session() -> AsyncSession:
 
 async def get_current_user() -> User:
     raise RuntimeError("Authentication dependency was not configured.")
-
-
-async def get_care_planning_provider() -> CarePlanningProvider:
-    raise RuntimeError("Care-planning provider dependency was not configured.")
 
 
 def require_operator(user: User) -> None:
@@ -173,22 +169,19 @@ async def correct_review(
     request: CorrectionRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    care_planning_provider: Annotated[
-        CarePlanningProvider,
-        Depends(get_care_planning_provider),
-    ],
 ) -> ReviewResponse:
     require_operator(user)
     review = await case_for(session, user, review_id)
     if review.assigned_operator_id not in {None, user.id}:
         raise HTTPException(409, "Review case is assigned to another operator.")
-    result = await apply_human_correction(
+    result = await apply_human_correction_v2(
         session,
         review=review,
         actor_id=user.id,
-        dossier=request.dossier,
+        field_path=request.field_path,
+        corrected_value=request.corrected_value,
         reason=request.reason,
-        care_planning_provider=care_planning_provider,
+        source_image_id=request.source_image_id,
     )
     await session.commit()
     # The correction is a successor revision; approval never erases source artifacts.

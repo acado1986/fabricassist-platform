@@ -8,7 +8,7 @@ does not assert production quality based on mock-provider tests.
 - Module: `garment-analysis-v2`
 - Workflow: `asyncio-garment-analysis-v2`
 - Care policy: `care-policy-v2`
-- Retained-data projection: migration `20260803_0025`
+- Retained-data projection: migration `20260803_0029`
 
 ## Required measured gates
 

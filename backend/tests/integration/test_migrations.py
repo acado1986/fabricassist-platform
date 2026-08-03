@@ -100,11 +100,24 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     assert tenant_count == 1
     assert admin_count == 1
 
+    # This is the exact forward-only route from the published production revision.
+    # It intentionally never stamps, downgrades, or changes `alembic_version` by hand.
     reset_database(engine)
-    command.upgrade(config, "20260721_0001")
+    command.upgrade(config, "20260731_0022")
+    production_origin = inspect(engine)
+    garment_columns = {column["name"] for column in production_origin.get_columns("garments")}
+    assert {"merged_into_id", "merged_at"} <= garment_columns
+    assert "fk_garments_merged_into_id" in {
+        foreign_key["name"] for foreign_key in production_origin.get_foreign_keys("garments")
+    }
+    assert "ix_garments_merged_into_id" in {
+        index["name"] for index in production_origin.get_indexes("garments")
+    }
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0022"
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0025"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0029"
 
     reset_database(engine)
     command.upgrade(config, "20260729_0018")
@@ -191,7 +204,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0025"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0029"
     engine.dispose()
 
 
@@ -204,7 +217,7 @@ def test_cutover_transforms_legacy_result_into_current_projection(
     engine = create_engine(normalise_database_url(TEST_DATABASE_URL))
     reset_database(engine)
     config = alembic_config()
-    command.upgrade(config, "20260803_0024")
+    command.upgrade(config, "20260803_0028")
     with Session(engine) as session:
         seed_development_data(session)
         tenant = session.query(Tenant).filter_by(slug="fabricassist-development").one()

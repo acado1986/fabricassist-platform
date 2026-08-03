@@ -1,7 +1,7 @@
 """Pin garment-analysis behavior and persist durable branch execution state.
 
-Revision ID: 20260803_0023
-Revises: 20260803_0022
+Revision ID: 20260803_0027
+Revises: 20260803_0026
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "20260803_0023"
-down_revision = "20260803_0022"
+revision = "20260803_0027"
+down_revision = "20260803_0026"
 branch_labels = None
 depends_on = None
 

@@ -1,13 +1,13 @@
 """Transform retained results into the sole v2 projection and drain old work.
 
-Revision ID: 20260803_0025
-Revises: 20260803_0024
+Revision ID: 20260803_0029
+Revises: 20260803_0028
 """
 
 from alembic import op
 
-revision = "20260803_0025"
-down_revision = "20260803_0024"
+revision = "20260803_0029"
+down_revision = "20260803_0028"
 branch_labels = None
 depends_on = None
 

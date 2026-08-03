@@ -79,7 +79,6 @@ from fabricassist.infrastructure.rate_limits.factory import create_rate_limiter
 from fabricassist.infrastructure.storage.factory import create_object_storage
 from fabricassist.infrastructure.telemetry import configure_telemetry, metrics_payload
 from fabricassist.infrastructure.vision.providers import (
-    create_care_planning_provider,
     create_conversation_provider,
     create_evidence_provider,
 )
@@ -103,7 +102,6 @@ def create_app(
     hot_cache = create_hot_cache(resolved_settings)
     concurrency_gate = create_concurrency_gate(resolved_settings)
     evidence_provider = create_evidence_provider(resolved_settings)
-    care_planning_provider = create_care_planning_provider(resolved_settings)
     conversation_provider = create_conversation_provider(resolved_settings)
     product_information_provider = create_product_information_provider(resolved_settings)
     storage = create_object_storage(resolved_settings)
@@ -172,7 +170,6 @@ def create_app(
     app.state.hot_cache = hot_cache
     app.state.concurrency_gate = concurrency_gate
     app.state.evidence_provider = evidence_provider
-    app.state.care_planning_provider = care_planning_provider
     app.state.conversation_provider = conversation_provider
     app.state.product_information_provider = product_information_provider
     app.state.analysis_policy = analysis_policy
@@ -258,9 +255,6 @@ def create_app(
     def get_evidence_provider(request: Request) -> object:
         return request.app.state.evidence_provider
 
-    def get_care_planning_provider(request: Request) -> object:
-        return request.app.state.care_planning_provider
-
     def get_conversation_provider(request: Request) -> object:
         return request.app.state.conversation_provider
 
@@ -327,7 +321,6 @@ def create_app(
     app.dependency_overrides[conversations.get_job_dispatcher] = get_job_dispatcher
     app.dependency_overrides[reviews.get_session] = get_session
     app.dependency_overrides[reviews.get_current_user] = get_current_user
-    app.dependency_overrides[reviews.get_care_planning_provider] = get_care_planning_provider
     app.dependency_overrides[internal_jobs.get_session] = get_session
     app.dependency_overrides[internal_jobs.get_database] = get_runtime_database
     app.dependency_overrides[internal_jobs.get_job_dispatcher] = get_job_dispatcher

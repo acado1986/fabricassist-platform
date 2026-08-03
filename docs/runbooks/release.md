@@ -42,7 +42,7 @@ gate:
    backup (`make backup-restore-test` locally, an isolated restore drill in
    staging).
 2. Confirm no pending/running legacy scan-analysis runs. Migration
-   `20260803_0025` durably cancels any that remain; they must be retried as a
+   `20260803_0029` durably cancels any that remain; they must be retried as a
    fresh v2 analysis, never resumed by a legacy executor.
 3. Apply the migration, deploy API, worker, generated clients, and Expo web as
    one release, then run `make release-check`, GraphQL/OpenAPI drift checks, and

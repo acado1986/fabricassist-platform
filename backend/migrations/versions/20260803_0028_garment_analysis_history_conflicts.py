@@ -1,15 +1,15 @@
 """Add append-only garment-analysis history, correction, and conflict details.
 
-Revision ID: 20260803_0024
-Revises: 20260803_0023
+Revision ID: 20260803_0028
+Revises: 20260803_0027
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "20260803_0024"
-down_revision = "20260803_0023"
+revision = "20260803_0028"
+down_revision = "20260803_0027"
 branch_labels = None
 depends_on = None
 

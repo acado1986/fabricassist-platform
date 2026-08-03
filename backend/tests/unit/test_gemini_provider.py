@@ -276,9 +276,10 @@ async def test_gemini_conversation_returns_typed_proposal() -> None:
         ConversationContext(
             garment_id=uuid4(),
             analysis_revision_id=uuid4(),
-            dossier={},
-            validated_plan={},
-            validation={},
+            assessment={},
+            care_policy={},
+            recommendation={},
+            validation_report={},
         ),
         "Can I wash this?",
     )

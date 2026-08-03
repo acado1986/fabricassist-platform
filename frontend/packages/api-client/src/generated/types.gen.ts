@@ -37,33 +37,6 @@ export type ApprovalRequest = {
 };
 
 /**
- * CareFact
- */
-export type CareFact = {
-    /**
-     * Code
-     */
-    code: string;
-    /**
-     * Confidence
-     */
-    confidence: number;
-    /**
-     * Original Text
-     */
-    original_text?: string;
-    /**
-     * Permission
-     */
-    permission: string;
-    source: EvidenceSource;
-    /**
-     * Temperature C
-     */
-    temperature_c?: number | null;
-};
-
-/**
  * CompleteUploadRequest
  */
 export type CompleteUploadRequest = {
@@ -105,11 +78,22 @@ export type ConfirmServiceRequest = {
  * CorrectionRequest
  */
 export type CorrectionRequest = {
-    dossier: GarmentEvidenceDossier;
+    /**
+     * Corrected Value
+     */
+    corrected_value: unknown;
+    /**
+     * Field Path
+     */
+    field_path: string;
     /**
      * Reason
      */
     reason: string;
+    /**
+     * Source Image Id
+     */
+    source_image_id?: string | null;
 };
 
 /**
@@ -169,17 +153,6 @@ export type DeletionResponse = {
 };
 
 /**
- * EvidenceSource
- */
-export type EvidenceSource = {
-    /**
-     * Image Id
-     */
-    image_id: string;
-    role: ImageRole;
-};
-
-/**
  * FeedbackRequest
  */
 export type FeedbackRequest = {
@@ -209,28 +182,6 @@ export type FeedbackResponse = {
      * Review Case Id
      */
     review_case_id?: string | null;
-};
-
-/**
- * GarmentEvidenceDossier
- */
-export type GarmentEvidenceDossier = {
-    /**
-     * Care Facts
-     */
-    care_facts?: Array<CareFact>;
-    /**
-     * Observations
-     */
-    observations?: Array<Observation>;
-    /**
-     * Schema Version
-     */
-    schema_version?: string;
-    /**
-     * Uncertainties
-     */
-    uncertainties?: Array<string>;
 };
 
 /**
@@ -503,33 +454,6 @@ export type MessageResponse = {
      * Uncertainties
      */
     uncertainties?: Array<string>;
-};
-
-/**
- * Observation
- */
-export type Observation = {
-    /**
-     * Confidence
-     */
-    confidence: number;
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * Kind
-     */
-    kind: string;
-    source: EvidenceSource;
-    /**
-     * Time Varying
-     */
-    time_varying?: boolean;
-    /**
-     * Value
-     */
-    value: string;
 };
 
 /**
