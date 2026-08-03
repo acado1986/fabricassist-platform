@@ -441,10 +441,21 @@ class StainTreatment(StrictModel):
     overall_confidence: int = Field(ge=0, le=100)
 
 
+class ValidatedStainTreatmentStep(StrictModel):
+    """Per-claim release decision used by renderers and audit projections."""
+
+    claim_id: UUID
+    status: Literal["accepted", "blocked"]
+    violation_codes: tuple[ShortText, ...] = Field(default_factory=tuple, max_length=12)
+
+
 class ValidatedStainTreatment(StrictModel):
     treatment_id: UUID
+    steps: tuple[ValidatedStainTreatmentStep, ...] = Field(default_factory=tuple, max_length=20)
+    accepted_steps: tuple[StainTreatmentStep, ...] = Field(default_factory=tuple, max_length=20)
     accepted_claim_ids: tuple[UUID, ...] = Field(default_factory=tuple, max_length=20)
     blocked_claim_ids: tuple[UUID, ...] = Field(default_factory=tuple, max_length=20)
+    violations: tuple[ShortText, ...] = Field(default_factory=tuple, max_length=100)
     conflicts: tuple[EvidenceConflict, ...] = Field(default_factory=tuple, max_length=40)
     outcome: ValidationOutcome
     care_policy_version: str

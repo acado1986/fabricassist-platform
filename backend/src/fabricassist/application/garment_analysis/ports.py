@@ -39,6 +39,7 @@ class ProviderImage:
     role: str
     viewpoint: str = "unknown"
     label_scope: str = "unknown"
+    quality_state: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -100,12 +101,14 @@ class GarmentVisionProvider(Protocol):
 class GarmentAnalysisRequest:
     reference: AnalysisReference
     correlation_id: str
+    stain_requested: bool = False
 
 
 @dataclass(frozen=True)
 class ResumeWorkflowRequest:
     reference: AnalysisReference
     correlation_id: str
+    stain_requested: bool = False
 
 
 @dataclass(frozen=True)
@@ -113,6 +116,7 @@ class BranchReanalysisRequest:
     reference: AnalysisReference
     branch: AnalysisBranch
     correlation_id: str
+    stain_requested: bool = False
 
 
 type WorkflowResult = AnalysisProgress | FabricAssistAnalysisResult
@@ -192,6 +196,7 @@ class BranchState:
     status: str
     attempt_count: int
     lease_expires_at: datetime | None
+    result_payload: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)

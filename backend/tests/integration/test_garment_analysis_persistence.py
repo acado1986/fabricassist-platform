@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -340,12 +341,35 @@ def test_deterministic_finalization_is_idempotent_and_never_needs_a_planning_run
                 assert first is not None
                 assert first.status == "passed"
                 assert "garment_analysis_result" in first.canonical_data
+            from fabricassist.domain.garment_analysis.models import StainTreatment
+
+            async with database.session_factory() as session, session.begin():
+                session.add(
+                    AnalysisBranchResult(
+                        id=uuid4(),
+                        tenant_id=tenant_id,
+                        analysis_revision_id=revision_id,
+                        branch_name="stain_treatment",
+                        status="completed",
+                        attempt_count=1,
+                        schema_version="stain-treatment-v2",
+                        result_payload=StainTreatment(
+                            treatment_id=uuid4(), overall_confidence=40
+                        ).model_dump(mode="json"),
+                        uncertain_fields=["stain_identity_unconfirmed"],
+                    )
+                )
             async with database.session_factory() as session, session.begin():
                 second = await SqlAlchemyGarmentAnalysisFinalizationRepository(
                     session
                 ).finalize_if_ready(reference=reference)
                 assert second is not None
-                assert second.canonical_data == first.canonical_data
+                assert second.canonical_data != first.canonical_data
+                canonical = cast(
+                    dict[str, object], second.canonical_data["garment_analysis_result"]
+                )
+                validated = cast(dict[str, object], canonical["validated_stain_treatment"])
+                assert validated["outcome"] == "passed"
             async with database.session_factory() as session:
                 assert (
                     await session.scalar(

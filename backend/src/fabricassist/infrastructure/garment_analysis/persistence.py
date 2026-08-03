@@ -154,6 +154,7 @@ class SqlAlchemyGarmentAnalysisRepository:
                 status=row.status,
                 attempt_count=row.attempt_count,
                 lease_expires_at=row.lease_expires_at,
+                result_payload=row.result_payload,
             )
             for row in rows
         )
@@ -458,10 +459,12 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
             CorrectionSource,
             GarmentInspection,
             LabelExtraction,
+            StainTreatment,
         )
         from fabricassist.domain.garment_analysis.models import (
             EvidenceCorrection as DomainEvidenceCorrection,
         )
+        from fabricassist.domain.garment_analysis.stain_policy import validate_stain_treatment
         from fabricassist.infrastructure.persistence.models import (
             CareResult,
             EvidenceConflictRecord,
@@ -489,6 +492,54 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
             )
         )
         if existing is not None:
+            # The workflow may have persisted the deterministic base result
+            # before the optional stain call. Attach a completed stain branch
+            # exactly once, while retaining the base care-result status.
+            stain_row = await self._session.scalar(
+                select(AnalysisBranchResult).where(
+                    AnalysisBranchResult.tenant_id == reference.tenant_id,
+                    AnalysisBranchResult.analysis_revision_id == revision.id,
+                    AnalysisBranchResult.branch_name == AnalysisBranch.STAIN_TREATMENT.value,
+                    AnalysisBranchResult.status == "completed",
+                )
+            )
+            canonical_payload = existing.canonical_data.get("garment_analysis_result")
+            if stain_row is not None and isinstance(canonical_payload, dict):
+                from fabricassist.domain.garment_analysis.models import (
+                    FabricAssistAnalysisResult as DomainAnalysisResult,
+                )
+
+                try:
+                    domain_result = DomainAnalysisResult.model_validate(canonical_payload)
+                    treatment = StainTreatment.model_validate(stain_row.result_payload)
+                except ValueError:
+                    # A malformed optional branch must never make an existing
+                    # safe base result unavailable; the branch remains audit data.
+                    pass
+                else:
+                    if domain_result.validated_stain_treatment is None:
+                        validated = validate_stain_treatment(domain_result.care_policy, treatment)
+                        updated = domain_result.model_copy(
+                            update={"validated_stain_treatment": validated}
+                        )
+                        existing.canonical_data = {
+                            "garment_analysis_result": updated.model_dump(mode="json")
+                        }
+                        proposal = await self._session.get(ProposedPlan, existing.proposed_plan_id)
+                        if proposal is not None:
+                            proposal.payload = {
+                                **proposal.payload,
+                                "stain_treatment": treatment.model_dump(mode="json"),
+                                "validated_stain_treatment": validated.model_dump(mode="json"),
+                            }
+                        report = await self._session.get(
+                            ValidationReport, existing.validation_report_id
+                        )
+                        if report is not None:
+                            report.payload = {
+                                **report.payload,
+                                "stain": validated.model_dump(mode="json"),
+                            }
             return FabricAssistAnalysisResult(
                 reference=reference,
                 status=existing.status,
@@ -612,6 +663,21 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
                 "retry_policy": revision.retry_policy_version,
             },
         )
+        stain_row = branches.get(AnalysisBranch.STAIN_TREATMENT.value)
+        stain_treatment = None
+        if stain_row is not None and stain_row.status == "completed" and stain_row.result_payload:
+            try:
+                stain_treatment = StainTreatment.model_validate(stain_row.result_payload)
+            except ValueError:
+                stain_treatment = None
+        if stain_treatment is not None:
+            result = result.model_copy(
+                update={
+                    "validated_stain_treatment": validate_stain_treatment(
+                        result.care_policy, stain_treatment
+                    )
+                }
+            )
         dossier = EvidenceDossier(
             id=uuid4(),
             tenant_id=reference.tenant_id,
@@ -627,6 +693,16 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
                 "schema_version": "deterministic-care-proposal-v2",
                 "care_policy": result.care_policy.model_dump(mode="json"),
                 "recommendation": result.recommendation.model_dump(mode="json"),
+                **(
+                    {
+                        "stain_treatment": stain_treatment.model_dump(mode="json"),
+                        "validated_stain_treatment": result.validated_stain_treatment.model_dump(
+                            mode="json"
+                        ),
+                    }
+                    if stain_treatment is not None and result.validated_stain_treatment is not None
+                    else {}
+                ),
             },
         )
         self._session.add_all((dossier, proposal))
@@ -644,6 +720,11 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
                 ],
                 "policy_version": result.care_policy.care_policy_version,
                 "policy_checksum": result.care_policy.policy_checksum,
+                **(
+                    {"stain": result.validated_stain_treatment.model_dump(mode="json")}
+                    if result.validated_stain_treatment is not None
+                    else {}
+                ),
             },
         )
         self._session.add(report)

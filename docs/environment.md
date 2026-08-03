@@ -64,6 +64,7 @@ inclusive. The prerelease profile applies the smaller pool and image limits show
 | `FABRICASSIST_UPLOAD_URL_MINUTES` | Integer `1..60` | `10` |
 | `FABRICASSIST_MAX_IMAGES_PER_SCAN` | Integer `1..20` (`1..3` prerelease) | `8` (`3` prerelease) |
 | `FABRICASSIST_ANALYSIS_LEASE_MINUTES` | Integer `1..30` | `5` |
+| `FABRICASSIST_GARMENT_ANALYSIS_STAIN_ENABLED` | `true`, `false` | `false` |
 | `FABRICASSIST_VISION_TIMEOUT_SECONDS` | Integer `5..120` | `120` |
 | `FABRICASSIST_VISION_MAX_INPUT_TOKENS` | Integer `1024..128000` | `128000` |
 | `FABRICASSIST_VISION_MAX_OUTPUT_TOKENS` | Integer `256..16000` | `16000` |
@@ -232,5 +233,9 @@ repository example alone does not change Render's environment.
 (`mock`, `gemini`, or `openai_responses`) and defaults to `mock`, which makes no
 network calls. `FABRICASSIST_GARMENT_ANALYSIS_GEMINI_MODEL` and
 `FABRICASSIST_GARMENT_ANALYSIS_OPENAI_MODEL` are optional branch-specific model
-overrides. These settings do not route production analysis before the coordinated
-v2 cutover.
+overrides. `FABRICASSIST_GARMENT_ANALYSIS_STAIN_ENABLED` is an explicit,
+default-off feature flag for the conditional stain proposal branch. The branch
+is eligible only when the complete deterministic care policy is usable, a stain
+issue and suitable close-up are present, and no reusable stain result exists.
+These settings do not route production analysis before the coordinated v2
+cutover.

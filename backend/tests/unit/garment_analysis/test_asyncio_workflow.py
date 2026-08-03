@@ -29,6 +29,19 @@ from fabricassist.application.garment_analysis.ports import (
 )
 from fabricassist.application.garment_analysis.queries import AnalysisProgress, AnalysisReference
 from fabricassist.application.vision import VisionProviderError
+from fabricassist.domain.garment_analysis.models import (
+    EvidenceCertainty,
+    EvidenceSourceKind,
+    FieldEvidence,
+    GarmentInspection,
+    GarmentIssue,
+    GarmentIssueKind,
+    IssueSeverity,
+    LabelExtraction,
+    Permission,
+    StainTreatment,
+    WashInstruction,
+)
 from fabricassist.infrastructure.garment_analysis.providers.fake import FakeGarmentVisionProvider
 
 
@@ -112,6 +125,7 @@ class InMemoryBranchRepository:
                 status=stored.status,
                 attempt_count=stored.attempt_count,
                 lease_expires_at=stored.lease_expires_at,
+                result_payload=(stored.completion.result_payload if stored.completion else None),
             )
             for branch, stored in sorted(self.branches.items(), key=lambda item: item[0].value)
         )
@@ -209,6 +223,7 @@ def _workflow(
     lease_seconds: int = 10,
     timeout_seconds: float = 1,
     finalization_repository: object | None = None,
+    stain_enabled: bool = False,
 ) -> AsyncioGarmentAnalysisWorkflow:
     return AsyncioGarmentAnalysisWorkflow(
         branch_repository=repository,
@@ -220,6 +235,7 @@ def _workflow(
             branch_timeout_seconds=timeout_seconds,
             retry_base_delay_seconds=0,
             retry_jitter_seconds=0,
+            stain_analysis_enabled=stain_enabled,
         ),
     )
 
@@ -399,3 +415,141 @@ async def test_concurrent_duplicate_deliveries_claim_each_branch_once() -> None:
             (AnalysisBranch.LABEL_EXTRACTION, 1),
         ]
     )
+
+
+def _stain_evidence(field: str) -> FieldEvidence:
+    return FieldEvidence(
+        field_path=field,
+        source_kind=EvidenceSourceKind.PHOTOGRAPHED_LABEL,
+        source_image_ids=(uuid4(),),
+        certainty=EvidenceCertainty.OBSERVED,
+        confidence=99,
+    )
+
+
+class EligibleStainProvider(RecordingProvider):
+    def __init__(self, *, fail_stain_once: bool = False) -> None:
+        super().__init__()
+        self.fail_stain_once = fail_stain_once
+
+    async def inspect_garment(self, request: GarmentInspectionRequest) -> ModelInvocation[Any]:
+        self.calls.append((AnalysisBranch.GARMENT_INSPECTION, request.attempt_number))
+        issue = GarmentIssue(
+            issue_id=uuid4(),
+            kind=GarmentIssueKind.STAIN,
+            severity=IssueSeverity.MINOR,
+            location="front",
+            observed_description="visible spot",
+            confidence=90,
+            source_image_ids=(request.images[0].image_id,),
+        )
+        return ModelInvocation(
+            value=GarmentInspection(overall_confidence=90, issues=(issue,)),
+            provider="mock",
+            model="test",
+            prompt_version="test",
+            prompt_checksum="test",
+            schema_version="garment-inspection-v2",
+            latency_ms=0,
+            attempt_number=request.attempt_number,
+        )
+
+    async def extract_labels(self, request: LabelExtractionRequest) -> ModelInvocation[Any]:
+        self.calls.append((AnalysisBranch.LABEL_EXTRACTION, request.attempt_number))
+        return ModelInvocation(
+            value=LabelExtraction(
+                wash=WashInstruction(
+                    permission=Permission.ALLOWED,
+                    maximum_temperature_c=30,
+                    evidence=_stain_evidence("care.wash"),
+                ),
+                overall_confidence=90,
+            ),
+            provider="mock",
+            model="test",
+            prompt_version="test",
+            prompt_checksum="test",
+            schema_version="label-extraction-v2",
+            latency_ms=0,
+            attempt_number=request.attempt_number,
+        )
+
+    async def analyze_stain(self, request: Any) -> ModelInvocation[Any]:
+        self.calls.append((AnalysisBranch.STAIN_TREATMENT, request.attempt_number))
+        if self.fail_stain_once and request.attempt_number == 1:
+            raise VisionProviderError("RATE_LIMIT", "retry", provider_http_status=429)
+        return ModelInvocation(
+            value=StainTreatment(treatment_id=uuid4(), overall_confidence=70),
+            provider="mock",
+            model="test",
+            prompt_version="test",
+            prompt_checksum="test",
+            schema_version="stain-treatment-v2",
+            latency_ms=0,
+            attempt_number=request.attempt_number,
+        )
+
+
+def _images_with_stain(
+    *, quality_state: str = "unknown"
+) -> dict[AnalysisBranch, tuple[ProviderImage, ...]]:
+    images = _images()
+    images[AnalysisBranch.STAIN_TREATMENT] = (
+        ProviderImage(
+            image_id=uuid4(),
+            jpeg_bytes=b"stain",
+            role="stain_closeup",
+            quality_state=quality_state,
+        ),
+    )
+    return images
+
+
+@pytest.mark.asyncio
+async def test_conditional_stain_branch_is_skipped_without_stain_image() -> None:
+    repository = InMemoryBranchRepository()
+    provider = EligibleStainProvider()
+    result = await _workflow(
+        repository,
+        InMemoryImageRepository(_images()),
+        provider,
+        stain_enabled=True,
+    ).execute(_execute_request(_reference()))
+
+    assert isinstance(result, AnalysisProgress)
+    assert (AnalysisBranch.STAIN_TREATMENT, 1) not in provider.calls
+    assert repository.branches[AnalysisBranch.STAIN_TREATMENT].status == "not_provided"
+
+
+@pytest.mark.asyncio
+async def test_conditional_stain_branch_rejects_borderline_input() -> None:
+    repository = InMemoryBranchRepository()
+    provider = EligibleStainProvider()
+    result = await _workflow(
+        repository,
+        InMemoryImageRepository(_images_with_stain(quality_state="borderline")),
+        provider,
+        stain_enabled=True,
+    ).execute(_execute_request(_reference()))
+
+    assert isinstance(result, AnalysisProgress)
+    assert (AnalysisBranch.STAIN_TREATMENT, 1) not in provider.calls
+
+
+@pytest.mark.asyncio
+async def test_conditional_stain_branch_retries_only_the_optional_branch() -> None:
+    repository = InMemoryBranchRepository()
+    provider = EligibleStainProvider(fail_stain_once=True)
+    result = await _workflow(
+        repository,
+        InMemoryImageRepository(_images_with_stain()),
+        provider,
+        stain_enabled=True,
+    ).execute(_execute_request(_reference()))
+
+    assert isinstance(result, AnalysisProgress)
+    assert provider.calls.count((AnalysisBranch.STAIN_TREATMENT, 1)) == 1
+    assert provider.calls.count((AnalysisBranch.STAIN_TREATMENT, 2)) == 1
+    assert provider.calls.count((AnalysisBranch.GARMENT_INSPECTION, 1)) == 1
+    assert provider.calls.count((AnalysisBranch.LABEL_EXTRACTION, 1)) == 1
+    assert repository.branches[AnalysisBranch.STAIN_TREATMENT].status == "completed"

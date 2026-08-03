@@ -1,9 +1,10 @@
-"""Fixed, durable native-asyncio workflow for the v2 required branches.
+"""Fixed, durable native-asyncio workflow for v2 analysis branches.
 
-This module deliberately implements only the inspection/label fan-out.  It is
+The stain branch is optional and feature-gated. It runs only after the required
+branches have produced a deterministic base policy, and its durable state lives
+in ``analysis_branch_results`` alongside the required branches. This module is
 not selected by production routes or workers until the coordinated v2 cutover.
-Its recovery facts live exclusively in ``analysis_branch_results``; in-memory
-tasks are used only while a single delivery is alive.
+In-memory tasks are used only while a single delivery is alive.
 """
 
 from __future__ import annotations
@@ -11,9 +12,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from random import uniform
-from typing import Final
+from typing import Final, cast
+from uuid import UUID
 
 from fabricassist.application.garment_analysis.commands import AnalysisBranch
 from fabricassist.application.garment_analysis.ports import (
@@ -32,6 +35,7 @@ from fabricassist.application.garment_analysis.ports import (
     ModelInvocation,
     ProviderImage,
     ResumeWorkflowRequest,
+    StainTreatmentRequest,
     WorkflowResult,
 )
 from fabricassist.application.garment_analysis.queries import (
@@ -40,10 +44,19 @@ from fabricassist.application.garment_analysis.queries import (
     BranchProgress,
 )
 from fabricassist.application.vision import VisionProviderError
+from fabricassist.domain.garment_analysis.care_policy import derive_safety_envelope
 from fabricassist.domain.garment_analysis.models import (
+    BranchReference,
+    CarePolicy,
     GarmentInspection,
     LabelExtraction,
+    MergedGarmentAssessment,
+    StainTreatment,
 )
+from fabricassist.domain.garment_analysis.models import (
+    FabricAssistAnalysisResult as DomainAnalysisResult,
+)
+from fabricassist.domain.garment_analysis.stain_policy import is_stain_analysis_eligible
 
 _REQUIRED_BRANCHES: Final = (
     AnalysisBranch.GARMENT_INSPECTION,
@@ -70,6 +83,7 @@ class GarmentAnalysisWorkflowPolicy:
     max_model_attempts: int = 2
     retry_base_delay_seconds: float = 0.25
     retry_jitter_seconds: float = 0.1
+    stain_analysis_enabled: bool = False
 
     def __post_init__(self) -> None:
         if self.lease_seconds <= 0:
@@ -103,24 +117,108 @@ class AsyncioGarmentAnalysisWorkflow:
         self._policy = policy or GarmentAnalysisWorkflowPolicy()
 
     async def execute(self, request: GarmentAnalysisRequest) -> WorkflowResult:
-        return await self._run_required(request.reference)
+        return await self._run_required(request.reference, stain_requested=request.stain_requested)
 
     async def resume(self, request: ResumeWorkflowRequest) -> WorkflowResult:
-        return await self._run_required(request.reference)
+        return await self._run_required(request.reference, stain_requested=request.stain_requested)
 
     async def reanalyze_branch(self, request: BranchReanalysisRequest) -> WorkflowResult:
         # Reanalysis repository creation supplies a successor revision.  Thus a
         # completed source branch can never be overwritten by this invocation.
-        await self._run_branches(request.reference, (request.branch,))
+        if request.branch is AnalysisBranch.STAIN_TREATMENT:
+            await self._run_optional_stain(
+                request.reference,
+                user_requested=True,
+                base_result=None,
+            )
+        else:
+            await self._run_branches(request.reference, (request.branch,))
         return await self._progress(request.reference)
 
-    async def _run_required(self, reference: AnalysisReference) -> WorkflowResult:
+    async def _run_required(
+        self, reference: AnalysisReference, *, stain_requested: bool = False
+    ) -> WorkflowResult:
         await self._run_branches(reference, _REQUIRED_BRANCHES)
+        base_result: WorkflowResult | None = None
         if self._finalization_repository is not None:
+            # The first deterministic finalization supplies the complete policy
+            # context. A second idempotent finalization after the optional branch
+            # attaches its validated projection to the same immutable result.
+            base_result = await self._finalization_repository.finalize_if_ready(reference=reference)
+            if base_result is None:
+                return await self._progress(reference)
+        optional_enabled = self._policy.stain_analysis_enabled or stain_requested
+        await self._run_optional_stain(
+            reference,
+            user_requested=stain_requested,
+            base_result=base_result,
+        )
+        if self._finalization_repository is not None and optional_enabled:
             finalized = await self._finalization_repository.finalize_if_ready(reference=reference)
             if finalized is not None:
                 return finalized
+            return await self._progress(reference)
+        if base_result is not None:
+            return base_result
         return await self._progress(reference)
+
+    async def _run_optional_stain(
+        self,
+        reference: AnalysisReference,
+        *,
+        user_requested: bool,
+        base_result: WorkflowResult | None,
+    ) -> None:
+        if not self._policy.stain_analysis_enabled:
+            # Keep the default workflow shape unchanged while the v2 module is
+            # inactive. An explicit on-demand request still records a skipped
+            # optional branch, but never bypasses the feature flag.
+            if user_requested:
+                await self._branch_repository.mark_not_provided(
+                    tenant_id=reference.tenant_id,
+                    run_id=reference.run_id,
+                    revision_id=reference.revision_id,
+                    branch=AnalysisBranch.STAIN_TREATMENT,
+                )
+            return
+        images = await self._image_repository.branch_images(
+            tenant_id=reference.tenant_id,
+            revision_id=reference.revision_id,
+            branch=AnalysisBranch.STAIN_TREATMENT,
+        )
+        # Borderline imagery is useful for ordinary evidence extraction but is
+        # not safe input for a treatment proposal. Unknown quality is retained
+        # for older normalized-image adapters; explicit unusable/borderline
+        # signals are always excluded from this safety-sensitive branch.
+        stain_images = tuple(
+            image for image in images if image.quality_state not in {"unusable", "borderline"}
+        )
+        inspection, policy, reusable_success = _stain_context(
+            base_result=base_result,
+            states=await self._branch_repository.branch_states(
+                tenant_id=reference.tenant_id, revision_id=reference.revision_id
+            ),
+            revision_id=reference.revision_id,
+        )
+        eligible = bool(policy is not None and inspection is not None) and (
+            is_stain_analysis_eligible(
+                stain_image_count=len(stain_images),
+                user_requested=user_requested,
+                inspection=inspection,
+                policy=policy,  # type: ignore[arg-type]
+                feature_enabled=self._policy.stain_analysis_enabled,
+                reusable_success_exists=reusable_success,
+            )
+        )
+        if not eligible or not stain_images:
+            await self._branch_repository.mark_not_provided(
+                tenant_id=reference.tenant_id,
+                run_id=reference.run_id,
+                revision_id=reference.revision_id,
+                branch=AnalysisBranch.STAIN_TREATMENT,
+            )
+            return
+        await self._run_branches(reference, (AnalysisBranch.STAIN_TREATMENT,))
 
     async def _run_branches(
         self, reference: AnalysisReference, branches: tuple[AnalysisBranch, ...]
@@ -197,7 +295,11 @@ class AsyncioGarmentAnalysisWorkflow:
         branch: AnalysisBranch,
         images: tuple[ProviderImage, ...],
         claim: BranchClaim,
-    ) -> ModelInvocation[GarmentInspection] | ModelInvocation[LabelExtraction]:
+    ) -> (
+        ModelInvocation[GarmentInspection]
+        | ModelInvocation[LabelExtraction]
+        | ModelInvocation[StainTreatment]
+    ):
         async with asyncio.timeout(self._policy.branch_timeout_seconds):
             if branch is AnalysisBranch.GARMENT_INSPECTION:
                 return await self._provider.inspect_garment(
@@ -206,6 +308,10 @@ class AsyncioGarmentAnalysisWorkflow:
             if branch is AnalysisBranch.LABEL_EXTRACTION:
                 return await self._provider.extract_labels(
                     LabelExtractionRequest(images=images, attempt_number=claim.attempt_number)
+                )
+            if branch is AnalysisBranch.STAIN_TREATMENT:
+                return await self._provider.analyze_stain(
+                    StainTreatmentRequest(images=images, attempt_number=claim.attempt_number)
                 )
         raise ValueError(f"Unsupported Phase 6 branch: {branch}")
 
@@ -244,6 +350,7 @@ def _request_fingerprint(branch: AnalysisBranch, images: tuple[ProviderImage, ..
                 "role": image.role,
                 "viewpoint": image.viewpoint,
                 "label_scope": image.label_scope,
+                "quality_state": image.quality_state,
                 "sha256": hashlib.sha256(image.jpeg_bytes).hexdigest(),
             }
             for image in images
@@ -254,7 +361,9 @@ def _request_fingerprint(branch: AnalysisBranch, images: tuple[ProviderImage, ..
 
 
 def _success_completion(
-    invocation: ModelInvocation[GarmentInspection] | ModelInvocation[LabelExtraction],
+    invocation: ModelInvocation[GarmentInspection]
+    | ModelInvocation[LabelExtraction]
+    | ModelInvocation[StainTreatment],
     request_fingerprint: str,
     images: tuple[ProviderImage, ...],
 ) -> BranchCompletion:
@@ -306,9 +415,70 @@ def _classify_provider_failure(error: Exception) -> tuple[bool, str]:
 
 def _stable_progress_status(states: tuple[BranchState, ...]) -> str:
     by_branch = {state.branch: state for state in states}
-    if any(state.status == "permanent_failed" for state in states):
+    if any(
+        by_branch.get(branch) is not None and by_branch[branch].status == "permanent_failed"
+        for branch in _REQUIRED_BRANCHES
+    ):
         return "failed"
     label = by_branch.get(AnalysisBranch.LABEL_EXTRACTION)
     if label is not None and label.status == "not_provided":
         return "needs_better_image"
     return "processing"
+
+
+def _stain_context(
+    *,
+    base_result: WorkflowResult | None,
+    states: tuple[BranchState, ...],
+    revision_id: UUID,
+) -> tuple[GarmentInspection | None, CarePolicy | None, bool]:
+    """Extract the typed base policy without trusting provider prose.
+
+    Production finalization returns the serialized deterministic result. The
+    fallback from branch payloads keeps the workflow unit-testable before the
+    v2 composition root is enabled and is intentionally limited to the same
+    deterministic policy function.
+    """
+    if base_result is not None:
+        canonical = cast(Mapping[str, object], getattr(base_result, "canonical_data", {}))
+        payload = canonical.get("garment_analysis_result")
+        if isinstance(payload, Mapping):
+            try:
+                result = DomainAnalysisResult.model_validate(payload)
+            except ValueError:
+                pass
+            else:
+                stain = result.validated_stain_treatment
+                return result.assessment.garment_inspection, result.care_policy, stain is not None
+
+    by_branch = {state.branch: state for state in states}
+    inspection_row = by_branch.get(AnalysisBranch.GARMENT_INSPECTION)
+    label_row = by_branch.get(AnalysisBranch.LABEL_EXTRACTION)
+    inspection = None
+    label = None
+    try:
+        if inspection_row and inspection_row.result_payload:
+            inspection = GarmentInspection.model_validate(inspection_row.result_payload)
+        if label_row and label_row.result_payload:
+            from fabricassist.domain.garment_analysis.models import LabelExtraction
+
+            label = LabelExtraction.model_validate(label_row.result_payload)
+    except ValueError:
+        return None, None, False
+    if inspection is None:
+        return None, None, False
+    assessment = MergedGarmentAssessment(
+        revision_id=revision_id,
+        branch_references=tuple(
+            BranchReference(
+                branch_name=state.branch.value,
+                result_id=state.branch_result_id,
+                schema_version="unknown",
+            )
+            for state in states
+            if state.status == "completed"
+        ),
+        garment_inspection=inspection,
+        label_extraction=label,
+    )
+    return inspection, derive_safety_envelope(assessment), False

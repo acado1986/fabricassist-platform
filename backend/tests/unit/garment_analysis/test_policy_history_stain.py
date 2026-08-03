@@ -187,6 +187,8 @@ def test_stain_validation_retains_proposal_but_blocks_consumer_solvent_claim() -
     )
     validated = validate_stain_treatment(policy, treatment)
     assert validated.blocked_claim_ids == (claim.claim_id,)
+    assert validated.accepted_steps == ()
+    assert validated.steps[0].status == "blocked"
     assert treatment.steps[0].claim.text == "apply solvent at home"
 
 

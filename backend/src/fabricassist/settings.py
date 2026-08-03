@@ -130,6 +130,7 @@ class Settings(BaseSettings):
     garment_analysis_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
     garment_analysis_gemini_model: str = ""
     garment_analysis_openai_model: str = ""
+    garment_analysis_stain_enabled: bool = False
     care_planner_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
     chat_provider: ModelCapabilityProvider = ModelCapabilityProvider.MOCK
     openai_responses_base_url: str = ""
