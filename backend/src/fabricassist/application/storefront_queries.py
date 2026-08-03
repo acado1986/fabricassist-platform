@@ -146,6 +146,9 @@ class ImageMetadataView:
     display_order: int
     width: int | None
     height: int | None
+    viewpoint: str | None = None
+    label_scope: str | None = None
+    quality_state: str | None = None
 
 
 @dataclass(frozen=True)

@@ -157,6 +157,9 @@ type ScanConnection {
 type ScanImageMetadataType {
   id: UUID!
   role: String!
+  viewpoint: String
+  labelScope: String
+  qualityState: String
   displayOrder: Int!
   width: Int
   height: Int

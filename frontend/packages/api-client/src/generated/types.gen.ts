@@ -359,13 +359,20 @@ export type ImageRequest = {
      * Display Order
      */
     display_order?: number;
+    label_scope?: LabelScope;
     role: ImageRole;
+    viewpoint?: ImageViewpoint;
 };
 
 /**
  * ImageRole
  */
 export type ImageRole = 'garment_overview' | 'care_label' | 'composition_label' | 'barcode_brand_label' | 'stain_closeup' | 'damage_closeup' | 'construction_detail' | 'other';
+
+/**
+ * ImageViewpoint
+ */
+export type ImageViewpoint = 'front' | 'back' | 'side' | 'detail' | 'unknown';
 
 /**
  * InvalidateLookupRequest
@@ -376,6 +383,11 @@ export type InvalidateLookupRequest = {
      */
     reason: string;
 };
+
+/**
+ * LabelScope
+ */
+export type LabelScope = 'care' | 'composition' | 'combined' | 'unknown';
 
 /**
  * LookupRequest
@@ -519,6 +531,11 @@ export type Observation = {
      */
     value: string;
 };
+
+/**
+ * QualityState
+ */
+export type QualityState = 'usable' | 'borderline' | 'unusable' | 'unknown';
 
 /**
  * RejectCandidateRequest
@@ -711,7 +728,10 @@ export type ScanImageResponse = {
      * Image Id
      */
     image_id: string;
+    label_scope?: LabelScope | null;
+    quality_state?: QualityState | null;
     role: ImageRole;
+    viewpoint?: ImageViewpoint | null;
     /**
      * Width
      */
@@ -830,11 +850,13 @@ export type UploadInstruction = {
      * Image Id
      */
     image_id: string;
+    label_scope?: LabelScope;
     role: ImageRole;
     /**
      * Url
      */
     url: string;
+    viewpoint?: ImageViewpoint;
 };
 
 /**

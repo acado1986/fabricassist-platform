@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -213,6 +214,41 @@ class ScanImage(Base):
             ),
             name="ck_scan_images_role",
         ),
+        CheckConstraint(
+            "viewpoint IN ('front','back','side','detail','unknown') OR viewpoint IS NULL",
+            name="ck_scan_images_viewpoint",
+        ),
+        CheckConstraint(
+            "viewpoint IS NULL OR viewpoint = 'unknown' OR role IN "
+            "('garment_overview','construction_detail')",
+            name="ck_scan_images_viewpoint_role",
+        ),
+        CheckConstraint(
+            "label_scope IN ('care','composition','combined','unknown') OR label_scope IS NULL",
+            name="ck_scan_images_label_scope",
+        ),
+        CheckConstraint(
+            "label_scope IS NULL OR label_scope = 'unknown' OR role IN "
+            "('care_label','composition_label')",
+            name="ck_scan_images_label_scope_role",
+        ),
+        CheckConstraint(
+            "quality_state IN ('usable','borderline','unusable','unknown') "
+            "OR quality_state IS NULL",
+            name="ck_scan_images_quality_state",
+        ),
+        CheckConstraint(
+            "(blur_score BETWEEN 0 AND 1 OR blur_score IS NULL) AND "
+            "(brightness_score BETWEEN 0 AND 1 OR brightness_score IS NULL) AND "
+            "(contrast_score BETWEEN 0 AND 1 OR contrast_score IS NULL) AND "
+            "(glare_score BETWEEN 0 AND 1 OR glare_score IS NULL) AND "
+            "(crop_readability_score BETWEEN 0 AND 1 OR crop_readability_score IS NULL)",
+            name="ck_scan_images_quality_scores",
+        ),
+        CheckConstraint(
+            "orientation_degrees IN (0,90,180,270) OR orientation_degrees IS NULL",
+            name="ck_scan_images_orientation_degrees",
+        ),
         CheckConstraint("byte_size > 0 OR byte_size IS NULL", name="ck_scan_images_byte_size"),
         CheckConstraint("width > 0 OR width IS NULL", name="ck_scan_images_width"),
         CheckConstraint("height > 0 OR height IS NULL", name="ck_scan_images_height"),
@@ -231,6 +267,18 @@ class ScanImage(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     detected_role: Mapped[str | None] = mapped_column(String(32))
+    viewpoint: Mapped[str | None] = mapped_column(String(16))
+    label_scope: Mapped[str | None] = mapped_column(String(16))
+    quality_state: Mapped[str | None] = mapped_column(String(16))
+    blur_score: Mapped[float | None] = mapped_column(Float)
+    brightness_score: Mapped[float | None] = mapped_column(Float)
+    contrast_score: Mapped[float | None] = mapped_column(Float)
+    glare_score: Mapped[float | None] = mapped_column(Float)
+    crop_readability_score: Mapped[float | None] = mapped_column(Float)
+    orientation_degrees: Mapped[int | None] = mapped_column(Integer)
+    quality_checked_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    preprocessing_version: Mapped[str | None] = mapped_column(String(50))
+    normalized_object_key: Mapped[str | None] = mapped_column(Text)
     object_key: Mapped[str] = mapped_column(Text, nullable=False)
     upload_token: Mapped[UUID] = mapped_column(Uuid, nullable=False, unique=True, default=uuid4)
     upload_expires_at: Mapped[datetime] = mapped_column(UtcTimestamp, nullable=False)

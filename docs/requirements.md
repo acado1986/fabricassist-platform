@@ -227,6 +227,12 @@ The MVP may run for one cleaning company, but the schema must include `tenant_id
 - **FR-QUALITY-003:** The response must provide actionable capture guidance such as “move closer,” “flatten the label,” or “avoid flash reflection.”
 - **FR-QUALITY-004:** Quality thresholds must be configurable and covered by tests using fixture images.
 
+The Phase 3 upload slice persists role-independent resolution, blur, brightness,
+contrast, glare, crop-readability, orientation, and preprocessing metadata on
+each image. Only the minimum-resolution hard bound blocks analysis; borderline
+signals remain available for branch-specific guidance rather than causing
+false rejection.
+
 ### 6.4 Scan lifecycle
 
 A scan status must use a controlled enum with at least:

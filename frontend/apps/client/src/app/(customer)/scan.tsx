@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
+import type { TranslationKey } from '@fabricassist/translations';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { useTranslation } from '../../i18n/TranslationProvider';
@@ -28,7 +29,27 @@ type Role =
   | 'damage_closeup'
   | 'construction_detail'
   | 'other';
-type Selected = { role: Role; asset: ImagePicker.ImagePickerAsset };
+type Viewpoint = 'front' | 'back' | 'side' | 'detail' | 'unknown';
+type LabelScope = 'care' | 'composition' | 'combined' | 'unknown';
+type Selected = {
+  role: Role;
+  viewpoint: Viewpoint;
+  labelScope: LabelScope;
+  asset: ImagePicker.ImagePickerAsset;
+};
+const viewpointLabels: Record<Viewpoint, TranslationKey> = {
+  front: 'viewpointFront',
+  back: 'viewpointBack',
+  side: 'viewpointSide',
+  detail: 'viewpointDetail',
+  unknown: 'viewpointUnknown',
+};
+const labelScopeLabels: Record<LabelScope, TranslationKey> = {
+  care: 'labelScopeCare',
+  composition: 'labelScopeComposition',
+  combined: 'labelScopeCombined',
+  unknown: 'labelScopeUnknown',
+};
 const maximumImages = 8;
 const roles: Role[] = [
   'garment_overview',
@@ -50,6 +71,8 @@ export default function Scan(): ReactNode {
   const [cameraVisible, setCameraVisible] = useState(false);
   const [error, setError] = useState<string>();
   const [barcode, setBarcode] = useState('');
+  const [viewpoint, setViewpoint] = useState<Viewpoint>('unknown');
+  const [labelScope, setLabelScope] = useState<LabelScope>('unknown');
   const roleCopy = (value: Role): { label: string; guidance: string } => {
     const key = value.replace(/_([a-z])/g, (_, character: string) =>
       character.toUpperCase(),
@@ -100,12 +123,26 @@ export default function Scan(): ReactNode {
     (asset: ImagePicker.ImagePickerAsset): void => {
       setItems((current) =>
         current.length < maximumImages
-          ? [...current, { role, asset }]
+          ? [
+              ...current,
+              {
+                role,
+                viewpoint:
+                  role === 'garment_overview' || role === 'construction_detail'
+                    ? viewpoint
+                    : 'unknown',
+                labelScope:
+                  role === 'care_label' || role === 'composition_label'
+                    ? labelScope
+                    : 'unknown',
+                asset,
+              },
+            ]
           : current,
       );
       setCameraVisible(false);
     },
-    [role],
+    [labelScope, role, viewpoint],
   );
   const addFromLibrary = useCallback(async (): Promise<void> => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -146,6 +183,8 @@ export default function Scan(): ReactNode {
             role: item.role,
             content_type: contentType,
             display_order: index,
+            viewpoint: item.viewpoint,
+            label_scope: item.labelScope,
           },
         });
         if (!instructionResult.data) throw new Error('instruction');
@@ -210,6 +249,72 @@ export default function Scan(): ReactNode {
             .replace('{maximum}', String(maximumImages))}
         </Text>
         <Text style={styles.guidance}>{selectedRole.guidance}</Text>
+        {role === 'garment_overview' || role === 'construction_detail' ? (
+          <View
+            accessibilityLabel={translate('viewpoint')}
+            style={styles.metadataGroup}
+          >
+            <Text style={styles.metadataTitle}>{translate('viewpoint')}</Text>
+            <View style={styles.metadataOptions}>
+              {(['front', 'back', 'side', 'detail', 'unknown'] as const).map(
+                (value) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={value}
+                    onPress={() => setViewpoint(value)}
+                    style={[
+                      styles.metadataButton,
+                      viewpoint === value && styles.metadataButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={
+                        viewpoint === value
+                          ? styles.metadataButtonTextSelected
+                          : styles.metadataButtonText
+                      }
+                    >
+                      {translate(viewpointLabels[value])}
+                    </Text>
+                  </Pressable>
+                ),
+              )}
+            </View>
+          </View>
+        ) : null}
+        {role === 'care_label' || role === 'composition_label' ? (
+          <View
+            accessibilityLabel={translate('labelScope')}
+            style={styles.metadataGroup}
+          >
+            <Text style={styles.metadataTitle}>{translate('labelScope')}</Text>
+            <View style={styles.metadataOptions}>
+              {(['care', 'composition', 'combined', 'unknown'] as const).map(
+                (value) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={value}
+                    onPress={() => setLabelScope(value)}
+                    style={[
+                      styles.metadataButton,
+                      labelScope === value && styles.metadataButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={
+                        labelScope === value
+                          ? styles.metadataButtonTextSelected
+                          : styles.metadataButtonText
+                      }
+                    >
+                      {translate(labelScopeLabels[value])}
+                    </Text>
+                  </Pressable>
+                ),
+              )}
+            </View>
+          </View>
+        ) : null}
         <View accessibilityLabel={translate('photoRole')} style={styles.roles}>
           {roles.map((value) => (
             <Pressable
@@ -243,6 +348,12 @@ export default function Scan(): ReactNode {
             />
             <View style={styles.itemCopy}>
               <Text>{roleCopy(item.role).label}</Text>
+              {item.viewpoint !== 'unknown' ? (
+                <Text>{translate(viewpointLabels[item.viewpoint])}</Text>
+              ) : null}
+              {item.labelScope !== 'unknown' ? (
+                <Text>{translate(labelScopeLabels[item.labelScope])}</Text>
+              ) : null}
               <Text numberOfLines={1}>
                 {item.asset.fileName ??
                   translate('photoPreview').replace(
@@ -375,6 +486,30 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 21,
     padding: spacing.medium,
+  },
+  metadataGroup: { gap: spacing.xsmall },
+  metadataTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  metadataOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xsmall,
+  },
+  metadataButton: {
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.small,
+    paddingVertical: spacing.xsmall,
+  },
+  metadataButtonSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  metadataButtonText: { color: colors.text, fontSize: 12 },
+  metadataButtonTextSelected: {
+    color: colors.background,
+    fontSize: 12,
+    fontWeight: '800',
   },
   roles: {
     flexDirection: 'row',

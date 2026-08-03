@@ -51,6 +51,13 @@ class ObjectMetadata:
     byte_size: int
     width: int
     height: int
+    quality_state: str = "unknown"
+    blur_score: float | None = None
+    brightness_score: float | None = None
+    contrast_score: float | None = None
+    glare_score: float | None = None
+    crop_readability_score: float | None = None
+    orientation_degrees: int | None = None
 
 
 class ObjectStorage(Protocol):

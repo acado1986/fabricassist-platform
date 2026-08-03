@@ -949,14 +949,16 @@ sequenceDiagram
     API->>DB: Create draft scan
     API-->>Client: scan_id
     loop Each selected image (roles may repeat)
-        Client->>API: POST /scans/{id}/images with role and content type
+        Client->>API: POST /scans/{id}/images with role, viewpoint, and label scope
         API->>DB: Create server-owned image record
         API-->>Client: image_id + scoped presigned upload
         Client->>Obj: PUT image
         Client->>API: Complete image upload
     end
-    API->>DB: Mark supplied uploads complete
+    API->>Obj: Decode image and calculate local quality signals
+    API->>DB: Mark supplied uploads complete with quality and preprocessing metadata
     Client->>API: POST /scans/{id}/analyse
+    API->>API: Block clearly unusable images before provider dispatch
     API->>DB: Transition to queued
     API->>DB: Commit versioned job intent/outbox row
     API->>Queue: Publish idempotent identifier-only message

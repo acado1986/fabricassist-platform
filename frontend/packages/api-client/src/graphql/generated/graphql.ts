@@ -262,7 +262,10 @@ export type ScanImageMetadataType = {
   displayOrder: Scalars['Int']['output'];
   height?: Maybe<Scalars['Int']['output']>;
   id: Scalars['UUID']['output'];
+  labelScope?: Maybe<Scalars['String']['output']>;
+  qualityState?: Maybe<Scalars['String']['output']>;
   role: Scalars['String']['output'];
+  viewpoint?: Maybe<Scalars['String']['output']>;
   width?: Maybe<Scalars['Int']['output']>;
 };
 
@@ -405,6 +408,9 @@ export type ScanImageMetadataQuery = {
     __typename?: 'ScanImageMetadataType';
     id: string;
     role: string;
+    viewpoint?: string | null;
+    labelScope?: string | null;
+    qualityState?: string | null;
     displayOrder: number;
     width?: number | null;
     height?: number | null;
@@ -1018,6 +1024,12 @@ export const ScanImageMetadataDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'id' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'role' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'viewpoint' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'labelScope' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'qualityState' },
+                },
                 {
                   kind: 'Field',
                   name: { kind: 'Name', value: 'displayOrder' },

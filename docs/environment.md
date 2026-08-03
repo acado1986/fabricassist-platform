@@ -175,6 +175,11 @@ AWS workload identity is configured, and are always secret. Upload limits and
 presign lifetime are controlled by `FABRICASSIST_UPLOAD_MAX_BYTES` and
 `FABRICASSIST_UPLOAD_URL_MINUTES`.
 
+At upload completion the storage adapter decodes the image and records local
+quality signals and the `image-quality-v1` preprocessing version. These signals
+are persisted with the image; clearly undersized images are blocked before
+analysis dispatch while borderline readability/glare remains a warning.
+
 ### Jobs and recovery
 
 - `FABRICASSIST_JOB_STAGE_BUDGET_SECONDS` bounds one analysis checkpoint.

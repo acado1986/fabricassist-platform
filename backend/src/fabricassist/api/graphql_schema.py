@@ -81,6 +81,9 @@ class CurrentUserType:
 class ScanImageMetadataType:
     id: UUID
     role: str
+    viewpoint: str | None
+    label_scope: str | None
+    quality_state: str | None
     display_order: int
     width: int | None
     height: int | None
@@ -645,6 +648,9 @@ def image_metadata_type(row: ImageMetadataView) -> ScanImageMetadataType:
     return ScanImageMetadataType(
         id=row.id,
         role=row.role,
+        viewpoint=row.viewpoint,
+        label_scope=row.label_scope,
+        quality_state=row.quality_state,
         display_order=row.display_order,
         width=row.width,
         height=row.height,

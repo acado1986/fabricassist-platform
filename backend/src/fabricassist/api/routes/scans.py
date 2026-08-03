@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,11 @@ from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.application.policies import UploadPolicy
 from fabricassist.domain.care import CareValidationReport, ProposedCarePlan
 from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
+from fabricassist.domain.garment_analysis.image_routing import (
+    ImageViewpoint,
+    LabelScope,
+    QualityState,
+)
 from fabricassist.domain.identity import GarmentIdentifierType, normalize_instance_identifier
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
@@ -53,11 +58,29 @@ class ImageRequest(BaseModel):
     role: ImageRole
     content_type: Mime
     display_order: int = Field(default=0, ge=0)
+    viewpoint: ImageViewpoint = ImageViewpoint.UNKNOWN
+    label_scope: LabelScope = LabelScope.UNKNOWN
+
+    @model_validator(mode="after")
+    def metadata_matches_role(self) -> ImageRequest:
+        if self.viewpoint is not ImageViewpoint.UNKNOWN and self.role not in {
+            ImageRole.GARMENT_OVERVIEW,
+            ImageRole.CONSTRUCTION_DETAIL,
+        }:
+            raise ValueError("viewpoint is only valid for garment or construction views")
+        if self.label_scope is not LabelScope.UNKNOWN and self.role not in {
+            ImageRole.CARE_LABEL,
+            ImageRole.COMPOSITION_LABEL,
+        }:
+            raise ValueError("label_scope is only valid for label images")
+        return self
 
 
 class UploadInstruction(BaseModel):
     image_id: UUID
     role: ImageRole
+    viewpoint: ImageViewpoint = ImageViewpoint.UNKNOWN
+    label_scope: LabelScope = LabelScope.UNKNOWN
     url: str
     headers: dict[str, str]
     expires_at: datetime
@@ -128,6 +151,9 @@ class ScanImageResponse(BaseModel):
 
     image_id: UUID
     role: ImageRole
+    viewpoint: ImageViewpoint | None = None
+    label_scope: LabelScope | None = None
+    quality_state: QualityState | None = None
     detected_role: ImageRole | None = None
     display_order: int
     width: int | None = None
@@ -251,6 +277,8 @@ async def add_image(
             return UploadInstruction(
                 image_id=image.id,
                 role=ImageRole(image.role),
+                viewpoint=ImageViewpoint(image.viewpoint or ImageViewpoint.UNKNOWN),
+                label_scope=LabelScope(image.label_scope or LabelScope.UNKNOWN),
                 url=upload.url,
                 headers=upload.headers,
                 expires_at=upload.expires_at,
@@ -281,6 +309,8 @@ async def add_image(
         scan_id=scan.id,
         role=request.role.value,
         display_order=request.display_order,
+        viewpoint=request.viewpoint.value,
+        label_scope=request.label_scope.value,
         object_key=key,
         upload_token=uuid4(),
         upload_expires_at=datetime.now(UTC),
@@ -307,6 +337,8 @@ async def add_image(
     return UploadInstruction(
         image_id=image.id,
         role=request.role,
+        viewpoint=request.viewpoint,
+        label_scope=request.label_scope,
         url=upload.url,
         headers=upload.headers,
         expires_at=upload.expires_at,
@@ -388,6 +420,15 @@ async def complete_upload(
         image.width = metadata.width
         image.height = metadata.height
         image.sha256 = image_sha256
+        image.quality_state = metadata.quality_state
+        image.blur_score = metadata.blur_score
+        image.brightness_score = metadata.brightness_score
+        image.contrast_score = metadata.contrast_score
+        image.glare_score = metadata.glare_score
+        image.crop_readability_score = metadata.crop_readability_score
+        image.orientation_degrees = metadata.orientation_degrees
+        image.quality_checked_at = datetime.now(UTC)
+        image.preprocessing_version = "image-quality-v1"
         image.completed_at = datetime.now(UTC)
         await session.commit()
     return await scan_detail(scan_id, session, user)
@@ -413,6 +454,26 @@ async def request_analysis(
     )
     if not count:
         raise HTTPException(409, "Complete at least one image before analysis.")
+    unusable_images = list(
+        (
+            await session.scalars(
+                select(ScanImage).where(
+                    ScanImage.scan_id == scan.id,
+                    ScanImage.quality_state == QualityState.UNUSABLE.value,
+                    ScanImage.completed_at.is_not(None),
+                    ScanImage.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
+    if any(
+        getattr(image, "quality_state", None) == QualityState.UNUSABLE.value
+        for image in unusable_images
+    ):
+        raise HTTPException(
+            422,
+            "One or more images are unusable. Retake a sharper, well-lit photo before analysis.",
+        )
     image_ids = list(
         (
             await session.scalars(
@@ -653,6 +714,9 @@ async def list_scan_images(
         ScanImageResponse(
             image_id=image.id,
             role=ImageRole(image.role),
+            viewpoint=ImageViewpoint(image.viewpoint) if image.viewpoint else None,
+            label_scope=LabelScope(image.label_scope) if image.label_scope else None,
+            quality_state=QualityState(image.quality_state) if image.quality_state else None,
             detected_role=ImageRole(image.detected_role) if image.detected_role else None,
             display_order=image.display_order,
             width=image.width,

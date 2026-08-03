@@ -624,6 +624,9 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
             ImageMetadataView(
                 id=row.id,
                 role=row.role,
+                viewpoint=row.viewpoint,
+                label_scope=row.label_scope,
+                quality_state=row.quality_state,
                 display_order=row.display_order,
                 width=row.width,
                 height=row.height,
@@ -672,6 +675,9 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
                     ImageMetadataView(
                         id=row.id,
                         role=row.role,
+                        viewpoint=row.viewpoint,
+                        label_scope=row.label_scope,
+                        quality_state=row.quality_state,
                         display_order=row.display_order,
                         width=row.width,
                         height=row.height,

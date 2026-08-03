@@ -39,11 +39,32 @@ const imageRoleKeys = {
   construction_detail: 'constructionDetailRole',
   other: 'otherRole',
 } as const satisfies Record<string, TranslationKey>;
+const viewpointKeys: Record<string, TranslationKey> = {
+  front: 'viewpointFront',
+  back: 'viewpointBack',
+  side: 'viewpointSide',
+  detail: 'viewpointDetail',
+  unknown: 'viewpointUnknown',
+};
+const labelScopeKeys: Record<string, TranslationKey> = {
+  care: 'labelScopeCare',
+  composition: 'labelScopeComposition',
+  combined: 'labelScopeCombined',
+  unknown: 'labelScopeUnknown',
+};
 
 function roleTranslationKey(role: string): TranslationKey {
   return role in imageRoleKeys
     ? imageRoleKeys[role as keyof typeof imageRoleKeys]
     : imageRoleKeys.other;
+}
+
+function viewpointTranslationKey(viewpoint: string): TranslationKey {
+  return viewpointKeys[viewpoint] ?? 'viewpointUnknown';
+}
+
+function labelScopeTranslationKey(scope: string): TranslationKey {
+  return labelScopeKeys[scope] ?? 'labelScopeUnknown';
 }
 
 export default function UploadedImages(): ReactNode {
@@ -130,9 +151,31 @@ export default function UploadedImages(): ReactNode {
             >
               <Image source={{ uri: image.url }} style={styles.thumbnail} />
               <View style={styles.cardFooter}>
-                <Text numberOfLines={1} style={styles.role}>
-                  {translate(roleTranslationKey(image.role))}
-                </Text>
+                <View style={styles.cardMetadata}>
+                  <Text numberOfLines={1} style={styles.role}>
+                    {translate(roleTranslationKey(image.role))}
+                  </Text>
+                  {image.viewpoint && image.viewpoint !== 'unknown' ? (
+                    <Text style={styles.metadata}>
+                      {translate(viewpointTranslationKey(image.viewpoint))}
+                    </Text>
+                  ) : null}
+                  {image.labelScope && image.labelScope !== 'unknown' ? (
+                    <Text style={styles.metadata}>
+                      {translate(labelScopeTranslationKey(image.labelScope))}
+                    </Text>
+                  ) : null}
+                  {image.qualityState === 'borderline' ? (
+                    <Text style={styles.metadata}>
+                      {translate('imageQualityBorderline')}
+                    </Text>
+                  ) : null}
+                  {image.qualityState === 'unusable' ? (
+                    <Text style={styles.metadata}>
+                      {translate('imageQualityUnusable')}
+                    </Text>
+                  ) : null}
+                </View>
                 <Feather color={colors.primary} name="maximize-2" size={17} />
               </View>
             </Pressable>
@@ -209,7 +252,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: spacing.small,
   },
+  cardMetadata: { flex: 1, gap: spacing.xsmall },
   role: { color: colors.text, flex: 1, fontSize: 13, fontWeight: '700' },
+  metadata: { color: colors.muted, fontSize: 11 },
   pressed: { opacity: 0.72 },
   modal: { backgroundColor: 'rgba(0, 0, 0, 0.94)', flex: 1 },
   close: {

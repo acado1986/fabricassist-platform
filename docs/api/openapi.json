@@ -593,8 +593,16 @@
             "title": "Display Order",
             "type": "integer"
           },
+          "label_scope": {
+            "$ref": "#/components/schemas/LabelScope",
+            "default": "unknown"
+          },
           "role": {
             "$ref": "#/components/schemas/ImageRole"
+          },
+          "viewpoint": {
+            "$ref": "#/components/schemas/ImageViewpoint",
+            "default": "unknown"
           }
         },
         "required": [
@@ -618,6 +626,17 @@
         "title": "ImageRole",
         "type": "string"
       },
+      "ImageViewpoint": {
+        "enum": [
+          "front",
+          "back",
+          "side",
+          "detail",
+          "unknown"
+        ],
+        "title": "ImageViewpoint",
+        "type": "string"
+      },
       "InvalidateLookupRequest": {
         "additionalProperties": false,
         "properties": {
@@ -631,6 +650,16 @@
         ],
         "title": "InvalidateLookupRequest",
         "type": "object"
+      },
+      "LabelScope": {
+        "enum": [
+          "care",
+          "composition",
+          "combined",
+          "unknown"
+        ],
+        "title": "LabelScope",
+        "type": "string"
       },
       "LookupRequest": {
         "additionalProperties": false,
@@ -881,6 +910,16 @@
         ],
         "title": "Observation",
         "type": "object"
+      },
+      "QualityState": {
+        "enum": [
+          "usable",
+          "borderline",
+          "unusable",
+          "unknown"
+        ],
+        "title": "QualityState",
+        "type": "string"
       },
       "RejectCandidateRequest": {
         "additionalProperties": false,
@@ -1206,8 +1245,38 @@
             "title": "Image Id",
             "type": "string"
           },
+          "label_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LabelScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quality_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QualityState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "role": {
             "$ref": "#/components/schemas/ImageRole"
+          },
+          "viewpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageViewpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "width": {
             "anyOf": [
@@ -1422,12 +1491,20 @@
             "title": "Image Id",
             "type": "string"
           },
+          "label_scope": {
+            "$ref": "#/components/schemas/LabelScope",
+            "default": "unknown"
+          },
           "role": {
             "$ref": "#/components/schemas/ImageRole"
           },
           "url": {
             "title": "Url",
             "type": "string"
+          },
+          "viewpoint": {
+            "$ref": "#/components/schemas/ImageViewpoint",
+            "default": "unknown"
           }
         },
         "required": [
