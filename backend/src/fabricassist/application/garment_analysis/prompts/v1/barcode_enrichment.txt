@@ -1,0 +1,3 @@
+Extract only barcode or product-label identifiers visible in the supplied images.
+Return JSON matching the supplied schema. Preserve each candidate's source image
+ID. Do not invent digits, product records, or physical-garment identity.

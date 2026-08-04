@@ -497,7 +497,12 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
                     id=observation.id,
                     observation_type=observation.observation_type,
                     stability=observation.stability,
+                    authority=observation.authority,
                     value=cast(dict[str, object], observation.value),
+                    evidence_ids=[UUID(value) for value in observation.evidence_ids],
+                    confidence=observation.confidence,
+                    analysis_revision_id=observation.analysis_revision_id,
+                    supersedes_observation_id=observation.supersedes_observation_id,
                     created_at=observation.created_at,
                 )
                 for observation in observations

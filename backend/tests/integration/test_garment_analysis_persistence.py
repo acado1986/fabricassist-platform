@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """PostgreSQL concurrency coverage for the Phase 4 branch-state adapter."""
 
 from __future__ import annotations
@@ -5,29 +6,59 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+from PIL import Image
 from sqlalchemy import func, select
 
 from fabricassist.application.garment_analysis.commands import AnalysisBranch
 from fabricassist.application.garment_analysis.ports import (
     BranchCompletion,
     BranchInvocation,
+    ProviderImage,
 )
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.garment_analysis.persistence import (
     SqlAlchemyGarmentAnalysisRepository,
+    SqlAlchemyV2EvidenceCacheRepository,
 )
+from fabricassist.infrastructure.operational_metrics import durable_metrics
 from fabricassist.infrastructure.persistence.models import (
     AnalysisBranchResult,
     AnalysisRevision,
+    EvidenceCacheEntry,
+    Garment,
+    GarmentIdentityCandidate,
+    GarmentIdentityMatchRun,
     ModelRun,
     Scan,
+    ScanImage,
     Tenant,
     User,
 )
+
+
+class _MemoryHotCache:
+    def __init__(self) -> None:
+        self.values: dict[str, dict[str, object]] = {}
+
+    async def get_json(self, key: str) -> dict[str, object] | None:
+        value = self.values.get(key)
+        return dict(value) if value is not None else None
+
+    async def set_json(self, key: str, value: dict[str, object], *, ttl_seconds: int) -> None:
+        assert ttl_seconds > 0
+        self.values[key] = dict(value)
+
+
+def _jpeg(color: str) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (64, 64), color).save(output, "JPEG")
+    return output.getvalue()
+
 
 TEST_DATABASE_URL = os.environ.get("FABRICASSIST_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
@@ -261,6 +292,281 @@ def test_branch_claims_are_tenant_scoped_and_transactional() -> None:
                     )
                     == 0
                 )
+        finally:
+            await database.close()
+
+    asyncio.run(scenario())
+
+
+def test_multi_image_cache_uses_postgres_authority_and_valkey_hot_payloads() -> None:
+    assert TEST_DATABASE_URL is not None
+
+    async def scenario() -> None:
+        database = Database(_test_database_url())
+        try:
+            tenant_id, scan_id, _ = await _create_revision(database)
+            now = datetime.now(UTC)
+            first_id, second_id = uuid4(), uuid4()
+            first_bytes, second_bytes = _jpeg("red"), _jpeg("blue")
+            async with database.session_factory() as session, session.begin():
+                session.add_all(
+                    [
+                        ScanImage(
+                            id=first_id,
+                            tenant_id=tenant_id,
+                            scan_id=scan_id,
+                            role="garment_overview",
+                            object_key=f"tests/{first_id}.jpg",
+                            upload_expires_at=now + timedelta(hours=1),
+                            completed_at=now,
+                            mime_type="image/jpeg",
+                            byte_size=len(first_bytes),
+                        ),
+                        ScanImage(
+                            id=second_id,
+                            tenant_id=tenant_id,
+                            scan_id=scan_id,
+                            role="garment_overview",
+                            object_key=f"tests/{second_id}.jpg",
+                            upload_expires_at=now + timedelta(hours=1),
+                            completed_at=now,
+                            mime_type="image/jpeg",
+                            byte_size=len(second_bytes),
+                        ),
+                    ]
+                )
+            images = (
+                ProviderImage(first_id, first_bytes, "garment_overview"),
+                ProviderImage(second_id, second_bytes, "garment_overview"),
+            )
+            hot_cache = _MemoryHotCache()
+            repository = SqlAlchemyV2EvidenceCacheRepository(
+                database.session_factory
+            ).with_hot_cache(hot_cache, ttl_seconds=60)
+            await repository.store_branch_result(
+                tenant_id=tenant_id,
+                branch=AnalysisBranch.GARMENT_INSPECTION,
+                images=images,
+                provider="mock",
+                model="mock-v2",
+                prompt_version="inspection-v2",
+                schema_version="inspection-v2",
+                payload={"marker": "durable"},
+            )
+            hot_cache.values.clear()
+            assert await repository.get_branch_result(
+                tenant_id=tenant_id,
+                branch=AnalysisBranch.GARMENT_INSPECTION,
+                images=images,
+                provider="mock",
+                model="mock-v2",
+                prompt_version="inspection-v2",
+                schema_version="inspection-v2",
+            ) == {
+                "_cache_source": "postgres_exact",
+                "marker": "durable",
+            }
+            assert len(hot_cache.values) == 1
+
+            hot_cache.values[next(iter(hot_cache.values))] = {"marker": "hot"}
+            assert await repository.get_branch_result(
+                tenant_id=tenant_id,
+                branch=AnalysisBranch.GARMENT_INSPECTION,
+                images=images,
+                provider="mock",
+                model="mock-v2",
+                prompt_version="inspection-v2",
+                schema_version="inspection-v2",
+            ) == {
+                "_cache_source": "valkey_hot",
+                "marker": "hot",
+            }
+
+            missing_tenant_id = uuid4()
+            missing_key = repository._hot_key(
+                tenant_id=missing_tenant_id,
+                branch=AnalysisBranch.GARMENT_INSPECTION,
+                images=images,
+                provider="mock",
+                model="mock-v2",
+                prompt_version="inspection-v2",
+                schema_version="inspection-v2",
+            )
+            hot_cache.values[missing_key] = {"marker": "orphaned-hot-value"}
+            assert (
+                await repository.get_branch_result(
+                    tenant_id=missing_tenant_id,
+                    branch=AnalysisBranch.GARMENT_INSPECTION,
+                    images=images,
+                    provider="mock",
+                    model="mock-v2",
+                    prompt_version="inspection-v2",
+                    schema_version="inspection-v2",
+                )
+                is None
+            )
+
+            assert repository._cache_sha(images) != repository._cache_sha(tuple(reversed(images)))
+            async with database.session_factory() as session:
+                entry = await session.scalar(
+                    select(EvidenceCacheEntry).where(
+                        EvidenceCacheEntry.tenant_id == tenant_id,
+                        EvidenceCacheEntry.role == AnalysisBranch.GARMENT_INSPECTION.value,
+                    )
+                )
+                assert entry is not None
+                assert entry.reuse_count == 2
+        finally:
+            await database.close()
+
+    asyncio.run(scenario())
+
+
+def test_visual_identity_candidates_are_scoped_confirmation_only_and_reject_false_positives() -> (
+    None
+):
+    assert TEST_DATABASE_URL is not None
+
+    async def scenario() -> None:
+        from fabricassist.infrastructure.garment_analysis.persistence import (
+            SqlAlchemyGarmentAnalysisFinalizationRepository,
+        )
+
+        database = Database(_test_database_url())
+        try:
+            tenant_id, current_scan_id, _ = await _create_revision(database)
+            now = datetime.now(UTC)
+            async with database.session_factory() as session, session.begin():
+                current_scan = await session.get(Scan, current_scan_id)
+                assert current_scan is not None and current_scan.user_id is not None
+                user_id = current_scan.user_id
+                matching_garment = Garment(
+                    id=uuid4(), tenant_id=tenant_id, user_id=user_id, display_name="match"
+                )
+                matching_garment_id = matching_garment.id
+                false_positive_garment = Garment(
+                    id=uuid4(), tenant_id=tenant_id, user_id=user_id, display_name="different"
+                )
+                session.add_all((matching_garment, false_positive_garment))
+                await session.flush()
+
+                matching_scan = Scan(
+                    id=uuid4(),
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    garment_id=matching_garment.id,
+                    status="completed",
+                    requested_language="en",
+                )
+                false_positive_scan = Scan(
+                    id=uuid4(),
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    garment_id=false_positive_garment.id,
+                    status="completed",
+                    requested_language="en",
+                )
+                session.add_all((matching_scan, false_positive_scan))
+                await session.flush()
+
+                other_tenant_id, other_user_id = uuid4(), uuid4()
+                session.add(
+                    Tenant(
+                        id=other_tenant_id,
+                        slug=f"visual-{other_tenant_id.hex[:16]}",
+                        name="Other visual tenant",
+                    )
+                )
+                await session.flush()
+                session.add(
+                    User(
+                        id=other_user_id,
+                        tenant_id=other_tenant_id,
+                        email=f"{other_user_id.hex}@example.test",
+                        password_hash="x" * 32,
+                    )
+                )
+                await session.flush()
+                other_garment = Garment(
+                    id=uuid4(), tenant_id=other_tenant_id, user_id=other_user_id
+                )
+                session.add(other_garment)
+                await session.flush()
+                other_scan = Scan(
+                    id=uuid4(),
+                    tenant_id=other_tenant_id,
+                    user_id=other_user_id,
+                    garment_id=other_garment.id,
+                    status="completed",
+                    requested_language="en",
+                )
+                session.add(other_scan)
+                await session.flush()
+
+                image_specs = (
+                    (current_scan_id, tenant_id, "0" * 16, "a" * 64),
+                    (matching_scan.id, tenant_id, "0" * 15 + "1", "b" * 64),
+                    (false_positive_scan.id, tenant_id, "f" * 16, "c" * 64),
+                    (other_scan.id, other_tenant_id, "0" * 16, "d" * 64),
+                )
+                session.add_all(
+                    ScanImage(
+                        id=uuid4(),
+                        tenant_id=image_tenant_id,
+                        scan_id=scan_id,
+                        role="garment_overview",
+                        object_key=f"tests/{scan_id}.jpg",
+                        upload_expires_at=now + timedelta(hours=1),
+                        completed_at=now,
+                        mime_type="image/jpeg",
+                        byte_size=100,
+                        normalized_sha256=normalized_sha,
+                        perceptual_hash=phash,
+                    )
+                    for scan_id, image_tenant_id, phash, normalized_sha in image_specs
+                )
+                await SqlAlchemyGarmentAnalysisFinalizationRepository(
+                    session
+                )._record_exact_image_candidates(current_scan)
+
+            async with database.session_factory() as session:
+                match_run = await session.scalar(
+                    select(GarmentIdentityMatchRun).where(
+                        GarmentIdentityMatchRun.scan_id == current_scan_id
+                    )
+                )
+                assert match_run is not None
+                assert match_run.classification == "visual_candidate"
+                candidates = list(
+                    (
+                        await session.scalars(
+                            select(GarmentIdentityCandidate).where(
+                                GarmentIdentityCandidate.match_run_id == match_run.id
+                            )
+                        )
+                    ).all()
+                )
+                assert [(candidate.garment_id, candidate.status) for candidate in candidates] == [
+                    (matching_garment_id, "pending")
+                ]
+                assert candidates[0].reasons["source"] == "perceptual_hash_candidate"
+        finally:
+            await database.close()
+
+    asyncio.run(scenario())
+
+
+def test_durable_metrics_expose_v2_cache_observation_and_rendering_outcomes() -> None:
+    assert TEST_DATABASE_URL is not None
+
+    async def scenario() -> None:
+        database = Database(_test_database_url())
+        try:
+            async with database.session_factory() as session:
+                output = (await durable_metrics(session)).decode()
+            assert "fabricassist_analysis_cache_durable_total" in output
+            assert "fabricassist_garment_observations_durable_total" in output
+            assert "fabricassist_rendered_answers_durable_total" in output
         finally:
             await database.close()
 

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -9,22 +12,52 @@ from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from fabricassist.application.cache import HotCache, perceptual_hash
 from fabricassist.application.garment_analysis import (
+    NORMALIZATION_VERSION,
     AnalysisBranch,
     AnalysisReference,
     BranchClaim,
     BranchCompletion,
     BranchState,
+    EvidenceCacheRepository,
+    ProviderImage,
+    normalize_image_bytes,
+    render_v2_answer,
 )
+from fabricassist.application.product_information import (
+    PersistedProductLookup,
+    ProductInformationError,
+    ProductInformationProvider,
+    lookup_and_record,
+    product_lookup_from_run,
+)
+from fabricassist.domain.garment_analysis.models import FabricAssistAnalysisResult
+from fabricassist.domain.garment_analysis.parity import (
+    BarcodeEnrichment,
+    ProductFactSnapshot,
+    RenderedAnswerProjection,
+)
+from fabricassist.domain.garment_analysis.parity_cache import canonical_v2_signature
+from fabricassist.domain.products import normalize_barcode
 from fabricassist.infrastructure.persistence.models import (
     AiRun,
     AiRunEvent,
     AnalysisBranchResult,
     AnalysisRevision,
+    CanonicalPlanCache,
     CareResult,
+    EvidenceCacheEntry,
     Garment,
+    GarmentIdentityCandidate,
+    GarmentIdentityMatchRun,
+    GarmentObservation,
     ModelRun,
+    ProductLookupRun,
+    RenderedAnswer,
+    RenderedAnswerCache,
     Scan,
+    ScanImage,
 )
 from fabricassist.infrastructure.telemetry import (
     GARMENT_ANALYSIS_BRANCH_LATENCY,
@@ -252,6 +285,11 @@ class SqlAlchemyGarmentAnalysisRepository:
                     uncertain_fields=list(completion.uncertain_fields),
                     overall_confidence=completion.overall_confidence,
                     error_category=completion.error_category,
+                    cache_provenance=(
+                        dict(completion.cache_provenance)
+                        if completion.cache_provenance is not None
+                        else {}
+                    ),
                     provider=(
                         completion.invocation.provider
                         if completion.invocation is not None
@@ -459,8 +497,13 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
     delivery return the immutable first result rather than rewriting evidence.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        product_provider: ProductInformationProvider | None = None,
+    ) -> None:
         self._session = session
+        self._product_provider = product_provider
 
     async def finalize_if_ready(self, *, reference: AnalysisReference):
         from fabricassist.application.garment_analysis import FabricAssistAnalysisResult
@@ -479,6 +522,7 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
             CorrectionSource,
             GarmentInspection,
             LabelExtraction,
+            MergedGarmentAssessment,
             StainTreatment,
         )
         from fabricassist.domain.garment_analysis.models import (
@@ -605,6 +649,30 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
             if label_row.status == "completed" and label_row.result_payload is not None
             else None
         )
+        predecessor_assessment = None
+        if revision.supersedes_revision_id is not None:
+            predecessor_dossier = await self._session.scalar(
+                select(EvidenceDossier).where(
+                    EvidenceDossier.tenant_id == reference.tenant_id,
+                    EvidenceDossier.analysis_revision_id == revision.supersedes_revision_id,
+                )
+            )
+            if predecessor_dossier is not None:
+                try:
+                    predecessor_assessment = MergedGarmentAssessment.model_validate(
+                        predecessor_dossier.payload
+                    )
+                except ValueError:
+                    predecessor_assessment = None
+        # A successor carrying only a new stain/damage photo reuses stable v2
+        # inspection/label facts, while a newly supplied branch supersedes them.
+        if inspection is None and predecessor_assessment is not None:
+            inspection = predecessor_assessment.garment_inspection
+        if label is None and predecessor_assessment is not None:
+            label = predecessor_assessment.label_extraction
+        product_lookup = await self._lookup_product(
+            scan_id=revision.scan_id, revision_id=revision.id, branches=branches
+        )
         history: tuple[DomainServiceEvent, ...] = ()
         if revision.garment_id is not None:
             event_rows = list(
@@ -642,15 +710,20 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
                 )
                 for row in event_rows
             )
+        correction_revision_ids = [revision.id]
+        if revision.supersedes_revision_id is not None:
+            correction_revision_ids.append(revision.supersedes_revision_id)
         correction_rows = list(
             (
                 await self._session.scalars(
-                    select(EvidenceCorrection).where(
+                    select(EvidenceCorrection)
+                    .where(
                         EvidenceCorrection.tenant_id == reference.tenant_id,
-                        EvidenceCorrection.corrected_revision_id == revision.id,
+                        EvidenceCorrection.corrected_revision_id.in_(correction_revision_ids),
                         EvidenceCorrection.confirmation == "accepted",
                         EvidenceCorrection.field_path != "unknown",
                     )
+                    .order_by(EvidenceCorrection.created_at.asc())
                 )
             ).all()
         )
@@ -691,6 +764,43 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
                 "retry_policy": revision.retry_policy_version,
             },
         )
+        cache_provenance = {
+            row.branch_name: row.cache_provenance for row in rows if row.cache_provenance
+        }
+        if cache_provenance:
+            result = result.model_copy(
+                update={
+                    "versions": {
+                        **result.versions,
+                        "cache_provenance": json.dumps(
+                            cache_provenance, sort_keys=True, separators=(",", ":")
+                        ),
+                    }
+                }
+            )
+        if product_lookup is not None:
+            product_facts = None
+            if product_lookup.product is not None:
+                try:
+                    product_facts = ProductFactSnapshot.model_validate(product_lookup.product)
+                except ValueError:
+                    product_facts = None
+            result = result.model_copy(
+                update={
+                    "assessment": result.assessment.model_copy(
+                        update={
+                            "product_barcode": product_lookup.barcode,
+                            "product_lookup_status": product_lookup.status,
+                            "product_source": product_lookup.source_name,
+                            "product_facts": product_facts,
+                        }
+                    ),
+                    "versions": {
+                        **result.versions,
+                        "product_lookup": "product-lookup-v2",
+                    },
+                }
+            )
         stain_row = branches.get(AnalysisBranch.STAIN_TREATMENT.value)
         stain_treatment = None
         if stain_row is not None and stain_row.status == "completed" and stain_row.result_payload:
@@ -769,6 +879,12 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
             canonical_data={"garment_analysis_result": canonical},
         )
         self._session.add(care_result)
+        await self._persist_v2_projections(
+            revision=revision,
+            care_result=care_result,
+            result=result,
+            product_lookup=product_lookup,
+        )
         for conflict in result.assessment.conflicts:
             self._session.add(
                 EvidenceConflictRecord(
@@ -799,6 +915,302 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
             canonical_data=care_result.canonical_data,
         )
 
+    async def _persist_v2_projections(
+        self,
+        *,
+        revision: AnalysisRevision,
+        care_result: CareResult,
+        result: FabricAssistAnalysisResult,
+        product_lookup: PersistedProductLookup | None,
+    ) -> None:
+        """Write append-only garment memory and deterministic answer projections."""
+        product_fingerprint = None
+        if product_lookup is not None and product_lookup.product is not None:
+            product_fingerprint = hashlib.sha256(
+                json.dumps(product_lookup.product, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+        signature = canonical_v2_signature(result, product_fingerprint=product_fingerprint)
+        existing_signature = await self._session.scalar(
+            select(CanonicalPlanCache).where(
+                CanonicalPlanCache.tenant_id == revision.tenant_id,
+                CanonicalPlanCache.signature == signature,
+            )
+        )
+        if existing_signature is None:
+            self._session.add(
+                CanonicalPlanCache(
+                    id=uuid4(),
+                    tenant_id=revision.tenant_id,
+                    signature=signature,
+                    care_result_id=care_result.id,
+                    evidence_schema_version=result.assessment.schema_version,
+                    proposal_schema_version="deterministic-care-proposal-v2",
+                    validator_version=result.care_policy.care_policy_version,
+                    product_fingerprint=product_fingerprint,
+                )
+            )
+        else:
+            existing_signature.reuse_count += 1
+            existing_signature.last_reused_at = datetime.now(UTC)
+        for language in ("en", "es"):
+            template_version = "care-rendering-v2"
+            rendered_cache = await self._session.scalar(
+                select(RenderedAnswerCache)
+                .where(
+                    RenderedAnswerCache.tenant_id == revision.tenant_id,
+                    RenderedAnswerCache.canonical_signature == signature,
+                    RenderedAnswerCache.language == language,
+                    RenderedAnswerCache.template_version == template_version,
+                )
+                .with_for_update()
+            )
+            if rendered_cache is None:
+                projection = render_v2_answer(
+                    result_id=care_result.id,
+                    result=result,
+                    language=language,
+                    template_version=template_version,
+                )
+                cache_answer = projection.model_dump(mode="json")
+                self._session.add(
+                    RenderedAnswerCache(
+                        id=uuid4(),
+                        tenant_id=revision.tenant_id,
+                        canonical_signature=signature,
+                        language=language,
+                        template_version=projection.template_version,
+                        answer=cache_answer,
+                        source_care_result_id=care_result.id,
+                    )
+                )
+            else:
+                # Rendering is deterministic and the signature includes the
+                # safety facts and product fingerprint. Reuse only an exact
+                # template-version match and rebind the projection to this
+                # immutable result row for correct provenance.
+                projection = RenderedAnswerProjection.model_validate(
+                    {**rendered_cache.answer, "result_id": str(care_result.id)}
+                )
+                rendered_cache.reuse_count += 1
+                rendered_cache.last_reused_at = datetime.now(UTC)
+            self._session.add(
+                RenderedAnswer(
+                    id=uuid4(),
+                    tenant_id=revision.tenant_id,
+                    care_result_id=care_result.id,
+                    language=language,
+                    template_version=projection.template_version,
+                    answer=projection.model_dump(mode="json"),
+                )
+            )
+        if revision.garment_id is None:
+            return
+        observation_specs: list[
+            tuple[str, str, dict[str, object], float | None, str, tuple[UUID, ...]]
+        ] = []
+        inspection = result.assessment.garment_inspection
+        if inspection is not None:
+            category_evidence_ids = tuple(
+                image_id
+                for evidence in inspection.field_evidence
+                if evidence.field_path in {"category", "garment.category"}
+                for image_id in evidence.source_image_ids
+            )
+            observation_specs.append(
+                (
+                    "garment_category",
+                    "stable",
+                    {"category": inspection.category, "subtype": inspection.subtype},
+                    inspection.overall_confidence,
+                    "visual_inference",
+                    category_evidence_ids,
+                )
+            )
+            for issue in inspection.issues:
+                observation_specs.append(
+                    (
+                        f"issue:{issue.issue_id}",
+                        "condition",
+                        issue.model_dump(mode="json"),
+                        issue.confidence,
+                        "visual_inference",
+                        issue.source_image_ids,
+                    )
+                )
+        label = result.assessment.label_extraction
+        if label is not None:
+            for index, material in enumerate(label.materials):
+                observation_specs.append(
+                    (
+                        f"material:{index}:{material.material}",
+                        "stable",
+                        material.model_dump(mode="json"),
+                        material.confidence,
+                        "photographed_label",
+                        material.source_image_ids,
+                    )
+                )
+        for action in (
+            *result.care_policy.allowed_actions,
+            *result.care_policy.prohibited_actions,
+            *result.care_policy.unknown_actions,
+        ):
+            observation_specs.append(
+                (
+                    f"care:{action.code}",
+                    "stable",
+                    action.model_dump(mode="json"),
+                    None,
+                    "photographed_label" if label is not None else "inferred",
+                    tuple(
+                        image_id
+                        for evidence in (label.field_evidence if label is not None else ())
+                        if evidence.field_path in action.evidence_paths
+                        for image_id in evidence.source_image_ids
+                    ),
+                )
+            )
+        for (
+            projection_key,
+            stability,
+            value,
+            confidence,
+            authority,
+            evidence_ids,
+        ) in observation_specs:
+            prior = await self._session.scalar(
+                select(GarmentObservation)
+                .where(
+                    GarmentObservation.tenant_id == revision.tenant_id,
+                    GarmentObservation.garment_id == revision.garment_id,
+                    GarmentObservation.projection_key == projection_key,
+                    GarmentObservation.analysis_revision_id != revision.id,
+                )
+                .order_by(GarmentObservation.created_at.desc())
+                .limit(1)
+            )
+            duplicate = await self._session.scalar(
+                select(GarmentObservation.id).where(
+                    GarmentObservation.analysis_revision_id == revision.id,
+                    GarmentObservation.projection_key == projection_key,
+                )
+            )
+            if duplicate is not None:
+                continue
+            self._session.add(
+                GarmentObservation(
+                    id=uuid4(),
+                    tenant_id=revision.tenant_id,
+                    garment_id=revision.garment_id,
+                    analysis_revision_id=revision.id,
+                    observation_type=projection_key.split(":", 1)[0],
+                    projection_key=projection_key,
+                    stability=stability,
+                    authority=authority,
+                    evidence_ids=list(evidence_ids),
+                    value=value,
+                    confidence=confidence,
+                    supersedes_observation_id=prior.id if prior is not None else None,
+                )
+            )
+
+    async def _lookup_product(
+        self,
+        *,
+        scan_id: UUID,
+        revision_id: UUID,
+        branches: dict[str, AnalysisBranchResult],
+    ) -> PersistedProductLookup | None:
+        """Enrich from one validated barcode without affecting care policy."""
+        scan = await self._session.get(Scan, scan_id, with_for_update=True)
+        if scan is None:
+            return None
+        row = branches.get(AnalysisBranch.BARCODE_ENRICHMENT.value)
+        barcode = None
+        if row is not None and row.status == "completed" and row.result_payload:
+            try:
+                enrichment = BarcodeEnrichment.model_validate(row.result_payload)
+            except ValueError:
+                enrichment = None
+            if enrichment is not None:
+                for candidate in enrichment.candidates:
+                    if candidate.status.value != "valid":
+                        continue
+                    try:
+                        barcode = normalize_barcode(
+                            candidate.normalized_value or candidate.raw_value
+                        )
+                    except ValueError:
+                        continue
+                    break
+        # The upload flow also supports a user-entered barcode before the run.
+        # Preserve that v1 capability in the v2 result without requiring an
+        # optional barcode-label branch.
+        if barcode is None:
+            manual_run = await self._session.scalar(
+                select(ProductLookupRun)
+                .where(
+                    ProductLookupRun.tenant_id == scan.tenant_id,
+                    ProductLookupRun.scan_id == scan.id,
+                    ProductLookupRun.invalidated_at.is_(None),
+                    ProductLookupRun.status.in_(("exact", "probable")),
+                )
+                .order_by(ProductLookupRun.created_at.desc())
+                .limit(1)
+            )
+            if manual_run is not None:
+                manual_run.analysis_revision_id = revision_id
+                return product_lookup_from_run(manual_run)
+        if barcode is None or self._product_provider is None:
+            return None
+        try:
+            lookup = await lookup_and_record(
+                session=self._session,
+                scan=scan,
+                barcode=barcode,
+                provider=self._product_provider,
+            )
+            run = await self._session.scalar(
+                select(ProductLookupRun)
+                .where(
+                    ProductLookupRun.scan_id == scan.id,
+                    ProductLookupRun.barcode == barcode,
+                    ProductLookupRun.tenant_id == scan.tenant_id,
+                )
+                .order_by(ProductLookupRun.created_at.desc())
+                .limit(1)
+            )
+            if run is not None:
+                run.analysis_revision_id = revision_id
+            return lookup
+        except ProductInformationError as error:
+            # Enrichment is an optional branch. Persist an auditable outage
+            # without turning a safe label result into a failed analysis.
+            run = ProductLookupRun(
+                id=uuid4(),
+                tenant_id=scan.tenant_id,
+                scan_id=scan.id,
+                barcode=barcode,
+                provider=type(self._product_provider).__name__,
+                status="outage",
+                schema_version="product-lookup-v2",
+                analysis_revision_id=revision_id,
+                safe_snapshot={"error_code": error.code},
+                validated_snapshot={},
+            )
+            self._session.add(run)
+            await self._session.flush()
+            return PersistedProductLookup(
+                barcode=barcode,
+                status="outage",
+                provider=type(self._product_provider).__name__,
+                source_name=None,
+                source_reference=None,
+                license_name=None,
+                retrieved_at=run.created_at,
+                product=None,
+            )
+
     async def _publish_active_result(
         self,
         *,
@@ -815,6 +1227,7 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
         scan = await self._session.get(Scan, revision.scan_id, with_for_update=True)
         if scan is None:
             return
+        await self._record_exact_image_candidates(scan)
         scan.active_analysis_revision_id = revision.id
         scan.active_result_id = care_result.id
         scan.analysis_stage = "completed"
@@ -835,15 +1248,378 @@ class SqlAlchemyGarmentAnalysisFinalizationRepository:
                 garment.active_analysis_revision_id = revision.id
                 garment.active_result_id = care_result.id
 
+    async def _record_exact_image_candidates(self, scan: Scan) -> None:
+        """Record probable physical-garment matches without auto-linking."""
+        current_images = list(
+            (
+                await self._session.execute(
+                    select(ScanImage.normalized_sha256, ScanImage.role).where(
+                        ScanImage.scan_id == scan.id,
+                        ScanImage.normalized_sha256.is_not(None),
+                        ScanImage.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        if not current_images:
+            return
+        exact_conditions = [
+            (ScanImage.normalized_sha256 == normalized, ScanImage.role == role)
+            for normalized, role in current_images
+        ]
+        exact_candidates = list(
+            (
+                await self._session.scalars(
+                    select(Scan.garment_id)
+                    .join(ScanImage, ScanImage.scan_id == Scan.id)
+                    .where(
+                        Scan.tenant_id == scan.tenant_id,
+                        Scan.user_id == scan.user_id,
+                        Scan.id != scan.id,
+                        Scan.garment_id.is_not(None),
+                        ScanImage.deleted_at.is_(None),
+                        or_(*[and_(sha, role) for sha, role in exact_conditions]),
+                    )
+                    .distinct()
+                )
+            ).all()
+        )
+        product_runs = list(
+            (
+                await self._session.scalars(
+                    select(ProductLookupRun).where(
+                        ProductLookupRun.tenant_id == scan.tenant_id,
+                        ProductLookupRun.scan_id == scan.id,
+                        ProductLookupRun.status.in_(("exact", "probable")),
+                        ProductLookupRun.invalidated_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        same_product_ids: list[UUID] = []
+        for run in product_runs:
+            same_product_ids.extend(
+                garment_id
+                for garment_id in (
+                    await self._session.scalars(
+                        select(Scan.garment_id)
+                        .join(ProductLookupRun, ProductLookupRun.scan_id == Scan.id)
+                        .where(
+                            Scan.tenant_id == scan.tenant_id,
+                            Scan.user_id == scan.user_id,
+                            Scan.id != scan.id,
+                            Scan.garment_id.is_not(None),
+                            ProductLookupRun.barcode == run.barcode,
+                            ProductLookupRun.status.in_(("exact", "probable")),
+                            ProductLookupRun.invalidated_at.is_(None),
+                        )
+                        .distinct()
+                    )
+                ).all()
+                if garment_id is not None
+            )
+        visual_hashes = [
+            value
+            for value in (
+                await self._session.scalars(
+                    select(ScanImage.perceptual_hash).where(
+                        ScanImage.scan_id == scan.id,
+                        ScanImage.role == "garment_overview",
+                        ScanImage.perceptual_hash.is_not(None),
+                        ScanImage.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+            if value is not None
+        ]
+        visual_ids: list[UUID] = []
+        if visual_hashes:
+            candidate_hashes = list(
+                (
+                    await self._session.execute(
+                        select(Scan.garment_id, ScanImage.perceptual_hash)
+                        .join(ScanImage, ScanImage.scan_id == Scan.id)
+                        .where(
+                            Scan.tenant_id == scan.tenant_id,
+                            Scan.user_id == scan.user_id,
+                            Scan.id != scan.id,
+                            Scan.garment_id.is_not(None),
+                            ScanImage.role == "garment_overview",
+                            ScanImage.perceptual_hash.is_not(None),
+                            ScanImage.deleted_at.is_(None),
+                        )
+                    )
+                ).all()
+            )
+            visual_ids = list(
+                {
+                    garment_id
+                    for garment_id, candidate_hash in candidate_hashes
+                    if garment_id is not None
+                    and candidate_hash is not None
+                    and any(
+                        _perceptual_distance(current_hash, candidate_hash) <= 6
+                        for current_hash in visual_hashes
+                    )
+                }
+            )
+        candidates_by_garment: dict[UUID, str] = {
+            garment_id: "probable_instance" for garment_id in exact_candidates if garment_id
+        }
+        for garment_id in same_product_ids:
+            if garment_id and garment_id not in candidates_by_garment:
+                candidates_by_garment[garment_id] = "same_product"
+        for garment_id in visual_ids:
+            if garment_id not in candidates_by_garment:
+                candidates_by_garment[garment_id] = "visual_candidate"
+        if not candidates_by_garment:
+            return
+        match_run = await self._session.scalar(
+            select(GarmentIdentityMatchRun).where(
+                GarmentIdentityMatchRun.scan_id == scan.id,
+                GarmentIdentityMatchRun.tenant_id == scan.tenant_id,
+            )
+        )
+        if match_run is None:
+            match_run = GarmentIdentityMatchRun(
+                id=uuid4(),
+                tenant_id=scan.tenant_id,
+                scan_id=scan.id,
+                classification=(
+                    "probable_instance"
+                    if "probable_instance" in candidates_by_garment.values()
+                    else "same_product"
+                    if "same_product" in candidates_by_garment.values()
+                    else "visual_candidate"
+                ),
+                reasons={"sources": sorted({*candidates_by_garment.values()})},
+            )
+            self._session.add(match_run)
+            await self._session.flush()
+        for garment_id, classification in candidates_by_garment.items():
+            if garment_id == scan.garment_id:
+                continue
+            exists = await self._session.scalar(
+                select(GarmentIdentityCandidate.id).where(
+                    GarmentIdentityCandidate.match_run_id == match_run.id,
+                    GarmentIdentityCandidate.garment_id == garment_id,
+                )
+            )
+            if exists is None:
+                self._session.add(
+                    GarmentIdentityCandidate(
+                        id=uuid4(),
+                        tenant_id=scan.tenant_id,
+                        match_run_id=match_run.id,
+                        garment_id=garment_id,
+                        classification=classification,
+                        reasons={"source": "normalized_image_sha256"}
+                        if classification == "probable_instance"
+                        else {"source": "trusted_product_barcode"}
+                        if classification == "same_product"
+                        else {"source": "perceptual_hash_candidate", "maximum_distance": 6},
+                    )
+                )
+
+
+def _perceptual_distance(left: str, right: str) -> int:
+    """Hamming distance for candidate discovery only; never a reuse or link key."""
+    try:
+        return (int(left, 16) ^ int(right, 16)).bit_count()
+    except ValueError:
+        return 64
+
 
 class SqlAlchemyGarmentAnalysisFinalizationStore:
     """Transaction-per-call wrapper used by parallel/re-delivered workflows."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        product_provider: ProductInformationProvider | None = None,
+    ) -> None:
         self._session_factory = session_factory
+        self._product_provider = product_provider
 
     async def finalize_if_ready(self, *, reference: AnalysisReference):
         async with self._session_factory() as session, session.begin():
-            return await SqlAlchemyGarmentAnalysisFinalizationRepository(session).finalize_if_ready(
-                reference=reference
+            return await SqlAlchemyGarmentAnalysisFinalizationRepository(
+                session, self._product_provider
+            ).finalize_if_ready(reference=reference)
+
+
+class SqlAlchemyV2EvidenceCacheRepository(EvidenceCacheRepository):
+    """Exact normalized-image cache adapter with PostgreSQL as authority."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+        self._hot_cache: HotCache | None = None
+        self._hot_cache_ttl_seconds = 86_400
+
+    def with_hot_cache(
+        self, cache: HotCache, *, ttl_seconds: int
+    ) -> SqlAlchemyV2EvidenceCacheRepository:
+        self._hot_cache = cache
+        self._hot_cache_ttl_seconds = ttl_seconds
+        return self
+
+    @staticmethod
+    def _cache_sha(images: tuple[ProviderImage, ...]) -> str:
+        hashes = [normalize_image_bytes(image.jpeg_bytes).sha256 for image in images]
+        if len(hashes) == 1:
+            return hashes[0]
+        return hashlib.sha256("|".join(hashes).encode()).hexdigest()
+
+    @classmethod
+    def _hot_key(
+        cls,
+        *,
+        tenant_id: UUID,
+        branch: AnalysisBranch,
+        images: tuple[ProviderImage, ...],
+        provider: str,
+        model: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> str:
+        return ":".join(
+            (
+                "fabricassist",
+                "garment-analysis-v2",
+                "evidence",
+                str(tenant_id),
+                branch.value,
+                cls._cache_sha(images),
+                NORMALIZATION_VERSION,
+                provider,
+                model,
+                prompt_version,
+                schema_version,
+            )
+        )
+
+    async def get_branch_result(
+        self,
+        *,
+        tenant_id: UUID,
+        branch: AnalysisBranch,
+        images: tuple[ProviderImage, ...],
+        provider: str,
+        model: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> dict[str, object] | None:
+        hot_key = self._hot_key(
+            tenant_id=tenant_id,
+            branch=branch,
+            images=images,
+            provider=provider,
+            model=model,
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+        )
+        cache_sha = self._cache_sha(images)
+        async with self._session_factory() as session, session.begin():
+            row = await session.scalar(
+                select(EvidenceCacheEntry)
+                .where(
+                    EvidenceCacheEntry.tenant_id == tenant_id,
+                    EvidenceCacheEntry.normalized_sha256 == cache_sha,
+                    EvidenceCacheEntry.role == branch.value,
+                    EvidenceCacheEntry.normalization_version == NORMALIZATION_VERSION,
+                    EvidenceCacheEntry.schema_version == schema_version,
+                    EvidenceCacheEntry.prompt_version == prompt_version,
+                    EvidenceCacheEntry.provider == provider,
+                    EvidenceCacheEntry.model == model,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return None
+            row.reuse_count += 1
+            row.last_reused_at = datetime.now(UTC)
+            if self._hot_cache is not None:
+                hot_payload = await self._hot_cache.get_json(hot_key)
+                if hot_payload is not None:
+                    return {"_cache_source": "valkey_hot", **hot_payload}
+            payload = dict(row.delta_payload)
+            if self._hot_cache is not None:
+                await self._hot_cache.set_json(
+                    hot_key, payload, ttl_seconds=self._hot_cache_ttl_seconds
+                )
+            return {"_cache_source": "postgres_exact", **payload}
+
+    async def store_branch_result(
+        self,
+        *,
+        tenant_id: UUID,
+        branch: AnalysisBranch,
+        images: tuple[ProviderImage, ...],
+        provider: str,
+        model: str,
+        prompt_version: str,
+        schema_version: str,
+        payload: Mapping[str, object],
+    ) -> None:
+        cache_sha = self._cache_sha(images)
+        hot_key = self._hot_key(
+            tenant_id=tenant_id,
+            branch=branch,
+            images=images,
+            provider=provider,
+            model=model,
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+        )
+        from fabricassist.application.vision import NormalizedImage
+        from fabricassist.domain.evidence import ImageRole
+
+        normalized = normalize_image_bytes(images[0].jpeg_bytes)
+        image = NormalizedImage(
+            image_id=images[0].image_id,
+            jpeg_bytes=normalized.jpeg_bytes,
+            sha256=normalized.sha256,
+            width=normalized.width,
+            height=normalized.height,
+            role=ImageRole.BARCODE_BRAND_LABEL
+            if branch is AnalysisBranch.BARCODE_ENRICHMENT
+            else ImageRole.OTHER,
+        )
+        async with self._session_factory() as session, session.begin():
+            existing = await session.scalar(
+                select(EvidenceCacheEntry).where(
+                    EvidenceCacheEntry.tenant_id == tenant_id,
+                    EvidenceCacheEntry.normalized_sha256 == cache_sha,
+                    EvidenceCacheEntry.role == branch.value,
+                    EvidenceCacheEntry.normalization_version == NORMALIZATION_VERSION,
+                    EvidenceCacheEntry.schema_version == schema_version,
+                    EvidenceCacheEntry.prompt_version == prompt_version,
+                    EvidenceCacheEntry.provider == provider,
+                    EvidenceCacheEntry.model == model,
+                )
+            )
+            if existing is not None:
+                return
+            session.add(
+                EvidenceCacheEntry(
+                    id=uuid4(),
+                    tenant_id=tenant_id,
+                    normalized_sha256=cache_sha,
+                    perceptual_hash=perceptual_hash(image),
+                    role=branch.value,
+                    normalization_version=NORMALIZATION_VERSION,
+                    schema_version=schema_version,
+                    prompt_version=prompt_version,
+                    provider=provider,
+                    model=model,
+                    delta_payload=dict(payload),
+                    source_image_id=images[0].image_id,
+                )
+            )
+            scan_image = await session.get(ScanImage, images[0].image_id)
+            if scan_image is not None:
+                scan_image.perceptual_hash = perceptual_hash(image)
+        if self._hot_cache is not None:
+            await self._hot_cache.set_json(
+                hot_key, dict(payload), ttl_seconds=self._hot_cache_ttl_seconds
             )

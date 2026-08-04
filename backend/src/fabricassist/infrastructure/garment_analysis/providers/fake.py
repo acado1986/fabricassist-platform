@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fabricassist.application.garment_analysis import (
+    BarcodeEnrichmentRequest,
     GarmentInspectionRequest,
     LabelExtractionRequest,
     ModelInvocation,
@@ -16,6 +17,7 @@ from fabricassist.domain.garment_analysis.models import (
     LabelExtraction,
     StainTreatment,
 )
+from fabricassist.domain.garment_analysis.parity import BarcodeEnrichment
 
 
 class FakeGarmentVisionProvider:
@@ -54,6 +56,15 @@ class FakeGarmentVisionProvider:
                 overall_confidence=0,
                 uncertainty=("stain_unknown",),
             ),
+            request.attempt_number,
+        )
+
+    async def extract_barcode_candidates(
+        self, request: BarcodeEnrichmentRequest
+    ) -> ModelInvocation[BarcodeEnrichment]:
+        return self._invocation(
+            "barcode_enrichment",
+            BarcodeEnrichment(warnings=("barcode_not_decoded",)),
             request.attempt_number,
         )
 

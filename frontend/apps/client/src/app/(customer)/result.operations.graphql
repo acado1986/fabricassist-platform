@@ -113,6 +113,10 @@ query ResultComposite($scanId: UUID!, $language: String!) {
           name
           value
         }
+        productBarcode
+        productLookupStatus
+        productSource
+        productFacts
       }
     }
     garment {

@@ -28,19 +28,21 @@ from fabricassist.application.limits import (
 )
 from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.application.policies import ConversationPolicy, JobExecutionPolicy
+from fabricassist.domain.garment_analysis.parity import ExecutionSnapshot
 from fabricassist.infrastructure.concurrency.factory import create_concurrency_gate
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.garment_analysis import create_garment_analysis_workflow
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 from fabricassist.infrastructure.persistence.models import (
     AnalysisJobOperation,
+    AnalysisRevision,
     ConversationMessage,
     Scan,
 )
 from fabricassist.infrastructure.storage.factory import create_object_storage
 from fabricassist.infrastructure.telemetry import measure_job
 from fabricassist.infrastructure.vision.providers import create_conversation_provider
-from fabricassist.settings import Settings
+from fabricassist.settings import ModelCapabilityProvider, Settings
 
 
 @contextmanager
@@ -70,6 +72,11 @@ async def _execute_analysis_job(
     message: AnalysisJobMessage,
 ) -> None:
     async with database.session_factory() as session:
+        revision = await session.get(AnalysisRevision, message.revision_id)
+        execution_settings = settings
+        if revision is not None and revision.execution_snapshot:
+            snapshot = ExecutionSnapshot.model_validate(revision.execution_snapshot)
+            execution_settings = _settings_for_execution_snapshot(settings, snapshot)
         result = await execute_checkpoint(
             session=session,
             message=message,
@@ -77,7 +84,7 @@ async def _execute_analysis_job(
                 stage_budget_seconds=settings.job_stage_budget_seconds
             ),
             garment_analysis_workflow=create_garment_analysis_workflow(
-                database=database, storage=storage, settings=settings
+                database=database, storage=storage, settings=execution_settings
             ),
             concurrency_gate=create_concurrency_gate(settings),
         )
@@ -97,6 +104,22 @@ async def _execute_analysis_job(
                 operation=continuation,
                 dispatcher=create_job_dispatcher(settings),
             )
+
+
+def _settings_for_execution_snapshot(settings: Settings, snapshot: ExecutionSnapshot) -> Settings:
+    """Reconstruct only revision-pinned analysis settings for a retry."""
+    provider = ModelCapabilityProvider(snapshot.provider)
+    updates: dict[str, object] = {
+        "garment_analysis_provider": provider,
+        "garment_analysis_stain_enabled": snapshot.effective_feature_flags.get(
+            "stain_analysis", False
+        ),
+    }
+    if provider is ModelCapabilityProvider.GEMINI:
+        updates["garment_analysis_gemini_model"] = snapshot.model
+    elif provider is ModelCapabilityProvider.OPENAI_RESPONSES:
+        updates["garment_analysis_openai_model"] = snapshot.model
+    return settings.model_copy(update=updates)
 
 
 async def _run_message_with_limit(database: Database, settings: Settings, message_id: UUID) -> None:

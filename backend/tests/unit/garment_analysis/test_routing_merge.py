@@ -34,23 +34,25 @@ def candidate(
 
 
 def test_image_router_excludes_unusable_labels_and_unknown_other() -> None:
-    overview, stain, label, unusable, other = (uuid4() for _ in range(5))
+    overview, stain, label, barcode, unusable, other = (uuid4() for _ in range(6))
     routed = route_images(
         (
             AnalysisImage(image_id=overview, role=ImageRole.GARMENT_OVERVIEW, display_order=0),
             AnalysisImage(image_id=stain, role=ImageRole.STAIN_CLOSEUP, display_order=1),
             AnalysisImage(image_id=label, role=ImageRole.CARE_LABEL, display_order=2),
+            AnalysisImage(image_id=barcode, role=ImageRole.BARCODE_BRAND_LABEL, display_order=3),
             AnalysisImage(
                 image_id=unusable,
                 role=ImageRole.COMPOSITION_LABEL,
                 quality_state=QualityState.UNUSABLE,
-                display_order=3,
+                display_order=4,
             ),
-            AnalysisImage(image_id=other, role=ImageRole.OTHER, display_order=4),
+            AnalysisImage(image_id=other, role=ImageRole.OTHER, display_order=5),
         )
     )
     assert routed.garment_inspection == (overview, stain)
     assert routed.label_extraction == (label,)
+    assert routed.barcode_enrichment == (barcode,)
     assert routed.stain_treatment == (stain, overview)
     assert set(routed.excluded) == {unusable, other}
 

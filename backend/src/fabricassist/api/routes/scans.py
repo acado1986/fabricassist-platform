@@ -15,6 +15,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.ai_runs import AiRunStateError, create_analysis_run
+from fabricassist.application.garment_analysis import (
+    NORMALIZATION_VERSION,
+    normalize_image_bytes,
+)
 from fabricassist.application.job_orchestration import enqueue_analysis
 from fabricassist.application.jobs import JobDispatcher
 from fabricassist.application.lifecycle import enqueue_deletion, ensure_review_case
@@ -37,9 +41,14 @@ from fabricassist.infrastructure.persistence.models import (
     ScanImage,
     User,
 )
+from fabricassist.settings import Settings
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
 Mime = Literal["image/jpeg", "image/png", "image/webp"]
+
+
+async def get_settings() -> Settings:  # replaced by application factory dependency
+    raise RuntimeError("Settings dependency was not configured.")
 
 
 class CreateScanRequest(BaseModel):
@@ -401,6 +410,7 @@ async def complete_upload(
     if image.completed_at is None:
         metadata = storage.verify_image(image.object_key, request.content_type)
         image_sha256 = hashlib.sha256(storage.read_object(image.object_key)).hexdigest()
+        normalized = normalize_image_bytes(storage.read_object(image.object_key))
         duplicate = await session.scalar(
             select(ScanImage.id).where(
                 ScanImage.scan_id == scan.id,
@@ -417,6 +427,8 @@ async def complete_upload(
         image.width = metadata.width
         image.height = metadata.height
         image.sha256 = image_sha256
+        image.normalized_sha256 = normalized.sha256
+        image.preprocessing_version = NORMALIZATION_VERSION
         image.quality_state = metadata.quality_state
         image.blur_score = metadata.blur_score
         image.brightness_score = metadata.brightness_score
@@ -425,7 +437,6 @@ async def complete_upload(
         image.crop_readability_score = metadata.crop_readability_score
         image.orientation_degrees = metadata.orientation_degrees
         image.quality_checked_at = datetime.now(UTC)
-        image.preprocessing_version = "image-quality-v1"
         image.completed_at = datetime.now(UTC)
         await session.commit()
     return await scan_detail(scan_id, session, user)
@@ -438,6 +449,7 @@ async def request_analysis(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     dispatcher: Annotated[JobDispatcher, Depends(get_job_dispatcher)],
+    settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnalysisResponse:
     scan = await owned_scan(session, user, scan_id, for_update=True)
@@ -500,6 +512,7 @@ async def request_analysis(
         operation_key=f"run:{run.id}",
         correlation_id=str(http_request.state.correlation_id),
         dispatcher=dispatcher,
+        settings=settings,
         run_id=run.id,
     )
     return AnalysisResponse(

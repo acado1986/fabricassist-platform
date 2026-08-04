@@ -14,7 +14,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import Engine, create_engine, insert, inspect, text
 from sqlalchemy.orm import Session
 
 from fabricassist.api.main import create_app
@@ -117,7 +117,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260731_0022"
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0029"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260804_0030"
 
     reset_database(engine)
     command.upgrade(config, "20260729_0018")
@@ -147,6 +147,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
         "confidence_policy_version",
         "retry_policy_version",
         "effective_feature_flags",
+        "execution_snapshot",
         "finalized_at",
     } <= {column["name"] for column in current.get_columns("analysis_revisions")}
     assert {
@@ -204,7 +205,7 @@ def test_empty_and_previous_head_upgrade_with_forward_only_cutover_and_seed_idem
     with pytest.raises(RuntimeError, match="breaking garment-intelligence cutover"):
         command.downgrade(config, "20260721_0003")
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260803_0029"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260804_0030"
     engine.dispose()
 
 
@@ -229,14 +230,12 @@ def test_cutover_transforms_legacy_result_into_current_projection(
             status="completed",
             requested_language="en",
         )
-        revision = AnalysisRevision(
-            id=uuid4(), tenant_id=tenant.id, scan_id=scan.id, revision_number=1, status="completed"
-        )
+        revision_id = uuid4()
         dossier = EvidenceDossier(
-            id=uuid4(), tenant_id=tenant.id, analysis_revision_id=revision.id, payload={}
+            id=uuid4(), tenant_id=tenant.id, analysis_revision_id=revision_id, payload={}
         )
         plan = ProposedPlan(
-            id=uuid4(), tenant_id=tenant.id, analysis_revision_id=revision.id, payload={}
+            id=uuid4(), tenant_id=tenant.id, analysis_revision_id=revision_id, payload={}
         )
         report = ValidationReport(
             id=uuid4(),
@@ -247,14 +246,27 @@ def test_cutover_transforms_legacy_result_into_current_projection(
         legacy = CareResult(
             id=uuid4(),
             tenant_id=tenant.id,
-            analysis_revision_id=revision.id,
+            analysis_revision_id=revision_id,
             dossier_id=dossier.id,
             proposed_plan_id=plan.id,
             validation_report_id=report.id,
             status="passed",
             canonical_data={"dossier": {}, "proposal": {}, "validation": {}},
         )
-        session.add_all([scan, revision, dossier, plan, report])
+        session.add(scan)
+        session.flush()
+        # The retained legacy row is inserted using only the 0028 columns;
+        # 0029/0030 then perform the forward v2 cutover.
+        session.execute(
+            insert(AnalysisRevision).values(
+                id=revision_id,
+                tenant_id=tenant.id,
+                scan_id=scan.id,
+                revision_number=1,
+                status="completed",
+            )
+        )
+        session.add_all([dossier, plan, report])
         session.flush()
         session.add(legacy)
         session.commit()

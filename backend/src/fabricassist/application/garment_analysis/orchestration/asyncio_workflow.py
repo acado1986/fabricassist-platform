@@ -13,19 +13,21 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from random import uniform
 from typing import Final, cast
 from uuid import UUID
 
 from fabricassist.application.garment_analysis.commands import AnalysisBranch
 from fabricassist.application.garment_analysis.ports import (
+    BarcodeEnrichmentRequest,
     BranchClaim,
     BranchCompletion,
     BranchInvocation,
     BranchReanalysisRequest,
     BranchState,
     BranchStateRepository,
+    EvidenceCacheRepository,
     FinalizationRepository,
     GarmentAnalysisRequest,
     GarmentInspectionRequest,
@@ -43,7 +45,8 @@ from fabricassist.application.garment_analysis.queries import (
     AnalysisReference,
     BranchProgress,
 )
-from fabricassist.application.vision import VisionProviderError
+from fabricassist.application.vision import NormalizedImage, VisionProviderError, decode_barcodes
+from fabricassist.domain.evidence import ImageRole
 from fabricassist.domain.garment_analysis.care_policy import derive_safety_envelope
 from fabricassist.domain.garment_analysis.models import (
     BranchReference,
@@ -55,6 +58,13 @@ from fabricassist.domain.garment_analysis.models import (
 )
 from fabricassist.domain.garment_analysis.models import (
     FabricAssistAnalysisResult as DomainAnalysisResult,
+)
+from fabricassist.domain.garment_analysis.parity import (
+    BarcodeCandidateStatus,
+    BarcodeCandidateValue,
+    BarcodeDecoder,
+    BarcodeEnrichment,
+    BarcodeLookupStatus,
 )
 from fabricassist.domain.garment_analysis.stain_policy import is_stain_analysis_eligible
 
@@ -108,12 +118,14 @@ class AsyncioGarmentAnalysisWorkflow:
         image_repository: ImageAssetRepository,
         provider: GarmentVisionProvider,
         finalization_repository: FinalizationRepository | None = None,
+        evidence_cache_repository: EvidenceCacheRepository | None = None,
         policy: GarmentAnalysisWorkflowPolicy | None = None,
     ) -> None:
         self._branch_repository = branch_repository
         self._image_repository = image_repository
         self._provider = provider
         self._finalization_repository = finalization_repository
+        self._evidence_cache_repository = evidence_cache_repository
         self._policy = policy or GarmentAnalysisWorkflowPolicy()
 
     async def execute(self, request: GarmentAnalysisRequest) -> WorkflowResult:
@@ -139,6 +151,10 @@ class AsyncioGarmentAnalysisWorkflow:
         self, reference: AnalysisReference, *, stain_requested: bool = False
     ) -> WorkflowResult:
         await self._run_branches(reference, _REQUIRED_BRANCHES)
+        # Product enrichment is optional and never participates in the safety
+        # readiness gate. It is nevertheless settled before finalization so its
+        # typed sourced facts can be included in the same immutable projection.
+        await self._run_optional_barcode(reference)
         base_result: WorkflowResult | None = None
         if self._finalization_repository is not None:
             # The first deterministic finalization supplies the complete policy
@@ -220,6 +236,16 @@ class AsyncioGarmentAnalysisWorkflow:
             return
         await self._run_branches(reference, (AnalysisBranch.STAIN_TREATMENT,))
 
+    async def _run_optional_barcode(self, reference: AnalysisReference) -> None:
+        """Run enrichment only when a barcode-label image was supplied."""
+        images = await self._image_repository.branch_images(
+            tenant_id=reference.tenant_id,
+            revision_id=reference.revision_id,
+            branch=AnalysisBranch.BARCODE_ENRICHMENT,
+        )
+        if images:
+            await self._run_branches(reference, (AnalysisBranch.BARCODE_ENRICHMENT,))
+
     async def _run_branches(
         self, reference: AnalysisReference, branches: tuple[AnalysisBranch, ...]
     ) -> None:
@@ -257,6 +283,60 @@ class AsyncioGarmentAnalysisWorkflow:
             if claim is None:
                 return
             try:
+                contract_type, prompt_version, schema_version = _branch_contract(branch)
+                provider_name = str(getattr(self._provider, "provider", "configured"))
+                provider_model = str(getattr(self._provider, "model", "configured"))
+                if self._evidence_cache_repository is not None:
+                    cached = await self._evidence_cache_repository.get_branch_result(
+                        tenant_id=self._tenant_id(reference),
+                        branch=branch,
+                        images=images,
+                        provider=provider_name,
+                        model=provider_model,
+                        prompt_version=prompt_version,
+                        schema_version=schema_version,
+                    )
+                    if cached is not None:
+                        cached_payload = dict(cached)
+                        cache_source = str(cached_payload.pop("_cache_source", "postgres_exact"))
+                        value = contract_type.model_validate(cached_payload)
+                        completion = _success_completion(
+                            cast(
+                                ModelInvocation[GarmentInspection]
+                                | ModelInvocation[LabelExtraction]
+                                | ModelInvocation[StainTreatment]
+                                | ModelInvocation[BarcodeEnrichment],
+                                ModelInvocation(
+                                    value=value,
+                                    provider="cache",
+                                    model="postgres-exact",
+                                    prompt_version=prompt_version,
+                                    prompt_checksum="cache",
+                                    schema_version=schema_version,
+                                    latency_ms=0,
+                                    attempt_number=claim.attempt_number,
+                                ),
+                            ),
+                            fingerprint,
+                            images,
+                        )
+                        completion = replace(
+                            completion,
+                            cache_provenance={
+                                "source": cache_source,
+                                "reused": True,
+                                "normalization_version": "normalized-jpeg-v2",
+                                "schema_version": schema_version,
+                                "prompt_version": prompt_version,
+                            },
+                        )
+                        await self._branch_repository.complete_branch(
+                            tenant_id=self._tenant_id(reference),
+                            run_id=reference.run_id,
+                            claim=claim,
+                            completion=completion,
+                        )
+                        return
                 invocation = await self._invoke(branch, images, claim)
             except asyncio.CancelledError:
                 # A process/worker cancellation must leave the active lease in
@@ -282,6 +362,20 @@ class AsyncioGarmentAnalysisWorkflow:
                 continue
 
             completion = _success_completion(invocation, fingerprint, images)
+            if self._evidence_cache_repository is not None and invocation.provider not in {
+                "cache",
+                "none",
+            }:
+                await self._evidence_cache_repository.store_branch_result(
+                    tenant_id=self._tenant_id(reference),
+                    branch=branch,
+                    images=images,
+                    provider=provider_name,
+                    model=provider_model,
+                    prompt_version=prompt_version,
+                    schema_version=schema_version,
+                    payload=invocation.value.model_dump(mode="json"),
+                )
             await self._branch_repository.complete_branch(
                 tenant_id=self._tenant_id(reference),
                 run_id=reference.run_id,
@@ -299,7 +393,22 @@ class AsyncioGarmentAnalysisWorkflow:
         ModelInvocation[GarmentInspection]
         | ModelInvocation[LabelExtraction]
         | ModelInvocation[StainTreatment]
+        | ModelInvocation[BarcodeEnrichment]
     ):
+        if branch is AnalysisBranch.BARCODE_ENRICHMENT:
+            local = _decode_local_barcodes(images, claim.attempt_number)
+            if local is not None:
+                return local
+            provider_method = getattr(self._provider, "extract_barcode_candidates", None)
+            if provider_method is None:
+                return _empty_barcode_invocation(claim.attempt_number)
+            async with asyncio.timeout(self._policy.branch_timeout_seconds):
+                return await provider_method(
+                    BarcodeEnrichmentRequest(
+                        images=images,
+                        attempt_number=claim.attempt_number,
+                    )
+                )
         async with asyncio.timeout(self._policy.branch_timeout_seconds):
             if branch is AnalysisBranch.GARMENT_INSPECTION:
                 return await self._provider.inspect_garment(
@@ -360,10 +469,23 @@ def _request_fingerprint(branch: AnalysisBranch, images: tuple[ProviderImage, ..
     return hashlib.sha256(serialized).hexdigest()
 
 
+def _branch_contract(branch: AnalysisBranch):
+    from fabricassist.application.garment_analysis.prompts.registry import load_prompt
+
+    if branch is AnalysisBranch.GARMENT_INSPECTION:
+        return GarmentInspection, load_prompt(branch.value).version, "garment-inspection-v2"
+    if branch is AnalysisBranch.LABEL_EXTRACTION:
+        return LabelExtraction, load_prompt(branch.value).version, "label-extraction-v2"
+    if branch is AnalysisBranch.BARCODE_ENRICHMENT:
+        return BarcodeEnrichment, load_prompt(branch.value).version, "barcode-enrichment-v2"
+    return StainTreatment, load_prompt(branch.value).version, "stain-treatment-v2"
+
+
 def _success_completion(
     invocation: ModelInvocation[GarmentInspection]
     | ModelInvocation[LabelExtraction]
-    | ModelInvocation[StainTreatment],
+    | ModelInvocation[StainTreatment]
+    | ModelInvocation[BarcodeEnrichment],
     request_fingerprint: str,
     images: tuple[ProviderImage, ...],
 ) -> BranchCompletion:
@@ -377,7 +499,7 @@ def _success_completion(
         status="completed",
         result_payload=value.model_dump(mode="json"),
         uncertain_fields=uncertain,
-        overall_confidence=value.overall_confidence,
+        overall_confidence=getattr(value, "overall_confidence", None),
         invocation=BranchInvocation(
             provider=invocation.provider,
             model=invocation.model,
@@ -395,6 +517,65 @@ def _success_completion(
             tool_tokens=invocation.tool_tokens,
             response_model_version=invocation.response_model_version,
         ),
+    )
+
+
+def _decode_local_barcodes(
+    images: tuple[ProviderImage, ...], attempt_number: int
+) -> ModelInvocation[BarcodeEnrichment] | None:
+    """Decode routed barcode images locally before spending a vision call."""
+    candidates = decode_barcodes(
+        tuple(
+            NormalizedImage(
+                image_id=image.image_id,
+                jpeg_bytes=image.jpeg_bytes,
+                sha256=hashlib.sha256(image.jpeg_bytes).hexdigest(),
+                width=1,
+                height=1,
+                role=ImageRole.BARCODE_BRAND_LABEL,
+            )
+            for image in images
+        )
+    )
+    if not candidates:
+        return None
+    values = tuple(
+        BarcodeCandidateValue(
+            image_id=item.image_id,
+            raw_value=item.value,
+            normalized_value=item.value,
+            status=BarcodeCandidateStatus.VALID,
+            decoder=BarcodeDecoder.LOCAL,
+            validation_code="LOCAL_DECODER_ACCEPTED",
+        )
+        for item in candidates
+    )
+    return ModelInvocation(
+        value=BarcodeEnrichment(
+            candidates=values,
+            lookup_status=BarcodeLookupStatus.NOT_ATTEMPTED,
+            warnings=(),
+        ),
+        provider="local",
+        model="zxingcpp",
+        prompt_version="barcode-enrichment-local-v1",
+        prompt_checksum="local",
+        schema_version="barcode-enrichment-v2",
+        latency_ms=0,
+        attempt_number=attempt_number,
+    )
+
+
+def _empty_barcode_invocation(attempt_number: int) -> ModelInvocation[BarcodeEnrichment]:
+    return ModelInvocation(
+        value=BarcodeEnrichment(warnings=("barcode_provider_unavailable",)),
+        provider="none",
+        model="none",
+        prompt_version="barcode-enrichment-none-v1",
+        prompt_checksum="none",
+        schema_version="barcode-enrichment-v2",
+        latency_ms=0,
+        attempt_number=attempt_number,
     )
 
 

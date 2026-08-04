@@ -210,6 +210,28 @@ export default function GarmentHistory(): ReactNode {
                 </Text>
               ))}
             </View>
+            <View style={styles.events}>
+              <Text style={styles.sectionTitle}>
+                {translate('garmentObservations')}
+              </Text>
+              {garment.observations.length === 0 ? (
+                <Text>{translate('noGarmentObservations')}</Text>
+              ) : null}
+              {garment.observations.map((observation) => (
+                <View key={observation.id} style={styles.observation}>
+                  <Text style={styles.observationTitle}>
+                    {observation.observationType}
+                  </Text>
+                  <Text>
+                    {translate('observationSource')}: {observation.authority}
+                    {observation.confidence !== null &&
+                    observation.confidence !== undefined
+                      ? ` · ${Math.round(observation.confidence)}%`
+                      : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
             <Pressable
               accessibilityLabel={translate('deleteGarment')}
               accessibilityRole="button"
@@ -358,6 +380,13 @@ const styles = StyleSheet.create({
   loadMoreText: { color: colors.primary, fontWeight: '800' },
   events: { gap: spacing.small, marginTop: spacing.small },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
+  observation: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.small,
+    gap: 2,
+    padding: spacing.small,
+  },
+  observationTitle: { color: colors.text, fontWeight: '700' },
   returnButton: {
     alignSelf: 'flex-start',
     backgroundColor: colors.primary,

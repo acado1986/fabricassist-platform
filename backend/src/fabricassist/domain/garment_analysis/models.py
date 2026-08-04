@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from fabricassist.domain.garment_analysis.parity import ProductFactSnapshot
+
 Text = Annotated[str, Field(min_length=1, max_length=5000)]
 ShortText = Annotated[str, Field(min_length=1, max_length=120)]
 
@@ -367,6 +369,10 @@ class MergedGarmentAssessment(StrictModel):
     conflicts: tuple[EvidenceConflict, ...] = Field(default_factory=tuple, max_length=80)
     uncertainties: tuple[ShortText, ...] = Field(default_factory=tuple, max_length=80)
     prior_exact_garment_confirmed: bool = False
+    product_barcode: str | None = Field(default=None, max_length=32)
+    product_lookup_status: str = "not_attempted"
+    product_source: str | None = Field(default=None, max_length=255)
+    product_facts: ProductFactSnapshot | None = None
 
 
 class CareAction(StrictModel):

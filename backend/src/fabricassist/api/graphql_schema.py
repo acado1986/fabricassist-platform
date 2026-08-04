@@ -56,6 +56,7 @@ from fabricassist.application.storefront_queries import (
     GarmentDetailView,
     GarmentHistoryView,
     GarmentIssueView,
+    GarmentObservationView,
     GarmentView,
     IdentityCandidateView,
     ImageMetadataView,
@@ -158,6 +159,22 @@ class ServiceEventType:
 
 
 @strawberry.type
+class GarmentObservationType:
+    """Append-only v2 garment-memory fact with its evidence provenance."""
+
+    id: UUID
+    observation_type: str
+    stability: str
+    authority: str
+    value: JSON
+    evidence_ids: list[UUID]
+    confidence: float | None
+    analysis_revision_id: UUID
+    supersedes_observation_id: UUID | None
+    created_at: datetime
+
+
+@strawberry.type
 class GarmentAnalysisHistoryType:
     scan_id: UUID
     status: str
@@ -187,6 +204,7 @@ class GarmentDetailType:
     active_result: CareResultType | None
     analyses: GarmentAnalysisHistoryConnection
     service_events: list[ServiceEventType]
+    observations: list[GarmentObservationType]
 
 
 @strawberry.type
@@ -305,6 +323,14 @@ class VersionType:
 
 
 @strawberry.type
+class ProductEvidenceType:
+    barcode: str | None
+    lookup_status: str
+    source: str | None
+    facts: JSON | None
+
+
+@strawberry.type
 class GarmentAnalysisResultType:
     schema_version: str
     outcome: str
@@ -331,6 +357,10 @@ class GarmentAnalysisResultType:
     history_event_ids: list[UUID]
     preference_source: str
     versions: list[VersionType]
+    product_barcode: str | None
+    product_lookup_status: str
+    product_source: str | None
+    product_facts: JSON | None
 
 
 @strawberry.type
@@ -735,6 +765,7 @@ def garment_detail_type(row: GarmentDetailView) -> GarmentDetailType:
             page_info=PageInfo(next_cursor=next_cursor),
         ),
         service_events=[service_event_type(event) for event in row.service_events],
+        observations=[garment_observation_type(item) for item in row.observations],
     )
 
 
@@ -812,6 +843,21 @@ def version_type(row: VersionView) -> VersionType:
     return VersionType(**row.__dict__)
 
 
+def garment_observation_type(row: GarmentObservationView) -> GarmentObservationType:
+    return GarmentObservationType(
+        id=row.id,
+        observation_type=row.observation_type,
+        stability=row.stability,
+        authority=row.authority,
+        value=cast(JSON, row.value),
+        evidence_ids=row.evidence_ids,
+        confidence=row.confidence,
+        analysis_revision_id=row.analysis_revision_id,
+        supersedes_observation_id=row.supersedes_observation_id,
+        created_at=row.created_at,
+    )
+
+
 def garment_analysis_result_type(row: GarmentAnalysisResultView) -> GarmentAnalysisResultType:
     return GarmentAnalysisResultType(
         schema_version=row.schema_version,
@@ -841,6 +887,10 @@ def garment_analysis_result_type(row: GarmentAnalysisResultView) -> GarmentAnaly
         history_event_ids=row.history_event_ids,
         preference_source=row.preference_source,
         versions=[version_type(item) for item in row.versions],
+        product_barcode=row.product_barcode,
+        product_lookup_status=row.product_lookup_status,
+        product_source=row.product_source,
+        product_facts=cast(JSON, row.product_facts) if row.product_facts is not None else None,
     )
 
 

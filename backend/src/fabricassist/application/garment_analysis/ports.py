@@ -28,6 +28,7 @@ from fabricassist.domain.garment_analysis.models import (
     LabelExtraction,
     StainTreatment,
 )
+from fabricassist.domain.garment_analysis.parity import BarcodeEnrichment
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,12 @@ class LabelExtractionRequest:
 
 @dataclass(frozen=True)
 class StainTreatmentRequest:
+    images: tuple[ProviderImage, ...]
+    attempt_number: int
+
+
+@dataclass(frozen=True)
+class BarcodeEnrichmentRequest:
     images: tuple[ProviderImage, ...]
     attempt_number: int
 
@@ -95,6 +102,9 @@ class GarmentVisionProvider(Protocol):
     async def analyze_stain(
         self, request: StainTreatmentRequest
     ) -> ModelInvocation[StainTreatment]: ...
+    async def extract_barcode_candidates(
+        self, request: BarcodeEnrichmentRequest
+    ) -> ModelInvocation[BarcodeEnrichment]: ...
 
 
 @dataclass(frozen=True)
@@ -179,6 +189,35 @@ class ImageAssetRepository(Protocol):
     ) -> tuple[ProviderImage, ...]: ...
 
 
+class EvidenceCacheRepository(Protocol):
+    """PostgreSQL-authoritative exact branch cache; hot mirrors are optional."""
+
+    async def get_branch_result(
+        self,
+        *,
+        tenant_id: UUID,
+        branch: AnalysisBranch,
+        images: tuple[ProviderImage, ...],
+        provider: str,
+        model: str,
+        prompt_version: str,
+        schema_version: str,
+    ) -> Mapping[str, object] | None: ...
+
+    async def store_branch_result(
+        self,
+        *,
+        tenant_id: UUID,
+        branch: AnalysisBranch,
+        images: tuple[ProviderImage, ...],
+        provider: str,
+        model: str,
+        prompt_version: str,
+        schema_version: str,
+        payload: Mapping[str, object],
+    ) -> None: ...
+
+
 @dataclass(frozen=True)
 class BranchClaim:
     """A branch lease returned only to the worker that atomically acquired it."""
@@ -231,6 +270,7 @@ class BranchCompletion:
     overall_confidence: int | None = None
     error_category: str | None = None
     invocation: BranchInvocation | None = None
+    cache_provenance: Mapping[str, object] | None = None
 
 
 class BranchStateRepository(Protocol):

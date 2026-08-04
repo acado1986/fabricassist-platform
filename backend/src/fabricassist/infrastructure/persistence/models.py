@@ -427,6 +427,9 @@ class AnalysisRevision(Base):
     effective_feature_flags: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"
     )
+    execution_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
     finalized_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
@@ -459,7 +462,8 @@ class AnalysisBranchResult(Base):
             "analysis_revision_id", "branch_name", name="uq_analysis_branch_revision_name"
         ),
         CheckConstraint(
-            "branch_name IN ('garment_inspection', 'label_extraction', 'stain_treatment')",
+            "branch_name IN ('garment_inspection', 'label_extraction', 'stain_treatment', "
+            "'barcode_enrichment')",
             name="ck_analysis_branch_results_name",
         ),
         CheckConstraint(
@@ -507,6 +511,9 @@ class AnalysisBranchResult(Base):
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     overall_confidence: Mapped[int | None] = mapped_column(Integer)
     uncertain_fields: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    cache_provenance: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
     result_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error_category: Mapped[str | None] = mapped_column(String(100))
     started_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
@@ -860,7 +867,14 @@ class GarmentIdentityConfirmation(Base):
 
 class GarmentObservation(Base):
     __tablename__ = "garment_observations"
-    __table_args__ = (Index("ix_garment_observations_garment_created", "garment_id", "created_at"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "analysis_revision_id",
+            "projection_key",
+            name="uq_garment_observations_revision_projection",
+        ),
+        Index("ix_garment_observations_garment_created", "garment_id", "created_at"),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
@@ -872,8 +886,13 @@ class GarmentObservation(Base):
         Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
     )
     observation_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    projection_key: Mapped[str] = mapped_column(
+        String(160), nullable=False, server_default="legacy"
+    )
     stability: Mapped[str] = mapped_column(String(20), nullable=False)
+    authority: Mapped[str] = mapped_column(String(80), nullable=False, server_default="unknown")
     value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     confidence: Mapped[float | None] = mapped_column(nullable=True)
     supersedes_observation_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("garment_observations.id", ondelete="SET NULL")
@@ -1050,12 +1069,15 @@ class ProductLookupRun(Base):
     scan_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
     )
+    analysis_revision_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="SET NULL")
+    )
     barcode: Mapped[str] = mapped_column(String(32), nullable=False)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
     schema_version: Mapped[str] = mapped_column(
-        String(64), nullable=False, server_default="product-lookup-v1"
+        String(64), nullable=False, server_default="product-lookup-v2"
     )
     product_profile_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("product_profiles.id", ondelete="SET NULL")

@@ -14,6 +14,7 @@ import httpx
 from pydantic import BaseModel
 
 from fabricassist.application.garment_analysis import (
+    BarcodeEnrichmentRequest,
     GarmentInspectionRequest,
     LabelExtractionRequest,
     ModelInvocation,
@@ -26,6 +27,7 @@ from fabricassist.domain.garment_analysis.models import (
     LabelExtraction,
     StainTreatment,
 )
+from fabricassist.domain.garment_analysis.parity import BarcodeEnrichment
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -63,6 +65,11 @@ class OpenAIResponsesGarmentVisionProvider:
         self, request: StainTreatmentRequest
     ) -> ModelInvocation[StainTreatment]:
         return await self._invoke("stain_treatment", request, StainTreatment)
+
+    async def extract_barcode_candidates(
+        self, request: BarcodeEnrichmentRequest
+    ) -> ModelInvocation[BarcodeEnrichment]:
+        return await self._invoke("barcode_enrichment", request, BarcodeEnrichment)
 
     async def _invoke(self, branch: str, request: Any, result_type: type[T]) -> ModelInvocation[T]:
         asset, started = load_prompt(branch), perf_counter()

@@ -70,5 +70,17 @@ query GarmentDetail(
       note
       createdAt
     }
+    observations {
+      id
+      observationType
+      stability
+      authority
+      value
+      evidenceIds
+      confidence
+      analysisRevisionId
+      supersedesObservationId
+      createdAt
+    }
   }
 }

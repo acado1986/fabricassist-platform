@@ -111,6 +111,10 @@ type GarmentAnalysisResultType {
   historyEventIds: [UUID!]!
   preferenceSource: String!
   versions: [VersionType!]!
+  productBarcode: String
+  productLookupStatus: String!
+  productSource: String
+  productFacts: JSON
 }
 
 type GarmentConnection {
@@ -131,6 +135,7 @@ type GarmentDetailType {
   activeResult: CareResultType
   analyses: GarmentAnalysisHistoryConnection!
   serviceEvents: [ServiceEventType!]!
+  observations: [GarmentObservationType!]!
 }
 
 type GarmentHistoryConnection {
@@ -160,6 +165,19 @@ type GarmentIssueType {
   suspectedCauses: [String!]!
   confirmedCause: String
   causeState: String!
+}
+
+type GarmentObservationType {
+  id: UUID!
+  observationType: String!
+  stability: String!
+  authority: String!
+  value: JSON!
+  evidenceIds: [UUID!]!
+  confidence: Float
+  analysisRevisionId: UUID!
+  supersedesObservationId: UUID
+  createdAt: DateTime!
 }
 
 type GarmentType {

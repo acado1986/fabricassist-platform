@@ -86,7 +86,12 @@ class GarmentObservationView:
     id: UUID
     observation_type: str
     stability: str
+    authority: str
     value: dict[str, object]
+    evidence_ids: list[UUID]
+    confidence: float | None
+    analysis_revision_id: UUID
+    supersedes_observation_id: UUID | None
     created_at: datetime
 
 
@@ -277,6 +282,10 @@ class GarmentAnalysisResultView:
     history_event_ids: list[UUID]
     preference_source: str
     versions: list[VersionView]
+    product_barcode: str | None = None
+    product_lookup_status: str = "not_attempted"
+    product_source: str | None = None
+    product_facts: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)

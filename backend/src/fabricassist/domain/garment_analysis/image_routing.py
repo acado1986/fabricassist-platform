@@ -95,6 +95,7 @@ class AnalysisImage(StrictModel):
 class RoutedImages(StrictModel):
     garment_inspection: tuple[UUID, ...] = ()
     label_extraction: tuple[UUID, ...] = ()
+    barcode_enrichment: tuple[UUID, ...] = ()
     stain_treatment: tuple[UUID, ...] = ()
     excluded: tuple[UUID, ...] = ()
 
@@ -103,6 +104,7 @@ def route_images(images: tuple[AnalysisImage, ...]) -> RoutedImages:
     """Route only explicit supported roles and omit unusable/unknown-role input."""
     garment: list[UUID] = []
     labels: list[UUID] = []
+    barcodes: list[UUID] = []
     stains: list[UUID] = []
     contextual_overview: UUID | None = None
     excluded: list[UUID] = []
@@ -122,11 +124,14 @@ def route_images(images: tuple[AnalysisImage, ...]) -> RoutedImages:
             stains.append(image.image_id)
         elif image.role in {ImageRole.CARE_LABEL, ImageRole.COMPOSITION_LABEL}:
             labels.append(image.image_id)
+        elif image.role is ImageRole.BARCODE_BRAND_LABEL:
+            barcodes.append(image.image_id)
         else:
             excluded.append(image.image_id)
     return RoutedImages(
         garment_inspection=tuple(garment),
         label_extraction=tuple(labels),
+        barcode_enrichment=tuple(barcodes),
         stain_treatment=tuple(
             [
                 *stains,

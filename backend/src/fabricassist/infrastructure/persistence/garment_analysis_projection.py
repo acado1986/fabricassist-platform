@@ -148,4 +148,12 @@ def analysis_result_view(result: FabricAssistAnalysisResult) -> GarmentAnalysisR
         history_event_ids=list(result.recommendation.history_event_ids),
         preference_source=result.recommendation.preference_source,
         versions=[VersionView(name=name, value=value) for name, value in result.versions.items()],
+        product_barcode=assessment.product_barcode,
+        product_lookup_status=assessment.product_lookup_status,
+        product_source=assessment.product_source,
+        product_facts=(
+            assessment.product_facts.model_dump(mode="json")
+            if assessment.product_facts is not None
+            else None
+        ),
     )

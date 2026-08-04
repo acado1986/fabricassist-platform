@@ -27,7 +27,12 @@ from fabricassist.infrastructure.jobs.config import (
 )
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 from fabricassist.infrastructure.jobs.qstash import QStashJobDispatcherAdapter
-from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
+from fabricassist.infrastructure.persistence.models import (
+    AnalysisJobOperation,
+    Garment,
+    GarmentIdentifier,
+    Scan,
+)
 from fabricassist.infrastructure.product_information.factory import (
     create_product_information_provider,
 )
@@ -309,11 +314,18 @@ async def test_job_intent_is_committed_before_external_publication() -> None:
         operation_key="analyse:committed-first",
         correlation_id="correlation",
         dispatcher=cast(JobDispatcher, Dispatcher()),
+        settings=Settings(),
     )
 
     assert events == ["commit", "publish", "commit"]
     assert isinstance(operation, AnalysisJobOperation)
     assert operation.published_at is not None
+    assert scan.garment_id is not None
+    garments = [item for item in session.added if isinstance(item, Garment)]
+    identifiers = [item for item in session.added if isinstance(item, GarmentIdentifier)]
+    assert len(garments) == 1
+    assert len(identifiers) == 1
+    assert identifiers[0].garment_id == scan.garment_id
 
 
 @pytest.mark.asyncio
@@ -364,6 +376,7 @@ async def test_committed_unpublished_intent_is_republished_on_retry() -> None:
             operation_key="analyse:recover",
             correlation_id="correlation",
             dispatcher=cast(JobDispatcher, Failing()),
+            settings=Settings(),
         )
     assert session.operation is not None
     assert session.operation.published_at is None
@@ -375,6 +388,7 @@ async def test_committed_unpublished_intent_is_republished_on_retry() -> None:
         operation_key="analyse:recover",
         correlation_id="new-request-correlation",
         dispatcher=cast(JobDispatcher, Succeeding()),
+        settings=Settings(),
     )
 
     assert len(published) == 1

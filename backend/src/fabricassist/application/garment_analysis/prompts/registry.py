@@ -19,6 +19,7 @@ _PROMPTS = {
     "garment_inspection": ("v1", "garment_inspection.txt"),
     "label_extraction": ("v1", "label_extraction.txt"),
     "stain_treatment": ("v1", "stain_treatment.txt"),
+    "barcode_enrichment": ("v1", "barcode_enrichment.txt"),
 }
 
 

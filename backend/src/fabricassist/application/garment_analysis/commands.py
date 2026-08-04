@@ -18,6 +18,7 @@ class AnalysisBranch(StrEnum):
     GARMENT_INSPECTION = "garment_inspection"
     LABEL_EXTRACTION = "label_extraction"
     STAIN_TREATMENT = "stain_treatment"
+    BARCODE_ENRICHMENT = "barcode_enrichment"
 
 
 @dataclass(frozen=True)

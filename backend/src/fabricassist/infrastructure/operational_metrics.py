@@ -15,9 +15,11 @@ from fabricassist.infrastructure.persistence.models import (
     ConversationMessage,
     EvidenceCacheEntry,
     GarmentIdentityMatchRun,
+    GarmentObservation,
     ModelRun,
     ObjectDeletionOutbox,
     ProductLookupRun,
+    RenderedAnswer,
     ReviewCase,
     Scan,
     ValidationReport,
@@ -127,6 +129,33 @@ async def durable_metrics(session: AsyncSession) -> bytes:
         )
     ).all():
         lines.append(_sample("fabricassist_analysis_branches_durable_total", count, status=status))
+
+    cache_source = AnalysisBranchResult.cache_provenance["source"].as_string()
+    lines.extend(
+        [
+            "# HELP fabricassist_analysis_cache_durable_total Durable v2 branch cache outcomes.",
+            "# TYPE fabricassist_analysis_cache_durable_total gauge",
+        ]
+    )
+    for source, count in (
+        await session.execute(select(cache_source, func.count()).group_by(cache_source))
+    ).all():
+        lines.append(_sample("fabricassist_analysis_cache_durable_total", count, source=source))
+
+    observation_count = await session.scalar(select(func.count(GarmentObservation.id)))
+    rendered_count = await session.scalar(select(func.count(RenderedAnswer.id)))
+    lines.extend(
+        [
+            "# HELP fabricassist_garment_observations_durable_total "
+            "Append-only v2 observation projections.",
+            "# TYPE fabricassist_garment_observations_durable_total gauge",
+            _sample("fabricassist_garment_observations_durable_total", observation_count),
+            "# HELP fabricassist_rendered_answers_durable_total "
+            "Persisted deterministic rendered answers.",
+            "# TYPE fabricassist_rendered_answers_durable_total gauge",
+            _sample("fabricassist_rendered_answers_durable_total", rendered_count),
+        ]
+    )
 
     model_count, latency_sum, input_tokens, output_tokens, total_tokens, cost = (
         await session.execute(

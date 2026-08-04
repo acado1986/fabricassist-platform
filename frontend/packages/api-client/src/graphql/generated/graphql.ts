@@ -146,6 +146,10 @@ export type GarmentAnalysisResultType = {
   overallCondition: Scalars['String']['output'];
   pattern: Scalars['String']['output'];
   preferenceSource: Scalars['String']['output'];
+  productBarcode?: Maybe<Scalars['String']['output']>;
+  productFacts?: Maybe<Scalars['JSON']['output']>;
+  productLookupStatus: Scalars['String']['output'];
+  productSource?: Maybe<Scalars['String']['output']>;
   professionalOnlyActions: Array<CareActionType>;
   prohibitedActions: Array<CareActionType>;
   schemaVersion: Scalars['String']['output'];
@@ -175,6 +179,7 @@ export type GarmentDetailType = {
   id: Scalars['UUID']['output'];
   identifiers: Array<Scalars['String']['output']>;
   lastAnalysisAt?: Maybe<Scalars['DateTime']['output']>;
+  observations: Array<GarmentObservationType>;
   serviceEvents: Array<ServiceEventType>;
   thumbnailImageId?: Maybe<Scalars['UUID']['output']>;
   thumbnailScanId?: Maybe<Scalars['UUID']['output']>;
@@ -210,6 +215,20 @@ export type GarmentIssueType = {
   severity: Scalars['String']['output'];
   sourceImageIds: Array<Scalars['UUID']['output']>;
   suspectedCauses: Array<Scalars['String']['output']>;
+};
+
+export type GarmentObservationType = {
+  __typename?: 'GarmentObservationType';
+  analysisRevisionId: Scalars['UUID']['output'];
+  authority: Scalars['String']['output'];
+  confidence?: Maybe<Scalars['Float']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  evidenceIds: Array<Scalars['UUID']['output']>;
+  id: Scalars['UUID']['output'];
+  observationType: Scalars['String']['output'];
+  stability: Scalars['String']['output'];
+  supersedesObservationId?: Maybe<Scalars['UUID']['output']>;
+  value: Scalars['JSON']['output'];
 };
 
 export type GarmentType = {
@@ -496,6 +515,19 @@ export type GarmentDetailQuery = {
       note?: string | null;
       createdAt: string;
     }>;
+    observations: Array<{
+      __typename?: 'GarmentObservationType';
+      id: string;
+      observationType: string;
+      stability: string;
+      authority: string;
+      value: unknown;
+      evidenceIds: Array<string>;
+      confidence?: number | null;
+      analysisRevisionId: string;
+      supersedesObservationId?: string | null;
+      createdAt: string;
+    }>;
   } | null;
 };
 
@@ -590,6 +622,10 @@ export type ResultCompositeQuery = {
         clearerImageRequests: Array<string>;
         historyEventIds: Array<string>;
         preferenceSource: string;
+        productBarcode?: string | null;
+        productLookupStatus: string;
+        productSource?: string | null;
+        productFacts?: unknown | null;
         issues: Array<{
           __typename?: 'GarmentIssueType';
           id: string;
@@ -1182,6 +1218,52 @@ export const GarmentDetailDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'id' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'note' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'createdAt' },
+                      },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'observations' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'observationType' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'stability' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'authority' },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'value' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'evidenceIds' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'confidence' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'analysisRevisionId' },
+                      },
+                      {
+                        kind: 'Field',
+                        name: {
+                          kind: 'Name',
+                          value: 'supersedesObservationId',
+                        },
+                      },
                       {
                         kind: 'Field',
                         name: { kind: 'Name', value: 'createdAt' },
@@ -1952,6 +2034,25 @@ export const ResultCompositeDocument = {
                                   },
                                 ],
                               },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'productBarcode' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: {
+                                kind: 'Name',
+                                value: 'productLookupStatus',
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'productSource' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'productFacts' },
                             },
                           ],
                         },

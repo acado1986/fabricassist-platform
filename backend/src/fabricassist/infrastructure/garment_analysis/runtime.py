@@ -7,13 +7,18 @@ from fabricassist.application.garment_analysis import (
     GarmentAnalysisWorkflowPolicy,
 )
 from fabricassist.application.object_storage import ObjectStorage
+from fabricassist.infrastructure.cache.factory import create_hot_cache
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.garment_analysis.assets import SqlAlchemyRevisionImageAssets
 from fabricassist.infrastructure.garment_analysis.persistence import (
     SqlAlchemyGarmentAnalysisBranchStore,
     SqlAlchemyGarmentAnalysisFinalizationStore,
+    SqlAlchemyV2EvidenceCacheRepository,
 )
 from fabricassist.infrastructure.garment_analysis.providers import create_garment_vision_provider
+from fabricassist.infrastructure.product_information.factory import (
+    create_product_information_provider,
+)
 from fabricassist.settings import Settings
 
 
@@ -26,8 +31,12 @@ def create_garment_analysis_workflow(
         image_repository=SqlAlchemyRevisionImageAssets(database.session_factory, storage),
         provider=create_garment_vision_provider(settings),
         finalization_repository=SqlAlchemyGarmentAnalysisFinalizationStore(
-            database.session_factory
+            database.session_factory,
+            create_product_information_provider(settings),
         ),
+        evidence_cache_repository=SqlAlchemyV2EvidenceCacheRepository(
+            database.session_factory
+        ).with_hot_cache(create_hot_cache(settings), ttl_seconds=settings.cache_hot_ttl_seconds),
         policy=GarmentAnalysisWorkflowPolicy(
             lease_seconds=settings.worker_concurrency_lease_seconds,
             branch_timeout_seconds=settings.vision_timeout_seconds,

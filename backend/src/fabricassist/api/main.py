@@ -306,6 +306,7 @@ def create_app(
     app.dependency_overrides[scans.get_storage] = get_storage
     app.dependency_overrides[scans.get_upload_policy] = lambda: upload_policy
     app.dependency_overrides[scans.get_job_dispatcher] = get_job_dispatcher
+    app.dependency_overrides[scans.get_settings] = get_settings
     app.dependency_overrides[runs.get_session] = get_session
     app.dependency_overrides[runs.get_current_user] = get_current_user
     app.dependency_overrides[runs.get_job_dispatcher] = get_job_dispatcher

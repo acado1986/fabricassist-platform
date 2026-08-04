@@ -288,6 +288,20 @@ export default function Result(): ReactNode {
               values={result.visibleLabelText.map((text) => text.text)}
             />
             <Section
+              title={translate('productEvidence')}
+              values={[
+                result.productBarcode
+                  ? `${translate('productBarcode')}: ${result.productBarcode}`
+                  : '',
+                result.productLookupStatus !== 'not_attempted'
+                  ? `${translate('productLookupStatus')}: ${result.productLookupStatus}`
+                  : '',
+                result.productSource
+                  ? `${translate('productSource')}: ${result.productSource}`
+                  : '',
+              ].filter((value): value is string => Boolean(value))}
+            />
+            <Section
               title={translate('richUncertainty')}
               values={[...result.uncertainties, ...result.clearerImageRequests]}
             />

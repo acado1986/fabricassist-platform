@@ -12,16 +12,23 @@ from fabricassist.application.garment_analysis.commands import (
     ResumeGarmentAnalysis,
     StartGarmentAnalysis,
 )
+from fabricassist.application.garment_analysis.images import (
+    NORMALIZATION_VERSION,
+    NormalizedImageMetadata,
+    normalize_image_bytes,
+)
 from fabricassist.application.garment_analysis.orchestration import (
     AsyncioGarmentAnalysisWorkflow,
     GarmentAnalysisWorkflowPolicy,
 )
 from fabricassist.application.garment_analysis.ports import (
+    BarcodeEnrichmentRequest,
     BranchClaim,
     BranchCompletion,
     BranchInvocation,
     BranchState,
     BranchStateRepository,
+    EvidenceCacheRepository,
     FinalizationRepository,
     GarmentAnalysisRequest,
     GarmentAnalysisWorkflow,
@@ -42,6 +49,7 @@ from fabricassist.application.garment_analysis.queries import (
     FabricAssistAnalysisResult,
     GetGarmentAnalysis,
 )
+from fabricassist.application.garment_analysis.rendering import render_v2_answer
 from fabricassist.application.garment_analysis.service import (
     DefaultGarmentAnalysisService,
     GarmentAnalysisService,
@@ -49,6 +57,7 @@ from fabricassist.application.garment_analysis.service import (
 
 __all__ = [
     "AnalysisBranch",
+    "BarcodeEnrichmentRequest",
     "AsyncioGarmentAnalysisWorkflow",
     "AnalysisProgress",
     "AnalysisReference",
@@ -58,6 +67,7 @@ __all__ = [
     "BranchProgress",
     "BranchState",
     "BranchStateRepository",
+    "EvidenceCacheRepository",
     "CleaningEvent",
     "DefaultGarmentAnalysisService",
     "FabricAssistAnalysisResult",
@@ -72,10 +82,14 @@ __all__ = [
     "ImageAssetRepository",
     "LabelExtractionRequest",
     "ModelInvocation",
+    "NORMALIZATION_VERSION",
+    "NormalizedImageMetadata",
     "PromptAsset",
     "ProviderImage",
     "StainTreatmentRequest",
     "load_prompt",
+    "normalize_image_bytes",
+    "render_v2_answer",
     "RecordAnalysisCorrection",
     "RecordGarmentCleaningEvent",
     "ReanalyzeAnalysisBranch",

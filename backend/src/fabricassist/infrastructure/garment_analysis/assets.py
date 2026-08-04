@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from io import BytesIO
 from uuid import UUID
 
-from PIL import Image, ImageOps
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fabricassist.application.garment_analysis import AnalysisBranch, ProviderImage
+from fabricassist.application.garment_analysis import (
+    AnalysisBranch,
+    ProviderImage,
+    normalize_image_bytes,
+)
 from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.domain.evidence import ImageRole
 from fabricassist.domain.garment_analysis.image_routing import (
@@ -75,13 +77,16 @@ class SqlAlchemyRevisionImageAssets:
         selected = {
             AnalysisBranch.GARMENT_INSPECTION: routed.garment_inspection,
             AnalysisBranch.LABEL_EXTRACTION: routed.label_extraction,
+            AnalysisBranch.BARCODE_ENRICHMENT: routed.barcode_enrichment,
             AnalysisBranch.STAIN_TREATMENT: routed.stain_treatment,
         }[branch]
         by_id = {row.id: row for row in rows}
         return tuple(
             ProviderImage(
                 image_id=image_id,
-                jpeg_bytes=_normalized_jpeg(self._storage.read_object(by_id[image_id].object_key)),
+                jpeg_bytes=normalize_image_bytes(
+                    self._storage.read_object(by_id[image_id].object_key)
+                ).jpeg_bytes,
                 role=by_id[image_id].role,
                 viewpoint=by_id[image_id].viewpoint or "unknown",
                 label_scope=by_id[image_id].label_scope or "unknown",
@@ -89,12 +94,3 @@ class SqlAlchemyRevisionImageAssets:
             )
             for image_id in selected
         )
-
-
-def _normalized_jpeg(raw: bytes) -> bytes:
-    """Produce transient provider bytes without EXIF or original metadata."""
-    with Image.open(BytesIO(raw)) as source:
-        image = ImageOps.exif_transpose(source).convert("RGB")
-        output = BytesIO()
-        image.save(output, format="JPEG", quality=90, optimize=True)
-    return output.getvalue()

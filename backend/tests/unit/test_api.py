@@ -732,6 +732,7 @@ async def test_incomplete_upload_cannot_be_analysed() -> None:
             session,  # type: ignore[arg-type]
             user,
             cast(JobDispatcher, UnusedDispatcher()),
+            Settings(),
         )
 
     assert error.value.status_code == 409
@@ -778,6 +779,7 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation() -> No
         session,  # type: ignore[arg-type]
         user,
         cast(JobDispatcher, dispatcher),
+        Settings(),
         "repeat-analysis",
     )
     operation = next(value for value in session.added if isinstance(value, AiRun))
@@ -788,6 +790,7 @@ async def test_repeated_qstash_analysis_request_reuses_durable_operation() -> No
         session,  # type: ignore[arg-type]
         user,
         cast(JobDispatcher, dispatcher),
+        Settings(),
         "repeat-analysis",
     )
 

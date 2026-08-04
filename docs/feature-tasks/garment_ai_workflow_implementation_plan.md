@@ -1784,3 +1784,250 @@ The audit did not run or approve web E2E/native smoke, load, IaC,
 backup/restore, live-provider, privacy, or deployed-environment smoke gates.
 Those require their documented environments, credentials, owners, and signed
 evidence and remain mandatory before Phase 10 acceptance.
+
+## 42. V2 legacy-capability parity restoration plan
+
+**Status:** implemented and locally verified in the active v2 workflow;
+external production approval, live-provider/deployed-environment evidence, and
+iOS evidence remain pending. Android testing is intentionally excluded from
+this work at the user's direction, so this record does not claim native-mobile
+completion. Do not restore the legacy executor, planner, result contract, or
+fallback route. This implementation restores product capabilities through the
+v2 branch model, typed
+`MergedGarmentAssessment`, deterministic v2 policy, and revision-pinned
+persistence.
+
+Implementation record (2026-08-04):
+
+- Added strict barcode-enrichment, merge/cache provenance, observation,
+  rendered-answer, and execution-snapshot contracts, plus migration
+  `20260804_0030`.
+- Connected normalized-image evidence caching, local-first barcode decoding,
+  sourced product lookup, successor predecessor/correction merging, durable
+  identity candidates, observation projections, canonical/rendered cache
+  records, and deterministic EN/ES rendering to v2 finalization.
+- Exposed product provenance through the typed GraphQL result and Expo result
+  screen; regenerated GraphQL/OpenAPI artifacts.
+- Revision snapshots now pin the selected provider/model and effective feature
+  flags rather than placeholders; deterministic render-cache hits are reused
+  and rebound to each new immutable result row.
+- Garment history now exposes append-only observation authority, evidence IDs,
+  confidence, revision, and supersession provenance through GraphQL and Expo.
+- Added confirmation-only perceptual visual candidates, snapshot-configured
+  worker retries, exact complete-batch evidence caching, Valkey cache mirroring,
+  cache provenance display, and durable cache/observation/rendering metrics.
+- Local validation completed: `make test`, `make lint`, `make migration-test`,
+  GraphQL/OpenAPI drift checks, web scan-to-history E2E, frontend container
+  build, bounded load smoke, security checks, PostgreSQL backup/restore drill,
+  local infrastructure smoke, and `make release-check`. Android testing was
+  stopped and excluded at the user's direction. iOS, OpenTofu IaC validation,
+  paid live-provider smoke, deployed-environment smoke, and owner approvals
+  remain external release gates because this Linux environment lacks the
+  required tooling, credentials, endpoints, or approvers.
+
+### 42.1 Outcome and invariants
+
+The target is the legacy product capability set plus the v2 improvements:
+
+| Capability | V2 target |
+| --- | --- |
+| Barcode and product enrichment | A dedicated optional enrichment branch records local decode/vision candidates, validated lookup provenance, and typed sourced product facts. Catalog data never overrides photographed prohibitions. |
+| Duplicate garment detection | Exact normalized-image and barcode/product candidates are tenant/user-scoped, durable, and confirmation-only. Only a verified FabricAssist serial auto-links. |
+| Cache reuse | Exact normalized-image evidence, canonical validated result, and rendered-answer caches use versioned keys and PostgreSQL authority; Valkey is only a hot mirror. |
+| Incremental analysis | New images create a successor revision. Stable prior v2 facts and accepted overlays merge with new branch outputs; time-varying condition/stain facts remain revision-bound. Full v2 policy runs on the merged assessment. |
+| Garment memory | Typed observations are projected from v2 assessment facts with source/authority/confidence/stability and never overwrite prior observations. |
+| Rendered results | Localized typed templates render and persist answers from the validated v2 result; rendering is not a second authority. |
+
+Non-negotiable rules:
+
+1. Do not invoke `application.analysis.analyse_scan()`, `CarePlanningProvider`,
+   the v1 validator, or `render_rich_result()` from the v2 runtime.
+2. No cache hit, catalog fact, barcode, visual match, or product match may
+   weaken a photographed label prohibition or auto-link a physical garment.
+3. Every provider/model/prompt/schema/normalization/cache/policy/rendering
+   version and materially effective flag is pinned on the revision before
+   publication; retries use the stored snapshot.
+4. Branch output remains typed and source-referenced. Provider payloads,
+   decoded barcode candidates, and catalog text are untrusted boundary data.
+5. Preserve the current v2 deterministic care-policy and candidate-claim
+   validation as the only care authority.
+
+### 42.2 Required enabling design
+
+Before feature implementation, introduce these v2-only seams. They prevent the
+same monolithic `analysis.py` regression from returning.
+
+1. Add `BARCODE_ENRICHMENT` to `AnalysisBranch`, with a strict branch result
+   schema containing candidate values, source image IDs, local/vision decoder
+   provenance, normalized/invalid state, lookup status, and typed product
+   snapshot. It is optional: failure records an enrichment warning and cannot
+   fail label-led safety analysis.
+2. Add immutable v2 merge contracts for prior assessment facts, accepted
+   corrections, and new branch outputs. The merger selects facts by the
+   documented authority order and emits conflicts rather than replacing them.
+3. Add a revision `execution_snapshot` (or equivalent versioned typed JSON
+   payload) containing provider/model/prompt/schema, preprocessing,
+   branch-routing, cache, product adapter, identity policy, care-policy, and
+   rendering versions. Add an Alembic migration; do not repurpose legacy
+   result JSON.
+4. Define provider-neutral ports for barcode candidate extraction and product
+   lookup. Local decoding is attempted first; a vision fallback receives only
+   routed barcode images. The existing safe product HTTP policy remains the
+   outbound boundary.
+5. Create v2 projection helpers for `GarmentObservation`, `ProductLookupRun`,
+   `GarmentIdentityMatchRun`/candidates, `EvidenceCacheEntry`,
+   `CanonicalPlanCache`, and `RenderedAnswer`. They accept typed v2 values,
+   never legacy dossiers.
+
+### 42.3 Implementation phases
+
+Execute these phases after the Section 41 blockers R0–R5 are resolved or in a
+separate branch that is not deployed. Do not mix this work with migration-ID
+repair or legacy review/conversation remediation.
+
+#### P0 — Contract, migration, and fixture foundation
+
+1. Write strict Pydantic contracts for barcode candidates/product facts,
+   merge provenance, cache-reuse provenance, identity-candidate reasons, and
+   observation projections.
+2. Add a new Alembic migration after the repaired head for execution snapshot
+   fields and only any new typed storage needed by the contracts. Existing
+   tables are reused where their semantics already match.
+3. Add synthetic fixtures for valid/invalid/ambiguous barcodes, exact-image
+   repeats, same-product/different-instance cases, stale cache versions,
+   changed labels, new stains/damage, product-label conflicts, and ES/EN
+   rendered results.
+4. Add contract tests proving all new schemas reject untrusted extra fields.
+
+**Exit gate:** migration upgrades from the repaired production lineage; typed
+fixtures and v2 contracts pass without changing active behavior.
+
+#### P1 — Barcode enrichment and sourced product facts
+
+1. Route only `barcode_brand_label` images to the new optional branch.
+2. Run local decoder first, normalize/checksum-validate candidates, and record
+   invalid candidates without lookup. Invoke the configured vision fallback at
+   most once for valid routed images when local decode is absent.
+3. Reuse `lookup_and_record()` behind a v2 adapter; persist `ProductLookupRun`
+   and typed lookup facts with source, match level, retrieval time, provider,
+   and catalog conflict provenance.
+4. Merge verified product facts below photographed label facts and expose them
+   in the v2 canonical projection and GraphQL read model.
+
+**Exit gate:** no arbitrary barcode URL is fetched; catalog outages are
+non-fatal; a catalog conflict never changes the v2 care-policy outcome.
+
+#### P2 — Identity candidates and confirmation
+
+1. Replace the temporary raw-upload SHA check with normalized-image SHA-256
+   matching using the revision-pinned image-normalization version and matching
+   image role. Keep raw upload SHA only for same-scan duplicate rejection.
+2. Create one `GarmentIdentityMatchRun` per revision with an explicit
+   classification, reasons, and candidate rows. Avoid duplicate candidates on
+   redelivery using database uniqueness and idempotent lookups.
+3. Add barcode-based `same_product` candidates from trusted exact/probable
+   lookup runs. Do not claim exact instance identity from retail data.
+4. Reuse the existing confirmation command/read projection or add a typed v2
+   command that creates a successor revision linked to the confirmed garment;
+   preserve the abandoned candidate audit trail.
+
+**Exit gate:** only verified FabricAssist serials auto-link; every non-exact
+candidate is tenant/user scoped and requires explicit confirmation.
+
+#### P3 — Incremental merge and evidence-cache reuse
+
+1. At revision creation, snapshot the predecessor revision and its accepted
+   corrections. Identify newly added revision images versus predecessor image
+   membership.
+2. For each new image, compute the pinned normalized SHA-256 and check the
+   PostgreSQL exact-evidence cache by tenant, role, normalization, provider,
+   model, prompt, and schema versions. Valkey can accelerate that lookup but
+   cannot be the only result record.
+3. Extract only cache-miss images through their routed branch. Store typed
+   branch artifacts and exact cache entries for misses; cache hits retain the
+   original source/reuse count/version provenance.
+4. Merge immutable stable facts, accepted overlays, and new evidence. Carry
+   historical condition/stain observations forward as history, not current
+   truth. Re-run full deterministic v2 care policy on every successor.
+
+**Exit gate:** a cache hit avoids the provider call but produces the same
+source-aware merged assessment; changes to a label, policy, or version prevent
+unsafe reuse.
+
+#### P4 — Observation and result projections
+
+1. Project each v2 selected fact/issue into append-only `GarmentObservation`
+   rows with observation type, stable/condition classification, evidence IDs,
+   confidence, authority, and revision ID.
+2. Make projection idempotent per revision/fact identity. Supersession is
+   represented explicitly; prior observations are never mutated in place.
+3. Create a typed v2 renderer using translation templates and persist
+   `RenderedAnswer` rows for ES and EN after policy validation. Include the
+   rendering/template version, validation outcome, source/provenance summary,
+   uncertainty, prohibition, and product-source sections.
+4. Restore canonical/rendered caches only when signature, prohibitions,
+   temperatures, processes, product fingerprint, policy, and template versions
+   match. Persist cache source/reuse count; never reuse across contradictions.
+
+**Exit gate:** REST/GraphQL result reads have a valid typed v2 projection for
+both languages without invoking any provider or legacy renderer.
+
+#### P5 — API, UI, migration, and operational completion
+
+1. Regenerate OpenAPI/GraphQL clients and expose barcode/product source,
+   identity candidates/confirmation state, reuse source, observations, and
+   rendered result metadata in current typed contracts.
+2. Update Expo scan/result/history screens to distinguish photographed,
+   retrieved, inferred, and confirmed facts; request confirmation for probable
+   garment matches and show cache reuse transparently where product permits.
+3. Transform retained current v2 revisions only when safe; otherwise expose the
+   approved `historical_result_unavailable` state. Never deserialize legacy
+   canonical data at runtime.
+4. Add metrics for decoder/lookup outcomes, cache hit/miss/invalidation,
+   identity candidate/confirmation outcomes, merge conflicts, observation
+   projections, and rendering errors.
+
+**Exit gate:** generated contracts are drift-free; old legacy execution code is
+removed only after all callers, tests, and retained-result handling are proven
+current-v2 compatible.
+
+### 42.4 Test matrix and release gates
+
+Every phase requires unit, persistence integration, and workflow redelivery
+tests. The combined acceptance suite must cover:
+
+- local/vision barcode decode, invalid checksum, missing/ambiguous/exact
+  product records, SSRF rejection, catalog outage, and catalog-label conflict;
+- exact serial, exact normalized-image, same-product, visual false-positive,
+  cross-tenant rejection, explicit confirmation, and idempotent redelivery;
+- cache hit/miss, version/policy/template invalidation, cache provenance, and
+  full policy revalidation after reuse;
+- predecessor merge, changed prohibition, new damage/stain, accepted
+  correction, conflict, and immutable historical observation behavior;
+- ES/EN rendered outputs, no-provider render cache hit, typed REST/GraphQL
+  reads, history ordering, and user-visible source distinctions;
+- worker crash/retry, concurrent finalization, migration from the repaired
+  production lineage, and no legacy planner/executor import reachable from the
+  v2 runtime.
+
+Run at minimum `make migration-test`, backend unit/integration suites,
+OpenAPI/GraphQL drift checks, frontend lint/typecheck/tests/build, and a web
+scan-to-history E2E flow. Add native smoke evidence before declaring the mobile
+experience complete; Android is explicitly outside the verification scope of
+this implementation record.
+
+### 42.5 Focused commit sequence
+
+```text
+feat(garment-analysis): add v2 parity contracts and revision snapshots
+feat(products): add v2 barcode enrichment and sourced product facts
+feat(identity): add normalized image and barcode product candidate matching
+feat(evidence): add v2 incremental merge and exact evidence cache reuse
+feat(history): project v2 garment observations and rendered answers
+feat(app): expose v2 enrichment, identity, cache, and history projections
+test(garment-analysis): prove v2 legacy-capability parity and safe retries
+```
+
+Each commit must remain runnable and pass its relevant tests. A failed phase
+must fail closed to review/better-image where safety-relevant; it must not fall
+back to legacy analysis.
