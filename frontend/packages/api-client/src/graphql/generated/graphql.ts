@@ -473,6 +473,8 @@ export type GarmentDetailQuery = {
         outcome: string;
         category: string;
         overallCondition: string;
+        warnings: Array<string>;
+        clearerImageRequests: Array<string>;
         uncertainties: Array<string>;
         allowedActions: Array<{
           __typename?: 'CareActionType';
@@ -481,6 +483,18 @@ export type GarmentDetailQuery = {
           maximumTemperatureC?: number | null;
         }>;
         prohibitedActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+        }>;
+        unknownActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+        }>;
+        professionalOnlyActions: Array<{
           __typename?: 'CareActionType';
           code: string;
           permission: string;

@@ -18,9 +18,7 @@ from fabricassist.application.job_execution import TemporaryJobError, execute_ch
 from fabricassist.application.job_orchestration import publish_operation
 from fabricassist.application.jobs import AnalysisJobMessage
 from fabricassist.application.lifecycle import (
-    enqueue_deletion,
-    process_object_deletions,
-    retention_candidates,
+    run_retention_once,
 )
 from fabricassist.application.limits import (
     ConcurrencyLimitExceeded,
@@ -211,20 +209,12 @@ def process_retention_task(self: Any) -> None:
 
     async def run() -> None:
         async with database.session_factory() as session:
-            for image in await retention_candidates(session):
-                await enqueue_deletion(
-                    session,
-                    tenant_id=image.tenant_id,
-                    user_id=None,
-                    resource_type="scan",
-                    resource_id=image.scan_id,
-                    images=[image],
-                )
-            await session.commit()
-            await process_object_deletions(
+            await run_retention_once(
                 session,
                 create_object_storage(settings),
-                max_attempts=settings.deletion_max_attempts,
+                merged_garment_retention_days=settings.merged_garment_retention_days,
+                batch_size=settings.publication_recovery_batch_size,
+                max_deletion_attempts=settings.deletion_max_attempts,
             )
 
     try:

@@ -34,16 +34,19 @@ export default function GarmentHistory(): ReactNode {
   const { apiClient, restWrites, token } = useSession();
   const { locale, translate } = useTranslation();
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
-  const { data, error, fetchMore } = useApolloQuery(GarmentDetailDocument, {
-    skip: !garmentId || !token,
-    variables: {
-      garmentId,
-      first: 20,
-      after: null,
-      language: locale,
+  const { data, error, fetchMore, refetch } = useApolloQuery(
+    GarmentDetailDocument,
+    {
+      skip: !garmentId || !token,
+      variables: {
+        garmentId,
+        first: 20,
+        after: null,
+        language: locale,
+      },
+      fetchPolicy: 'cache-and-network',
     },
-    fetchPolicy: 'cache-and-network',
-  });
+  );
   const garment = data?.garmentDetail;
   const [thumbnailUrl, setThumbnailUrl] = useState<string>();
   useEffect(() => {
@@ -130,107 +133,11 @@ export default function GarmentHistory(): ReactNode {
                 }
               />
             </View>
-            <View style={styles.analyses}>
-              <Text style={styles.sectionTitle}>
-                {translate('previousAnalyses')}
-              </Text>
-              {garmentScans.length === 0 ? (
-                <Text>{translate('previousAnalysesEmpty')}</Text>
-              ) : null}
-              {garmentScans.map((scan) => (
-                <Pressable
-                  accessibilityLabel={translate('viewPreviousResult')}
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: !scan.resultAvailable }}
-                  disabled={!scan.resultAvailable}
-                  key={scan.scanId}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/result',
-                      params: { scanId: scan.scanId },
-                    })
-                  }
-                  style={({ pressed }) => [
-                    styles.analysis,
-                    !scan.resultAvailable && styles.analysisDisabled,
-                    pressed && scan.resultAvailable && styles.analysisPressed,
-                  ]}
-                >
-                  <View>
-                    <Text style={styles.analysisTitle}>
-                      {translate('previousAnalysis')}
-                    </Text>
-                    <Text style={styles.analysisDate}>
-                      {formatTimestamp(
-                        scan.createdAt,
-                        locale,
-                        translate('notAvailable'),
-                      )}
-                    </Text>
-                  </View>
-                  <Feather
-                    color={colors.primary}
-                    name="chevron-right"
-                    size={20}
-                  />
-                </Pressable>
-              ))}
-              {garment.analyses.pageInfo.nextCursor ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() =>
-                    void fetchMore({
-                      variables: {
-                        after: garment.analyses.pageInfo.nextCursor,
-                      },
-                    })
-                  }
-                  style={({ pressed }) => [
-                    styles.loadMore,
-                    pressed && styles.analysisPressed,
-                  ]}
-                >
-                  <Text style={styles.loadMoreText}>
-                    {translate('loadMoreAnalyses')}
-                  </Text>
-                </Pressable>
-              ) : null}
-            </View>
-            <View style={styles.events}>
-              <Text style={styles.sectionTitle}>
-                {translate('serviceHistory')}
-              </Text>
-              {garment.serviceEvents.length === 0 ? (
-                <Text>{translate('noServiceEvents')}</Text>
-              ) : null}
-              {garment.serviceEvents.map((event) => (
-                <Text key={event.id}>
-                  • {event.kind}
-                  {event.note ? `: ${event.note}` : ''}
-                </Text>
-              ))}
-            </View>
-            <View style={styles.events}>
-              <Text style={styles.sectionTitle}>
-                {translate('garmentObservations')}
-              </Text>
-              {garment.observations.length === 0 ? (
-                <Text>{translate('noGarmentObservations')}</Text>
-              ) : null}
-              {garment.observations.map((observation) => (
-                <View key={observation.id} style={styles.observation}>
-                  <Text style={styles.observationTitle}>
-                    {observation.observationType}
-                  </Text>
-                  <Text>
-                    {translate('observationSource')}: {observation.authority}
-                    {observation.confidence !== null &&
-                    observation.confidence !== undefined
-                      ? ` · ${Math.round(observation.confidence)}%`
-                      : ''}
-                  </Text>
-                </View>
-              ))}
+            <View style={styles.detailLinks}>
+              <DetailLink icon="clock" title={translate('previousAnalyses')} onPress={() => router.push({ pathname: '/garments/analyses', params: { garmentId } })} />
+              <DetailLink icon="clipboard" title={translate('serviceHistory')} onPress={() => router.push({ pathname: '/garments/service-history', params: { garmentId } })} />
+              <DetailLink icon="check-circle" title={translate('finalResultAnalysis')} onPress={() => router.push({ pathname: '/garments/final-result', params: { garmentId } })} />
+              <DetailLink icon="list" title={translate('garmentObservations')} onPress={() => router.push({ pathname: '/garments/observations', params: { garmentId } })} />
             </View>
             <Pressable
               accessibilityLabel={translate('deleteGarment')}
@@ -281,6 +188,10 @@ export default function GarmentHistory(): ReactNode {
   );
 }
 
+function DetailLink({ icon, title, onPress }: { icon: ComponentProps<typeof Feather>['name']; title: string; onPress: () => void }): ReactNode {
+  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.detailLink, pressed && styles.analysisPressed]}><Feather color={colors.primary} name={icon} size={20} /><Text style={styles.detailLinkText}>{title}</Text><Feather color={colors.muted} name="chevron-right" size={18} /></Pressable>;
+}
+
 function StatusCard({
   icon,
   label,
@@ -313,6 +224,13 @@ function formatTimestamp(
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(timestamp);
+}
+
+function formatKnownValue(value: Record<string, unknown>): string {
+  return Object.entries(value)
+    .filter(([, item]) => item !== null && item !== undefined && item !== '')
+    .map(([key, item]) => `${key.replaceAll('_', ' ')}: ${String(item)}`)
+    .join(' · ');
 }
 
 const styles = StyleSheet.create({
@@ -378,8 +296,48 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.small,
   },
   loadMoreText: { color: colors.primary, fontWeight: '800' },
-  events: { gap: spacing.small, marginTop: spacing.small },
+  detailLinks: { gap: spacing.small, marginTop: spacing.small },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
+  detailLink: { alignItems: 'center', backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderRadius: radii.medium, borderWidth: 1, flexDirection: 'row', gap: spacing.small, padding: spacing.medium },
+  detailLinkText: { color: colors.text, flex: 1, fontSize: 15, fontWeight: '700' },
+  serviceEditor: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.small,
+    gap: spacing.small,
+    padding: spacing.small,
+  },
+  kindButton: {
+    borderColor: colors.border,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    paddingHorizontal: spacing.small,
+    paddingVertical: spacing.xsmall,
+  },
+  kindButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  serviceInput: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    minHeight: 42,
+    paddingHorizontal: spacing.small,
+  },
+  addServiceButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: radii.small,
+    paddingHorizontal: spacing.medium,
+    paddingVertical: spacing.small,
+  },
+  finalFact: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.small,
+    gap: 2,
+    padding: spacing.small,
+  },
   observation: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.small,

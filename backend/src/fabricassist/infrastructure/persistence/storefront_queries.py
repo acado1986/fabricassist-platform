@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from fabricassist.application.garment_analysis_cursor import GarmentAnalysisCursor
 from fabricassist.application.garment_history_cursor import GarmentHistoryCursor
@@ -439,6 +440,7 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
             analysis_revision_id=garment.active_analysis_revision_id,
         )
         latest_thumbnail = thumbnail_by_scan.get(latest_scan.id) if latest_scan else None
+        superseding_observation = aliased(GarmentObservation)
         observations = list(
             (
                 await self._session.scalars(
@@ -446,6 +448,12 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
                     .where(
                         GarmentObservation.tenant_id == principal.tenant_id,
                         GarmentObservation.garment_id == garment.id,
+                        ~select(superseding_observation.id)
+                        .where(
+                            superseding_observation.supersedes_observation_id
+                            == GarmentObservation.id
+                        )
+                        .exists(),
                     )
                     .order_by(GarmentObservation.created_at.desc(), GarmentObservation.id.desc())
                 )

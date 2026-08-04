@@ -27,14 +27,12 @@ import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
 import { useTranslation } from '../../i18n/TranslationProvider';
 import { getApiBaseUrl } from '../../config/environment';
+import { friendlyCode } from './friendlyCodes';
 
-function actionText(action: {
-  code: string;
-  maximumTemperatureC?: number | null;
-}): string {
-  return action.maximumTemperatureC
-    ? `${action.code} · ${action.maximumTemperatureC} °C`
-    : action.code;
+function actionText(action: { code: string; maximumTemperatureC?: number | null }, locale: 'en' | 'es'): string {
+  const labels: Record<string, [string, string]> = { water_wash: ['Water wash', 'Lavado con agua'], professional_dry_clean: ['Professional dry cleaning', 'Limpieza en seco profesional'], tumble_dry: ['Tumble dry', 'Secado en secadora'], natural_dry: ['Air dry', 'Secado al aire'], iron: ['Iron', 'Planchado'], domestic_detergent: ['Domestic detergent', 'Detergente doméstico'], bleach: ['Bleach', 'Lejía'] };
+  const label = labels[action.code]?.[locale === 'es' ? 1 : 0] ?? action.code.replaceAll('_', ' ');
+  return action.maximumTemperatureC ? `${label} · ${action.maximumTemperatureC} °C` : label;
 }
 
 export default function Result(): ReactNode {
@@ -208,6 +206,9 @@ export default function Result(): ReactNode {
       description={translate('resultDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.breadcrumb}>
+          <Text style={styles.breadcrumbText}>‹ {translate('garmentHistoryTitle')}</Text>
+        </Pressable>
         {!result && !failed ? (
           <View accessibilityLiveRegion="polite" style={styles.loading}>
             <ActivityIndicator color={colors.primary} size="large" />
@@ -242,19 +243,21 @@ export default function Result(): ReactNode {
         {result ? (
           <>
             <Text accessibilityRole="header" style={styles.title}>
-              {result.category}
+              {result.category && result.category.toLowerCase() !== 'unknown'
+                ? result.category
+                : translate('careAnalysis')}
             </Text>
             <Section
               title={translate('richValidation')}
-              values={[result.outcome]}
+              values={[friendlyCode(result.outcome, translate)]}
             />
             <Section
               title={translate('richWarnings')}
-              values={result.warnings}
+              values={result.warnings.map((value) => friendlyCode(value, translate))}
             />
             <Section
               title={translate('richPreparation')}
-              values={result.allowedActions.map(actionText)}
+              values={result.allowedActions.map((action) => actionText(action, locale))}
             />
             <Section
               title={translate('richStain')}
@@ -264,24 +267,24 @@ export default function Result(): ReactNode {
             />
             <Section
               title={translate('richCleaning')}
-              values={result.allowedActions.map(actionText)}
+              values={result.allowedActions.map((action) => actionText(action, locale))}
             />
             <Section
               title={translate('resultProhibitions')}
-              values={result.prohibitedActions.map(actionText)}
+              values={result.prohibitedActions.map((action) => actionText(action, locale))}
               warning
             />
             <Section
               title={translate('richDrying')}
-              values={result.unknownActions.map(actionText)}
+              values={result.unknownActions.map((action) => actionText(action, locale))}
             />
             <Section
               title={translate('richIroning')}
-              values={result.professionalOnlyActions.map(actionText)}
+              values={result.professionalOnlyActions.map((action) => actionText(action, locale))}
             />
             <Section
               title={translate('richProfessional')}
-              values={result.professionalOnlyActions.map(actionText)}
+              values={result.professionalOnlyActions.map((action) => actionText(action, locale))}
             />
             <Section
               title={translate('richSources')}
@@ -294,7 +297,7 @@ export default function Result(): ReactNode {
                   ? `${translate('productBarcode')}: ${result.productBarcode}`
                   : '',
                 result.productLookupStatus !== 'not_attempted'
-                  ? `${translate('productLookupStatus')}: ${result.productLookupStatus}`
+                  ? `${translate('productLookupStatus')}: ${friendlyCode(result.productLookupStatus, translate)}`
                   : '',
                 result.productSource
                   ? `${translate('productSource')}: ${result.productSource}`
@@ -303,13 +306,13 @@ export default function Result(): ReactNode {
             />
             <Section
               title={translate('richUncertainty')}
-              values={[...result.uncertainties, ...result.clearerImageRequests]}
+              values={[...result.uncertainties, ...result.clearerImageRequests].map((value) => friendlyCode(value, translate))}
             />
             <Section
               title={translate('garmentChangeSummary')}
               values={result.conflicts.map(
                 (conflict) =>
-                  `${conflict.fieldPath}: ${conflict.explanationKey}`,
+                  `${friendlyCode(conflict.fieldPath, translate)}: ${friendlyCode(conflict.explanationKey, translate)}`,
               )}
             />
             {identityCandidates
@@ -574,6 +577,8 @@ function IdentityCandidateThumbnail({
 }
 
 const styles = StyleSheet.create({
+  breadcrumb: { alignSelf: 'flex-start', paddingVertical: spacing.xsmall },
+  breadcrumbText: { color: colors.primary, fontWeight: '800' },
   content: { gap: spacing.medium },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
   section: {

@@ -242,73 +242,6 @@ export default function Scan(): ReactNode {
             .replace('{count}', String(items.length))
             .replace('{maximum}', String(maximumImages))}
         </Text>
-        <Text style={styles.guidance}>{selectedRole.guidance}</Text>
-        {role === 'garment_overview' || role === 'construction_detail' ? (
-          <View
-            accessibilityLabel={translate('viewpoint')}
-            style={styles.metadataGroup}
-          >
-            <Text style={styles.metadataTitle}>{translate('viewpoint')}</Text>
-            <View style={styles.metadataOptions}>
-              {(['front', 'back', 'side', 'detail', 'unknown'] as const).map(
-                (value) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={value}
-                    onPress={() => setViewpoint(value)}
-                    style={[
-                      styles.metadataButton,
-                      viewpoint === value && styles.metadataButtonSelected,
-                    ]}
-                  >
-                    <Text
-                      style={
-                        viewpoint === value
-                          ? styles.metadataButtonTextSelected
-                          : styles.metadataButtonText
-                      }
-                    >
-                      {translate(viewpointLabels[value])}
-                    </Text>
-                  </Pressable>
-                ),
-              )}
-            </View>
-          </View>
-        ) : null}
-        {role === 'care_label' || role === 'composition_label' ? (
-          <View
-            accessibilityLabel={translate('labelScope')}
-            style={styles.metadataGroup}
-          >
-            <Text style={styles.metadataTitle}>{translate('labelScope')}</Text>
-            <View style={styles.metadataOptions}>
-              {(['care', 'composition', 'combined', 'unknown'] as const).map(
-                (value) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={value}
-                    onPress={() => setLabelScope(value)}
-                    style={[
-                      styles.metadataButton,
-                      labelScope === value && styles.metadataButtonSelected,
-                    ]}
-                  >
-                    <Text
-                      style={
-                        labelScope === value
-                          ? styles.metadataButtonTextSelected
-                          : styles.metadataButtonText
-                      }
-                    >
-                      {translate(labelScopeLabels[value])}
-                    </Text>
-                  </Pressable>
-                ),
-              )}
-            </View>
-          </View>
-        ) : null}
         <View accessibilityLabel={translate('photoRole')} style={styles.roles}>
           {roles.map((value) => (
             <Pressable
@@ -329,6 +262,78 @@ export default function Scan(): ReactNode {
               </Text>
             </Pressable>
           ))}
+        </View>
+        <View style={styles.selectionPanel}>
+          <Text style={styles.selectionTitle}>{selectedRole.label}</Text>
+          <Text style={styles.selectionHint}>{selectedRole.guidance}</Text>
+          {role === 'garment_overview' || role === 'construction_detail' ? (
+            <View
+              accessibilityLabel={translate('viewpoint')}
+              style={styles.metadataGroup}
+            >
+              <Text style={styles.metadataTitle}>{translate('viewpoint')}</Text>
+              <View style={styles.metadataOptions}>
+                {(['front', 'back', 'side', 'detail', 'unknown'] as const).map(
+                  (value) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={value}
+                      onPress={() => setViewpoint(value)}
+                      style={[
+                        styles.metadataButton,
+                        viewpoint === value && styles.metadataButtonSelected,
+                      ]}
+                    >
+                      <Text
+                        style={
+                          viewpoint === value
+                            ? styles.metadataButtonTextSelected
+                            : styles.metadataButtonText
+                        }
+                      >
+                        {translate(viewpointLabels[value])}
+                      </Text>
+                    </Pressable>
+                  ),
+                )}
+              </View>
+            </View>
+          ) : null}
+          {role === 'care_label' || role === 'composition_label' ? (
+            <View
+              accessibilityLabel={translate('labelScope')}
+              style={styles.metadataGroup}
+            >
+              <Text style={styles.metadataTitle}>
+                {translate('labelScope')}
+              </Text>
+              <View style={styles.metadataOptions}>
+                {(['care', 'composition', 'combined', 'unknown'] as const).map(
+                  (value) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={value}
+                      onPress={() => setLabelScope(value)}
+                      style={[
+                        styles.metadataButton,
+                        labelScope === value && styles.metadataButtonSelected,
+                      ]}
+                    >
+                      <Text
+                        style={
+                          labelScope === value
+                            ? styles.metadataButtonTextSelected
+                            : styles.metadataButtonText
+                        }
+                      >
+                        {translate(labelScopeLabels[value])}
+                      </Text>
+                    </Pressable>
+                  ),
+                )}
+              </View>
+            </View>
+          ) : null}
         </View>
         {items.map((item, index) => (
           <View key={`${item.asset.uri}-${index}`} style={styles.item}>
@@ -481,6 +486,16 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     padding: spacing.medium,
   },
+  selectionPanel: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    gap: spacing.small,
+    padding: spacing.medium,
+  },
+  selectionTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  selectionHint: { color: '#557067', fontSize: 13, lineHeight: 19 },
   metadataGroup: { gap: spacing.xsmall },
   metadataTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
   metadataOptions: {
@@ -518,10 +533,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: 'center',
+    flexBasis: '46%',
+    flexGrow: 1,
     minHeight: 58,
+    minWidth: 0,
     paddingHorizontal: spacing.medium,
     paddingVertical: spacing.small,
-    width: '48%',
   },
   roleButtonSelected: {
     backgroundColor: colors.primary,
@@ -533,12 +550,20 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   roleButtonPressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },
-  role: { color: colors.text, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  role: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    width: '100%',
+  },
   selected: {
     color: colors.background,
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 18,
+    width: '100%',
   },
   item: {
     alignItems: 'center',

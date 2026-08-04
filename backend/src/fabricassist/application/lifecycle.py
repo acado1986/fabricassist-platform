@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.object_storage import (
@@ -23,8 +23,12 @@ from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
     AuditEvent,
     CareResult,
+    ConversationThread,
     DeletionRequest,
     EvidenceCorrection,
+    Garment,
+    GarmentIdentityConfirmation,
+    GarmentServiceEvent,
     ObjectDeletionOutbox,
     ReviewCase,
     RevisionImage,
@@ -296,6 +300,85 @@ async def retention_candidates(session: AsyncSession) -> list[ScanImage]:
         if image.completed_at is not None
         and image.completed_at + timedelta(days=tenant.image_retention_days) <= now
     ]
+
+
+async def cleanup_merged_garments(
+    session: AsyncSession, *, grace_period_days: int = 30, limit: int = 100
+) -> int:
+    """Delete old merged tombstones only when no durable references remain."""
+    cutoff = datetime.now(UTC) - timedelta(days=grace_period_days)
+    garments = list(
+        (
+            await session.scalars(
+                select(Garment)
+                .where(
+                    Garment.merged_into_id.is_not(None),
+                    Garment.merged_at.is_not(None),
+                    Garment.merged_at <= cutoff,
+                    ~select(Scan.id).where(Scan.garment_id == Garment.id).exists(),
+                    ~select(AnalysisRevision.id)
+                    .where(AnalysisRevision.garment_id == Garment.id)
+                    .exists(),
+                    ~select(GarmentServiceEvent.id)
+                    .where(GarmentServiceEvent.garment_id == Garment.id)
+                    .exists(),
+                    ~select(ConversationThread.id)
+                    .where(ConversationThread.garment_id == Garment.id)
+                    .exists(),
+                )
+                .order_by(Garment.merged_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+    )
+    for garment in garments:
+        audit(
+            session,
+            tenant_id=garment.tenant_id,
+            actor_user_id=None,
+            event_type="garment.merge_cleanup",
+            resource_type="garment",
+            resource_id=garment.id,
+            safe_metadata={"target_garment_id": str(garment.merged_into_id)},
+        )
+        await session.execute(
+            delete(GarmentIdentityConfirmation).where(
+                GarmentIdentityConfirmation.garment_id == garment.id
+            )
+        )
+        await session.delete(garment)
+    if garments:
+        await session.commit()
+    return len(garments)
+
+
+async def run_retention_once(
+    session: AsyncSession,
+    storage: ObjectStorage,
+    *,
+    merged_garment_retention_days: int = 30,
+    batch_size: int = 100,
+    max_deletion_attempts: int = 5,
+) -> tuple[int, int]:
+    """Run image retention, merged-garment cleanup, and object deletion recovery."""
+    for image in await retention_candidates(session):
+        await enqueue_deletion(
+            session,
+            tenant_id=image.tenant_id,
+            user_id=None,
+            resource_type="scan",
+            resource_id=image.scan_id,
+            images=[image],
+        )
+    await session.commit()
+    merged = await cleanup_merged_garments(
+        session, grace_period_days=merged_garment_retention_days, limit=batch_size
+    )
+    deleted = await process_object_deletions(
+        session, storage, limit=batch_size, max_attempts=max_deletion_attempts
+    )
+    return merged, deleted
 
 
 async def process_object_deletions(
