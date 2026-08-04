@@ -157,6 +157,7 @@ export const en = {
     finalResultBleaching: 'Bleaching',
     finalResultProfessionalCleaning: 'Professional cleaning',
     finalResultOtherCare: 'Other care instructions',
+    finalResultOverview: 'Garment overview',
     selectGarments: 'Select garments',
     finishGarmentSelection: 'Done',
     selectedGarmentsCount: '{count} selected',

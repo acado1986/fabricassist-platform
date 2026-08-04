@@ -164,6 +164,7 @@ export const es: TranslationCatalog = {
     finalResultBleaching: 'Lejía',
     finalResultProfessionalCleaning: 'Limpieza profesional',
     finalResultOtherCare: 'Otras instrucciones de cuidado',
+    finalResultOverview: 'Resumen de la prenda',
     selectGarments: 'Seleccionar prendas',
     finishGarmentSelection: 'Listo',
     selectedGarmentsCount: '{count} seleccionadas',

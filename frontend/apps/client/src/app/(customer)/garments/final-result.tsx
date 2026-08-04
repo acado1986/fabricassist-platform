@@ -1,25 +1,38 @@
-import { type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useQuery } from '@apollo/client';
 import { router, useLocalSearchParams } from 'expo-router';
 import { colors, radii, spacing } from '@fabricassist/design-tokens';
-import { GarmentDetailDocument } from '@fabricassist/api-client';
+import { GarmentDetailDocument, scanResultApiV1ScansScanIdResultGet } from '@fabricassist/api-client';
 import { useSession } from '../../../auth/session';
 import { FoundationShell } from '../../../components/FoundationShell';
 import { useTranslation } from '../../../i18n/TranslationProvider';
 import { friendlyCode } from '../../../features/garment-analysis/friendlyCodes';
+import type { TranslationKey } from '@fabricassist/translations';
 
 type Group = { authority: string; values: string[]; title: string; icon: keyof typeof Feather.glyphMap };
 
 export default function FinalResultPage(): ReactNode {
   const { garmentId } = useLocalSearchParams<{ garmentId: string }>();
   const { token } = useSession();
+  const { apiClient } = useSession();
   const { locale, translate } = useTranslation();
   const { data, loading, error } = useQuery(GarmentDetailDocument, {
     skip: !token || !garmentId,
     variables: { garmentId, first: 20, after: null, language: locale },
   });
+  const [historicalResults, setHistoricalResults] = useState<Record<string, unknown>[]>([]);
+  const analyses = data?.garmentDetail?.analyses?.items ?? [];
+  const analysisIds = analyses.filter(item => item.resultAvailable).map(item => item.scanId).join(',');
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(analyses.filter(item => item.resultAvailable).map(async item => {
+      const response = await scanResultApiV1ScansScanIdResultGet({ client: apiClient, path: { scan_id: item.scanId } });
+      return (response.data?.result ?? null) as Record<string, unknown> | null;
+    })).then(results => { if (!cancelled) setHistoricalResults(results.filter((result): result is Record<string, unknown> => result !== null)); });
+    return () => { cancelled = true; };
+  }, [analysisIds, apiClient]);
   const groups = (data?.garmentDetail?.observations ?? []).reduce<Record<string, Group>>((result, item) => {
     const rawValue = (item.value ?? {}) as Record<string, unknown>;
     const value = formatValue(rawValue, (key) => translate(key as never));
@@ -34,14 +47,26 @@ export default function FinalResultPage(): ReactNode {
   // only contain extracted evidence, so they cannot represent all care actions.
   const active = data?.garmentDetail?.activeResult?.result;
   if (active) {
+    addGroup(groups, 'overview', translate('finalResultOverview'), [
+      active.category && active.category.toLowerCase() !== 'unknown' ? friendlyCode(active.category, translate) : '',
+      active.overallCondition && active.overallCondition.toLowerCase() !== 'unknown' ? friendlyCode(active.overallCondition, translate) : '',
+    ], 'clipboard');
     addGroup(groups, 'validation', translate('richValidation'), [friendlyCode(active.outcome, translate)], 'check-circle');
-    addGroup(groups, 'prohibited', translate('resultProhibitions'), active.prohibitedActions.map(action => actionText(action, (key) => translate(key as never))), 'slash');
-    addGroup(groups, 'allowed', translate('richCleaning'), active.allowedActions.map(action => actionText(action, (key) => translate(key as never))), 'check');
-    addGroup(groups, 'unknown', translate('richDrying'), active.unknownActions.map(action => actionText(action, (key) => translate(key as never))), 'help-circle');
-    addGroup(groups, 'professional', translate('richProfessional'), active.professionalOnlyActions.map(action => actionText(action, (key) => translate(key as never))), 'briefcase');
-    addGroup(groups, 'warnings', translate('richWarnings'), active.warnings.map(value => friendlyCode(value, translate)), 'alert-triangle');
-    addGroup(groups, 'clearerImage', translate('richUncertainty'), active.clearerImageRequests.map(value => friendlyCode(value, translate)), 'image');
-    addGroup(groups, 'uncertainty', translate('richUncertainty'), active.uncertainties.map(value => friendlyCode(value, translate)), 'help-circle');
+    addGroup(groups, 'prohibited', translate('resultProhibitions'), (active.prohibitedActions ?? []).map(action => actionText(action, (key) => translate(key as never))), 'slash');
+    addGroup(groups, 'allowed', translate('richCleaning'), (active.allowedActions ?? []).map(action => actionText(action, (key) => translate(key as never))), 'check');
+    addGroup(groups, 'unknown', translate('richDrying'), (active.unknownActions ?? []).map(action => actionText(action, (key) => translate(key as never))), 'help-circle');
+    addGroup(groups, 'professional', translate('richProfessional'), (active.professionalOnlyActions ?? []).map(action => actionText(action, (key) => translate(key as never))), 'briefcase');
+    addGroup(groups, 'warnings', translate('richWarnings'), (active.warnings ?? []).map(value => friendlyCode(value, translate)), 'alert-triangle');
+    addGroup(groups, 'clearerImage', translate('richUncertainty'), (active.clearerImageRequests ?? []).map(value => friendlyCode(value, translate)), 'image');
+    addGroup(groups, 'uncertainty', translate('richUncertainty'), (active.uncertainties ?? []).map(value => friendlyCode(value, translate)), 'help-circle');
+  }
+  for (const result of historicalResults) {
+    addActionGroup(groups, result, 'warnings', 'richWarnings', 'alert-triangle', translate);
+    addActionGroup(groups, result, 'allowedActions', 'richCleaning', 'check', translate);
+    addActionGroup(groups, result, 'prohibitedActions', 'resultProhibitions', 'slash', translate);
+    addActionGroup(groups, result, 'unknownActions', 'richDrying', 'help-circle', translate);
+    addActionGroup(groups, result, 'professionalOnlyActions', 'richProfessional', 'briefcase', translate);
+    addStringGroup(groups, result, 'uncertainties', 'uncertainty', 'richUncertainty', 'help-circle', translate);
   }
 
   return <FoundationShell title={translate('finalResultAnalysis')} description={translate('finalResultAnalysisDescription')}>
@@ -75,10 +100,18 @@ function addGroup(groups: Record<string, Group>, key: string, title: string, val
   group.values = [...new Set([...group.values, ...clean])];
   groups[key] = group;
 }
+function addActionGroup(groups: Record<string, Group>, result: Record<string, unknown>, field: string, titleKey: string, icon: keyof typeof Feather.glyphMap, translate: (key: TranslationKey) => string): void {
+  const actions = Array.isArray(result[field]) ? result[field] as Array<Record<string, unknown>> : [];
+  addGroup(groups, field, translate(titleKey as never), actions.map(action => actionText({ code: String(action.code ?? ''), permission: String(action.permission ?? ''), maximumTemperatureC: typeof action.maximumTemperatureC === 'number' ? action.maximumTemperatureC : null }, key => translate(key as never))), icon);
+}
+function addStringGroup(groups: Record<string, Group>, result: Record<string, unknown>, field: string, key: string, titleKey: string, icon: keyof typeof Feather.glyphMap, translate: (key: TranslationKey) => string): void {
+  const values = Array.isArray(result[field]) ? result[field].filter((value): value is string => typeof value === 'string').map(value => friendlyCode(value, translate)) : [];
+  addGroup(groups, key, translate(titleKey as never), values, icon);
+}
 
 function careGroup(code: string): string { if (code.includes('wash')) return 'washing'; if (code.includes('dry')) return 'drying'; if (code.includes('iron')) return 'ironing'; if (code.includes('bleach')) return 'bleaching'; if (code.includes('clean')) return 'professionalCleaning'; return 'otherCare'; }
 function careTitle(code: string): string { const group = careGroup(code); return ({ washing: 'finalResultWashing', drying: 'finalResultDrying', ironing: 'finalResultIroning', bleaching: 'finalResultBleaching', professionalCleaning: 'finalResultProfessionalCleaning', otherCare: 'finalResultOtherCare' } as Record<string, string>)[group] ?? 'finalResultOtherCare'; }
 function careIcon(group: string): keyof typeof Feather.glyphMap { return ({ washing: 'droplet', drying: 'wind', ironing: 'square', bleaching: 'alert-triangle', professionalCleaning: 'briefcase', otherCare: 'info' } as Record<string, keyof typeof Feather.glyphMap>)[group] ?? 'info'; }
-function groupOrder(group: string): number { return ({ validation: 1, warnings: 2, washing: 3, allowed: 4, bleaching: 5, drying: 6, ironing: 7, unknown: 8, professional: 9, professionalCleaning: 10, prohibited: 11, uncertainty: 12, clearerImage: 13, otherCare: 14 } as Record<string, number>)[group] ?? 15; }
+function groupOrder(group: string): number { return ({ overview: 1, validation: 2, warnings: 3, washing: 4, allowed: 5, bleaching: 6, drying: 7, ironing: 8, unknown: 9, professional: 10, professionalCleaning: 11, prohibited: 12, uncertainty: 13, clearerImage: 14, otherCare: 15 } as Record<string, number>)[group] ?? 16; }
 
 const styles = StyleSheet.create({ content: { gap: spacing.medium }, back: { color: colors.primary, fontWeight: '700' }, intro: { alignItems: 'center', backgroundColor: colors.primary, borderRadius: radii.large, flexDirection: 'row', gap: spacing.medium, padding: spacing.large }, badge: { color: colors.background, fontSize: 28, fontWeight: '800' }, introCopy: { flex: 1, gap: spacing.xsmall }, heading: { color: colors.background, fontSize: 20, fontWeight: '800' }, introText: { color: colors.background, lineHeight: 20 }, card: { backgroundColor: colors.surfaceMuted, borderRadius: radii.medium, gap: spacing.small, padding: spacing.medium }, cardHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: spacing.small }, titleRow: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: spacing.small }, icon: { alignItems: 'center', backgroundColor: colors.background, borderRadius: radii.small, height: 34, justifyContent: 'center', width: 34 }, title: { color: colors.text, flex: 1, fontWeight: '800' }, source: { color: colors.muted, fontSize: 12 }, valueRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.small }, value: { color: colors.text, flex: 1, lineHeight: 21 }, muted: { color: colors.muted }, error: { color: colors.danger } });
