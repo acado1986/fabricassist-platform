@@ -23,6 +23,7 @@ import {
 import type { TranslationKey } from '@fabricassist/translations';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
+import { BackBreadcrumb } from '../../components/BackBreadcrumb';
 import { useTranslation } from '../../i18n/TranslationProvider';
 
 type GalleryImage = NonNullable<
@@ -128,6 +129,7 @@ export default function UploadedImages(): ReactNode {
       description={translate('uploadedImagesDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        <BackBreadcrumb label={translate('backToScan')} />
         {loading ? (
           <ActivityIndicator color={colors.primary} size="large" />
         ) : null}

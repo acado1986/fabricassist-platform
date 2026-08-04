@@ -21,6 +21,7 @@ import type {
 import type { TranslationKey } from '@fabricassist/translations';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
+import { BackBreadcrumb } from '../../components/BackBreadcrumb';
 import { useTranslation } from '../../i18n/TranslationProvider';
 import { uploadBinaryFile } from '../../platform/BinaryUpload';
 import { CameraCapture } from '../../platform/CameraCapture';
@@ -229,6 +230,7 @@ export default function Scan(): ReactNode {
       description={translate('scanDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        <BackBreadcrumb label={translate('goHome')} />
         <TextInput
           accessibilityLabel={translate('barcodeInputLabel')}
           keyboardType="number-pad"

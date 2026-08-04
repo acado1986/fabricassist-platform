@@ -25,6 +25,7 @@ import {
 } from '@fabricassist/api-client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
+import { BackBreadcrumb } from '../../components/BackBreadcrumb';
 import { useTranslation } from '../../i18n/TranslationProvider';
 import { getApiBaseUrl } from '../../config/environment';
 import { friendlyCode } from './friendlyCodes';
@@ -206,9 +207,7 @@ export default function Result(): ReactNode {
       description={translate('resultDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
-        <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.breadcrumb}>
-          <Text style={styles.breadcrumbText}>‹ {translate('garmentHistoryTitle')}</Text>
-        </Pressable>
+        <BackBreadcrumb label={translate('garmentHistoryTitle')} />
         {!result && !failed ? (
           <View accessibilityLiveRegion="polite" style={styles.loading}>
             <ActivityIndicator color={colors.primary} size="large" />

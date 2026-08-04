@@ -23,6 +23,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useQuery as useApolloQuery } from '@apollo/client';
 import { useSession } from '../../auth/session';
 import { FoundationShell } from '../../components/FoundationShell';
+import { BackBreadcrumb } from '../../components/BackBreadcrumb';
 import { useTranslation } from '../../i18n/TranslationProvider';
 import { getApiBaseUrl } from '../../config/environment';
 
@@ -266,6 +267,7 @@ export default function Chat(): ReactNode {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        <BackBreadcrumb label={translate('backToScan')} />
         <View style={styles.messageList}>
           {displayMessages.map((message) => (
             <View

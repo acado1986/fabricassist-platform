@@ -23,6 +23,7 @@ import { useMutation } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSession } from '../../../auth/session';
 import { FoundationShell } from '../../../components/FoundationShell';
+import { BackBreadcrumb } from '../../../components/BackBreadcrumb';
 import { GarmentDeletionConfirmation } from '../../../components/GarmentDeletionConfirmation';
 import { useTranslation } from '../../../i18n/TranslationProvider';
 
@@ -87,6 +88,7 @@ export default function GarmentHistory(): ReactNode {
       description={translate('garmentHistoryDescription')}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        <BackBreadcrumb label={translate('customerHistoryTitle')} />
         {error ? <Text>{translate('scanHistoryLoadFailed')}</Text> : null}
         {!garment && !error ? <Text>{translate('resultLoading')}</Text> : null}
         {garment ? (
