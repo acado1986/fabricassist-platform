@@ -48,6 +48,30 @@ def upgrade() -> None:
             sa.ForeignKey("analysis_revisions.id", ondelete="SET NULL"),
         ),
     )
+    # Rows created before projection_key existed all received the compatibility
+    # value ``legacy``. Preserve duplicate historical observations while making
+    # their keys unique so the new idempotency constraint can be installed.
+    # Deleting observations here would discard retained audit evidence.
+    op.execute(
+        sa.text(
+            """
+            WITH ranked AS (
+                SELECT
+                    id,
+                    row_number() OVER (
+                        PARTITION BY analysis_revision_id, projection_key
+                        ORDER BY created_at, id
+                    ) AS duplicate_number
+                FROM garment_observations
+            )
+            UPDATE garment_observations AS observation
+            SET projection_key = 'legacy_duplicate:' || observation.id::text
+            FROM ranked
+            WHERE observation.id = ranked.id
+              AND ranked.duplicate_number > 1
+            """
+        )
+    )
     op.create_unique_constraint(
         "uq_garment_observations_revision_projection",
         "garment_observations",
