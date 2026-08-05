@@ -940,7 +940,10 @@ def create_schema(settings: Settings) -> strawberry.Schema:
         MaxAliasesLimiter(max_alias_count=settings.graphql_max_aliases),
     ]
     if settings.environment == "production":
-        extensions.append(DisableIntrospection)
+        # Strawberry 0.315 instantiates extension classes with the execution
+        # context.  DisableIntrospection has a no-argument constructor, so it
+        # must be registered as an instance rather than as the class itself.
+        extensions.append(DisableIntrospection())
     return strawberry.Schema(query=Query, extensions=extensions)
 
 
