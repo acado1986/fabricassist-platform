@@ -30,10 +30,28 @@ import { useTranslation } from '../../i18n/TranslationProvider';
 import { getApiBaseUrl } from '../../config/environment';
 import { friendlyCode } from './friendlyCodes';
 
-function actionText(action: { code: string; maximumTemperatureC?: number | null }, locale: 'en' | 'es'): string {
-  const labels: Record<string, [string, string]> = { water_wash: ['Water wash', 'Lavado con agua'], professional_dry_clean: ['Professional dry cleaning', 'Limpieza en seco profesional'], tumble_dry: ['Tumble dry', 'Secado en secadora'], natural_dry: ['Air dry', 'Secado al aire'], iron: ['Iron', 'Planchado'], domestic_detergent: ['Domestic detergent', 'Detergente doméstico'], bleach: ['Bleach', 'Lejía'] };
-  const label = labels[action.code]?.[locale === 'es' ? 1 : 0] ?? action.code.replaceAll('_', ' ');
-  return action.maximumTemperatureC ? `${label} · ${action.maximumTemperatureC} °C` : label;
+function actionText(
+  action: { code: string; maximumTemperatureC?: number | null },
+  locale: 'en' | 'es',
+): string {
+  const labels: Record<string, [string, string]> = {
+    water_wash: ['Water wash', 'Lavado con agua'],
+    professional_dry_clean: [
+      'Professional dry cleaning',
+      'Limpieza en seco profesional',
+    ],
+    tumble_dry: ['Tumble dry', 'Secado en secadora'],
+    natural_dry: ['Air dry', 'Secado al aire'],
+    iron: ['Iron', 'Planchado'],
+    domestic_detergent: ['Domestic detergent', 'Detergente doméstico'],
+    bleach: ['Bleach', 'Lejía'],
+  };
+  const label =
+    labels[action.code]?.[locale === 'es' ? 1 : 0] ??
+    action.code.replaceAll('_', ' ');
+  return action.maximumTemperatureC
+    ? `${label} · ${action.maximumTemperatureC} °C`
+    : label;
 }
 
 export default function Result(): ReactNode {
@@ -252,11 +270,15 @@ export default function Result(): ReactNode {
             />
             <Section
               title={translate('richWarnings')}
-              values={result.warnings.map((value) => friendlyCode(value, translate))}
+              values={result.warnings.map((value) =>
+                friendlyCode(value, translate),
+              )}
             />
             <Section
               title={translate('richPreparation')}
-              values={result.allowedActions.map((action) => actionText(action, locale))}
+              values={result.allowedActions.map((action) =>
+                actionText(action, locale),
+              )}
             />
             <Section
               title={translate('richStain')}
@@ -266,24 +288,34 @@ export default function Result(): ReactNode {
             />
             <Section
               title={translate('richCleaning')}
-              values={result.allowedActions.map((action) => actionText(action, locale))}
+              values={result.allowedActions.map((action) =>
+                actionText(action, locale),
+              )}
             />
             <Section
               title={translate('resultProhibitions')}
-              values={result.prohibitedActions.map((action) => actionText(action, locale))}
+              values={result.prohibitedActions.map((action) =>
+                actionText(action, locale),
+              )}
               warning
             />
             <Section
               title={translate('richDrying')}
-              values={result.unknownActions.map((action) => actionText(action, locale))}
+              values={result.unknownActions.map((action) =>
+                actionText(action, locale),
+              )}
             />
             <Section
               title={translate('richIroning')}
-              values={result.professionalOnlyActions.map((action) => actionText(action, locale))}
+              values={result.professionalOnlyActions.map((action) =>
+                actionText(action, locale),
+              )}
             />
             <Section
               title={translate('richProfessional')}
-              values={result.professionalOnlyActions.map((action) => actionText(action, locale))}
+              values={result.professionalOnlyActions.map((action) =>
+                actionText(action, locale),
+              )}
             />
             <Section
               title={translate('richSources')}
@@ -305,7 +337,10 @@ export default function Result(): ReactNode {
             />
             <Section
               title={translate('richUncertainty')}
-              values={[...result.uncertainties, ...result.clearerImageRequests].map((value) => friendlyCode(value, translate))}
+              values={[
+                ...result.uncertainties,
+                ...result.clearerImageRequests,
+              ].map((value) => friendlyCode(value, translate))}
             />
             <Section
               title={translate('garmentChangeSummary')}

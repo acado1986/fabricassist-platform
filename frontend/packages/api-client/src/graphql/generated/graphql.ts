@@ -91,6 +91,7 @@ export type ConversationMessageType = {
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['UUID']['output'];
   role: Scalars['String']['output'];
+  runId?: Maybe<Scalars['UUID']['output']>;
   status: Scalars['String']['output'];
   text: Scalars['String']['output'];
 };
@@ -432,6 +433,7 @@ export type ScanMessagesQuery = {
       status: string;
       text: string;
       createdAt: string;
+      runId?: string | null;
     }>;
     pageInfo: { __typename?: 'PageInfo'; nextCursor?: string | null };
   };
@@ -476,18 +478,6 @@ export type GarmentDetailQuery = {
         warnings: Array<string>;
         clearerImageRequests: Array<string>;
         uncertainties: Array<string>;
-        allowedActions: Array<{
-          __typename?: 'CareActionType';
-          code: string;
-          permission: string;
-          maximumTemperatureC?: number | null;
-        }>;
-        prohibitedActions: Array<{
-          __typename?: 'CareActionType';
-          code: string;
-          permission: string;
-          maximumTemperatureC?: number | null;
-        }>;
         unknownActions: Array<{
           __typename?: 'CareActionType';
           code: string;
@@ -495,6 +485,18 @@ export type GarmentDetailQuery = {
           maximumTemperatureC?: number | null;
         }>;
         professionalOnlyActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+        }>;
+        allowedActions: Array<{
+          __typename?: 'CareActionType';
+          code: string;
+          permission: string;
+          maximumTemperatureC?: number | null;
+        }>;
+        prohibitedActions: Array<{
           __typename?: 'CareActionType';
           code: string;
           permission: string;
@@ -881,6 +883,7 @@ export const ScanMessagesDocument = {
                         kind: 'Field',
                         name: { kind: 'Name', value: 'createdAt' },
                       },
+                      { kind: 'Field', name: { kind: 'Name', value: 'runId' } },
                     ],
                   },
                 },
@@ -1078,6 +1081,68 @@ export const GarmentDetailDocument = {
                             {
                               kind: 'Field',
                               name: { kind: 'Name', value: 'overallCondition' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'warnings' },
+                            },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'unknownActions' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: {
+                                kind: 'Name',
+                                value: 'professionalOnlyActions',
+                              },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'code' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'permission' },
+                                  },
+                                  {
+                                    kind: 'Field',
+                                    name: {
+                                      kind: 'Name',
+                                      value: 'maximumTemperatureC',
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                            {
+                              kind: 'Field',
+                              name: {
+                                kind: 'Name',
+                                value: 'clearerImageRequests',
+                              },
                             },
                             {
                               kind: 'Field',

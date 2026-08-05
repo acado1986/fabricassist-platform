@@ -4,6 +4,17 @@ import { router } from 'expo-router';
 import { colors } from '@fabricassist/design-tokens';
 
 export function BackBreadcrumb({ label }: { label: string }): ReactNode {
-  return <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.button}><Text style={styles.text}>‹ {label}</Text></Pressable>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => router.back()}
+      style={styles.button}
+    >
+      <Text style={styles.text}>‹ {label}</Text>
+    </Pressable>
+  );
 }
-const styles = StyleSheet.create({ button: { alignSelf: 'flex-start' }, text: { color: colors.primary, fontWeight: '700' } });
+const styles = StyleSheet.create({
+  button: { alignSelf: 'flex-start' },
+  text: { color: colors.primary, fontWeight: '700' },
+});

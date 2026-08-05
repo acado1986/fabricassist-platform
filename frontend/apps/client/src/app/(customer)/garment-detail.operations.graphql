@@ -32,6 +32,18 @@ query GarmentDetail(
         outcome
         category
         overallCondition
+        warnings
+        unknownActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        professionalOnlyActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        clearerImageRequests
         allowedActions {
           code
           permission

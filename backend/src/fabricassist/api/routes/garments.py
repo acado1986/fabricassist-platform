@@ -288,11 +288,13 @@ async def delete_service_event(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> None:
-    event = await session.scalar(select(GarmentServiceEvent).where(
-        GarmentServiceEvent.id == event_id,
-        GarmentServiceEvent.garment_id == garment_id,
-        GarmentServiceEvent.tenant_id == user.tenant_id,
-    ))
+    event = await session.scalar(
+        select(GarmentServiceEvent).where(
+            GarmentServiceEvent.id == event_id,
+            GarmentServiceEvent.garment_id == garment_id,
+            GarmentServiceEvent.tenant_id == user.tenant_id,
+        )
+    )
     if event is None:
         raise HTTPException(404, "Service event was not found.")
     await session.delete(event)

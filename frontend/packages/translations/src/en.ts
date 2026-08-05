@@ -138,6 +138,8 @@ export const en = {
       'This removes the garment, its analyses, conversations, service history, and private photos. This cannot be undone.',
     deleteGarmentConfirmAction: 'Delete history',
     deleteGarmentRequestFailed: 'Unable to delete this garment history.',
+    chatResponseFailed: 'The chat response could not be completed.',
+    chatMessagesUnavailable: 'Chat messages are temporarily unavailable.',
     serviceEventType: 'Add service event',
     serviceKindPlanned: 'Planned',
     serviceKindPerformed: 'Performed',
@@ -149,8 +151,10 @@ export const en = {
     finalResultAnalysisDescription:
       'Known facts combined from the available evidence. Uncertain or repeated facts are not presented as confirmed.',
     verifiedCareSummary: 'Your verified care summary',
-    verifiedCareSummaryDescription: 'The recommendations below are grouped by care step and based on the evidence we could verify.',
-    finalResultEmpty: 'There is not enough verified information to show a final care summary yet.',
+    verifiedCareSummaryDescription:
+      'The recommendations below are grouped by care step and based on the evidence we could verify.',
+    finalResultEmpty:
+      'There is not enough verified information to show a final care summary yet.',
     finalResultWashing: 'Washing',
     finalResultDrying: 'Drying',
     finalResultIroning: 'Ironing',
@@ -229,7 +233,8 @@ export const en = {
     serviceCleaningAction: 'Cleaning action',
     serviceSaveFailed: 'Unable to save this event. Please try again.',
     serviceDeleteTitle: 'Delete service event?',
-    serviceDeleteBody: 'This service-history entry will be permanently removed.',
+    serviceDeleteBody:
+      'This service-history entry will be permanently removed.',
     serviceDelete: 'Delete',
     serviceCancel: 'Cancel',
     serviceHistory: 'Service history',

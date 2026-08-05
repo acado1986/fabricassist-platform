@@ -1167,6 +1167,40 @@ export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses = {
 
 export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponse = AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses[keyof AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses];
 
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Garment Id
+         */
+        garment_id: string;
+        /**
+         * Event Id
+         */
+        event_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/{garment_id}/service-events/{event_id}';
+};
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteError = DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteErrors[keyof DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteErrors];
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponse = DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponses[keyof DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponses];
+
 export type HandleHttpGetApiV1GraphqlGetData = {
     body?: never;
     path?: never;

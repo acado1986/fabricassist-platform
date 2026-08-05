@@ -199,7 +199,6 @@ export default function CustomerHistory(): ReactNode {
       </ScrollView>
       <GarmentDeletionConfirmation
         isDeleting={deleteGarment.isPending}
-        garmentCount={deletionCandidates.length}
         onCancel={() => setDeletionCandidates([])}
         onConfirm={() => {
           if (deletionCandidates.length)

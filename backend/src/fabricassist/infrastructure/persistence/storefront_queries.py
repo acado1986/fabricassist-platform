@@ -918,7 +918,12 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
     @staticmethod
     def _message(row: ConversationMessage) -> ConversationMessageView:
         return ConversationMessageView(
-            id=row.id, role=row.role, status=row.status, text=row.text, created_at=row.created_at
+            id=row.id,
+            role=row.role,
+            status=row.status,
+            text=row.text,
+            created_at=row.created_at,
+            run_id=row.run_id,
         )
 
     @staticmethod

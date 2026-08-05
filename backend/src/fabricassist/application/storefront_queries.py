@@ -121,6 +121,7 @@ class ConversationMessageView:
     status: str
     text: str
     created_at: datetime
+    run_id: UUID | None
 
 
 @dataclass(frozen=True)

@@ -136,10 +136,46 @@ export default function GarmentHistory(): ReactNode {
               />
             </View>
             <View style={styles.detailLinks}>
-              <DetailLink icon="clock" title={translate('previousAnalyses')} onPress={() => router.push({ pathname: '/garments/analyses', params: { garmentId } })} />
-              <DetailLink icon="clipboard" title={translate('serviceHistory')} onPress={() => router.push({ pathname: '/garments/service-history', params: { garmentId } })} />
-              <DetailLink icon="check-circle" title={translate('finalResultAnalysis')} onPress={() => router.push({ pathname: '/garments/final-result', params: { garmentId } })} />
-              <DetailLink icon="list" title={translate('garmentObservations')} onPress={() => router.push({ pathname: '/garments/observations', params: { garmentId } })} />
+              <DetailLink
+                icon="clock"
+                title={translate('previousAnalyses')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/garments/analyses',
+                    params: { garmentId },
+                  })
+                }
+              />
+              <DetailLink
+                icon="clipboard"
+                title={translate('serviceHistory')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/garments/service-history',
+                    params: { garmentId },
+                  })
+                }
+              />
+              <DetailLink
+                icon="check-circle"
+                title={translate('finalResultAnalysis')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/garments/final-result',
+                    params: { garmentId },
+                  })
+                }
+              />
+              <DetailLink
+                icon="list"
+                title={translate('garmentObservations')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/garments/observations',
+                    params: { garmentId },
+                  })
+                }
+              />
             </View>
             <Pressable
               accessibilityLabel={translate('deleteGarment')}
@@ -190,8 +226,29 @@ export default function GarmentHistory(): ReactNode {
   );
 }
 
-function DetailLink({ icon, title, onPress }: { icon: ComponentProps<typeof Feather>['name']; title: string; onPress: () => void }): ReactNode {
-  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.detailLink, pressed && styles.analysisPressed]}><Feather color={colors.primary} name={icon} size={20} /><Text style={styles.detailLinkText}>{title}</Text><Feather color={colors.muted} name="chevron-right" size={18} /></Pressable>;
+function DetailLink({
+  icon,
+  title,
+  onPress,
+}: {
+  icon: ComponentProps<typeof Feather>['name'];
+  title: string;
+  onPress: () => void;
+}): ReactNode {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.detailLink,
+        pressed && styles.analysisPressed,
+      ]}
+    >
+      <Feather color={colors.primary} name={icon} size={20} />
+      <Text style={styles.detailLinkText}>{title}</Text>
+      <Feather color={colors.muted} name="chevron-right" size={18} />
+    </Pressable>
+  );
 }
 
 function StatusCard({
@@ -300,8 +357,22 @@ const styles = StyleSheet.create({
   loadMoreText: { color: colors.primary, fontWeight: '800' },
   detailLinks: { gap: spacing.small, marginTop: spacing.small },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
-  detailLink: { alignItems: 'center', backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderRadius: radii.medium, borderWidth: 1, flexDirection: 'row', gap: spacing.small, padding: spacing.medium },
-  detailLinkText: { color: colors.text, flex: 1, fontSize: 15, fontWeight: '700' },
+  detailLink: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radii.medium,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.small,
+    padding: spacing.medium,
+  },
+  detailLinkText: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+  },
   serviceEditor: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.small,

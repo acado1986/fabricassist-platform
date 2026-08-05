@@ -12,8 +12,13 @@ const keys: Record<string, TranslationKey> = {
   WASH_TEMPERATURE_EXCEEDS_LABEL: 'warningTemperatureExceeded',
 };
 
-export function friendlyCode(value: string, translate: (key: TranslationKey) => string): string {
+export function friendlyCode(
+  value: string,
+  translate: (key: TranslationKey) => string,
+): string {
   const key = keys[value];
   if (key) return translate(key);
-  return value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+  return value
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }

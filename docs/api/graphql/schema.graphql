@@ -50,6 +50,7 @@ type ConversationMessageType {
   status: String!
   text: String!
   createdAt: DateTime!
+  runId: UUID
 }
 
 type CurrentUserType {

@@ -214,6 +214,7 @@ class ConversationMessageType:
     status: str
     text: str
     created_at: datetime
+    run_id: UUID | None
 
 
 @strawberry.type
@@ -771,7 +772,12 @@ def garment_detail_type(row: GarmentDetailView) -> GarmentDetailType:
 
 def message_type(row: ConversationMessageView) -> ConversationMessageType:
     return ConversationMessageType(
-        id=row.id, role=row.role, status=row.status, text=row.text, created_at=row.created_at
+        id=row.id,
+        role=row.role,
+        status=row.status,
+        text=row.text,
+        created_at=row.created_at,
+        run_id=row.run_id,
     )
 
 

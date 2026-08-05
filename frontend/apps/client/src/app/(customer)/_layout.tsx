@@ -19,9 +19,18 @@ export default function CustomerLayout(): ReactNode {
         options={{ headerShown: false }}
       />
       <Stack.Screen name="history" options={{ headerShown: false }} />
-      <Stack.Screen name="garments/service-history" options={{ headerShown: false }} />
-      <Stack.Screen name="garments/final-result" options={{ headerShown: false }} />
-      <Stack.Screen name="garments/observations" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="garments/service-history"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="garments/final-result"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="garments/observations"
+        options={{ headerShown: false }}
+      />
       <Stack.Screen name="garments/analyses" options={{ headerShown: false }} />
     </Stack>
   );

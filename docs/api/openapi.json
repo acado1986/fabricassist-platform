@@ -2031,6 +2031,52 @@
         ]
       }
     },
+    "/api/v1/garments/{garment_id}/service-events/{event_id}": {
+      "delete": {
+        "operationId": "delete_service_event_api_v1_garments__garment_id__service_events__event_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "garment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Garment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Service Event",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
     "/api/v1/graphql": {
       "get": {
         "operationId": "handle_http_get_api_v1_graphql_get",

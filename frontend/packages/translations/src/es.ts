@@ -145,6 +145,9 @@ export const es: TranslationCatalog = {
     deleteGarmentConfirmAction: 'Eliminar historial',
     deleteGarmentRequestFailed:
       'No se ha podido eliminar este historial de prenda.',
+    chatResponseFailed: 'No se pudo completar la respuesta del chat.',
+    chatMessagesUnavailable:
+      'Los mensajes del chat no están disponibles temporalmente.',
     serviceEventType: 'Añadir evento de servicio',
     serviceKindPlanned: 'Planificado',
     serviceKindPerformed: 'Realizado',
@@ -156,8 +159,10 @@ export const es: TranslationCatalog = {
     finalResultAnalysisDescription:
       'Hechos conocidos combinados a partir de la evidencia disponible. No se muestran como confirmados los datos dudosos o repetidos.',
     verifiedCareSummary: 'Resumen de cuidado verificado',
-    verifiedCareSummaryDescription: 'Las recomendaciones están agrupadas por paso de cuidado y se basan en la evidencia que pudimos verificar.',
-    finalResultEmpty: 'Todavía no hay suficiente información verificada para mostrar un resumen final de cuidado.',
+    verifiedCareSummaryDescription:
+      'Las recomendaciones están agrupadas por paso de cuidado y se basan en la evidencia que pudimos verificar.',
+    finalResultEmpty:
+      'Todavía no hay suficiente información verificada para mostrar un resumen final de cuidado.',
     finalResultWashing: 'Lavado',
     finalResultDrying: 'Secado',
     finalResultIroning: 'Planchado',
@@ -239,7 +244,8 @@ export const es: TranslationCatalog = {
     serviceCleaningAction: 'Tipo de limpieza',
     serviceSaveFailed: 'No se pudo guardar este evento. Inténtalo de nuevo.',
     serviceDeleteTitle: '¿Eliminar evento de servicio?',
-    serviceDeleteBody: 'Esta entrada del historial se eliminará permanentemente.',
+    serviceDeleteBody:
+      'Esta entrada del historial se eliminará permanentemente.',
     serviceDelete: 'Eliminar',
     serviceCancel: 'Cancelar',
     serviceHistory: 'Historial de servicio',
