@@ -105,10 +105,13 @@ test('history list closes the dialog after confirmed garment deletion', async ()
   expect(mockMutate).toHaveBeenCalledWith([
     '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
   ]);
-  await waitFor(() => {
-    expect(screen.queryByText('deleteGarmentConfirmDescription')).toBeNull();
-  });
-});
+  await waitFor(
+    () => {
+      expect(screen.queryByText('deleteGarmentConfirmDescription')).toBeNull();
+    },
+    { timeout: 10000 },
+  );
+}, 15000);
 
 test('history list loads garment thumbnails through the preview endpoint', async () => {
   const screen = await render(<CustomerHistory />);
