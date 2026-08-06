@@ -1,11 +1,10 @@
-import { APP_VERSION } from './src/config/version';
 import type { ExpoConfig } from 'expo/config';
 
 const config: ExpoConfig = {
   name: 'FabricAssist',
   slug: 'fabricassist',
   scheme: 'fabricassist',
-  version: APP_VERSION,
+  version: '1.4.2',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   platforms: ['ios', 'android', 'web'],
