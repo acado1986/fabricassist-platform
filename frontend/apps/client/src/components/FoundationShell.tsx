@@ -17,6 +17,7 @@ import { colors, radii, spacing } from '@fabricassist/design-tokens';
 import { LanguageSelector } from './LanguageSelector';
 import { useTranslation } from '../i18n/TranslationProvider';
 import { useSession } from '../auth/session';
+import { APP_VERSION } from '../config/version';
 
 export function FoundationShell({
   children,
@@ -172,6 +173,9 @@ export function FoundationShell({
           ) : null}
           <View style={styles.card}>{children}</View>
           <Text style={styles.privacyNote}>{translate('privacyNote')}</Text>
+          <Text style={styles.version}>
+            {translate('version').replace('{version}', APP_VERSION)}
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -345,6 +349,12 @@ const styles = StyleSheet.create({
     shadowOffset: { height: 8, width: 0 },
     shadowOpacity: 0.08,
     shadowRadius: 24,
+  },
+  version: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: spacing.small,
+    textAlign: 'center',
   },
   privacyNote: {
     color: colors.muted,
