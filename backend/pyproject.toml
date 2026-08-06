@@ -10,7 +10,7 @@ dependencies = [
   "boto3>=1.35,<2",
   "celery[redis]>=5.4,<5.7",
   "email-validator>=2.2,<3",
-  "fastapi>=0.139,<0.141",
+  "fastapi>=0.139,<0.142",
   "google-genai>=1.0,<3",
   "httpx>=0.28,<0.29",
   "opentelemetry-api>=1.44,<1.45",
@@ -25,8 +25,8 @@ dependencies = [
   "pyjwt>=2.10,<3",
   "redis>=5.3,<9",
   "sqlalchemy>=2.0.36,<2.1",
-  "strawberry-graphql[fastapi]>=0.315.7,<0.316",
-  "uvicorn[standard]>=0.34,<0.52",
+  "strawberry-graphql[fastapi]>=0.315.7,<0.324",
+  "uvicorn[standard]>=0.34,<0.53",
   "zxing-cpp>=2.3,<4",
 ]
 
