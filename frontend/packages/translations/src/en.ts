@@ -3,6 +3,7 @@ export const en = {
     title: 'FabricAssist',
     foundation: 'Development foundation',
     tagline: 'Care guidance, grounded in evidence',
+    version: 'Version {version}',
     privacyNote:
       'Your images stay private and are used only to prepare your care request.',
     loginTitle: 'Welcome back',

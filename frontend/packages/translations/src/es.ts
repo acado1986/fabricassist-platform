@@ -5,6 +5,7 @@ export const es: TranslationCatalog = {
     title: 'FabricAssist',
     foundation: 'Base de desarrollo',
     tagline: 'Cuidado de prendas basado en evidencias',
+    version: 'Versión {version}',
     privacyNote:
       'Tus imágenes son privadas y solo se usan para preparar tu consulta de cuidado.',
     loginTitle: 'Te damos la bienvenida',
