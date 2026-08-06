@@ -14,20 +14,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fabricassist.application.ai_runs import append_run_event, transition_run
 from fabricassist.application.conversation_provider import ConversationProvider
 from fabricassist.application.policies import ConversationPolicy
-from fabricassist.domain.care import validate_care_plan
 from fabricassist.domain.conversations import ConversationContext
-from fabricassist.domain.evidence import GarmentEvidenceDossier
+from fabricassist.domain.garment_analysis.care_policy import validate_candidate_claims
+from fabricassist.domain.garment_analysis.models import CarePolicy, FabricAssistAnalysisResult
 from fabricassist.infrastructure.database import Database
 from fabricassist.infrastructure.persistence.models import (
     AiRun,
     CareResult,
     ConversationMessage,
     ConversationSummary,
-    EvidenceDossier,
     GarmentServiceEvent,
     ModelRun,
     RevisionImage,
     ScanImage,
+    ValidationReport,
 )
 
 
@@ -49,12 +49,17 @@ async def build_context(
     message: ConversationMessage,
     policy: ConversationPolicy,
 ) -> ConversationContext:
+    """Build and validate a strictly v2 context before any provider call."""
     result = await session.get(CareResult, message.care_result_id)
-    dossier = (
-        await session.scalar(select(EvidenceDossier).where(EvidenceDossier.id == result.dossier_id))
-        if result
-        else None
-    )
+    if result is None or result.analysis_revision_id != message.analysis_revision_id:
+        raise ValueError("CONVERSATION_CONTEXT_UNAVAILABLE")
+    canonical = result.canonical_data.get("garment_analysis_result")
+    if not isinstance(canonical, dict):
+        raise ValueError("CONVERSATION_CONTEXT_UNAVAILABLE")
+    try:
+        analysis = FabricAssistAnalysisResult.model_validate(canonical)
+    except ValueError as error:
+        raise ValueError("CONVERSATION_CONTEXT_UNAVAILABLE") from error
     summary = await session.scalar(
         select(ConversationSummary)
         .where(ConversationSummary.thread_id == message.thread_id)
@@ -64,7 +69,10 @@ async def build_context(
         (
             await session.scalars(
                 select(GarmentServiceEvent)
-                .where(GarmentServiceEvent.garment_id == message.garment_id)
+                .where(
+                    GarmentServiceEvent.garment_id == message.garment_id,
+                    GarmentServiceEvent.tenant_id == message.tenant_id,
+                )
                 .order_by(GarmentServiceEvent.created_at.desc())
                 .limit(20)
             )
@@ -88,20 +96,37 @@ async def build_context(
             await session.scalars(
                 select(ScanImage)
                 .join(RevisionImage, RevisionImage.image_id == ScanImage.id)
-                .where(RevisionImage.revision_id == message.analysis_revision_id)
+                .where(
+                    RevisionImage.revision_id == message.analysis_revision_id,
+                    ScanImage.tenant_id == message.tenant_id,
+                )
                 .order_by(ScanImage.display_order, ScanImage.created_at)
             )
         ).all()
     )
-    if result is None or dossier is None:
-        raise ValueError("CONVERSATION_CONTEXT_UNAVAILABLE")
+    report = await session.get(ValidationReport, result.validation_report_id)
     return ConversationContext(
         garment_id=message.garment_id,
         analysis_revision_id=message.analysis_revision_id,
-        dossier=dossier.payload,
-        validated_plan=result.canonical_data.get("proposal", {}),
-        validation=result.canonical_data.get("validation", {}),
-        service_history=[{"kind": item.kind, "note": item.note} for item in history],
+        assessment=analysis.assessment.model_dump(mode="json"),
+        care_policy=analysis.care_policy.model_dump(mode="json"),
+        recommendation=analysis.recommendation.model_dump(mode="json"),
+        validation_report=report.payload
+        if report is not None
+        else {
+            "outcome": analysis.care_policy.outcome.value,
+            "policy_version": analysis.care_policy.care_policy_version,
+        },
+        service_history=[
+            {
+                "kind": item.kind,
+                "note": item.note,
+                "confirmed_by": item.confirmed_by,
+                "occurred_at": item.occurred_at.isoformat(),
+            }
+            for item in history
+            if item.kind in {"performed", "completed"}
+        ],
         summary=summary.payload if summary else None,
         recent_messages=[{"role": item.role, "text": item.text} for item in reversed(recent)],
         relevant_image_ids=select_relevant_image_ids(images, message.text)[
@@ -178,8 +203,10 @@ async def answer_message(
     model_run.output_tokens = result.output_tokens
     model_run.estimated_cost_usd = Decimal(0) if result.provider == "mock" else None
     model_run.status = "completed"
-    dossier = GarmentEvidenceDossier.model_validate(context.dossier)
-    reports = [validate_care_plan(dossier, claim.plan) for claim in proposal.actionable_claims]
+    care_policy = CarePolicy.model_validate(context.care_policy)
+    reports = [
+        validate_candidate_claims(care_policy, (item.claim,)) for item in proposal.actionable_claims
+    ]
     blocked = any(
         report.outcome.value in {"blocked", "needs_review", "needs_better_image"}
         for report in reports

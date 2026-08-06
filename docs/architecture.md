@@ -2,7 +2,7 @@
 
 **Document status:** Initial implementation architecture  
 **Related documents:** `docs/requirements.md`, `AGENTS.md`
-**Last updated:** 2026-07-22
+**Last updated:** 2026-08-03
 
 ## 0. Product identity and canonical names
 
@@ -23,7 +23,7 @@ Write **FabricAssist** in user-facing text. Use lowercase `fabricassist` for pac
 
 ## 1. Architecture principles
 
-1. **Deterministic safety gate:** AI extracts evidence and may propose care, but versioned Python validators decide whether every safety-relevant plan or chat claim may be released.
+1. **Deterministic safety gate:** AI extracts evidence and may produce optional typed proposals, but the v2 base care plan is derived by versioned Python policy and every safety-relevant plan or chat claim must pass deterministic validation before release.
 2. **Structured before conversational:** Evidence, proposals, actionable chat claims, and product lookups must pass typed schemas before they affect the product.
 3. **Cache by evidence, not vague similarity:** Exact images and canonical care facts are safer than generic semantic memory.
 4. **PostgreSQL is authoritative:** Valkey is transient infrastructure, not the source of completed results.
@@ -71,7 +71,7 @@ infrastructure or Redis provider:
 | `RateLimiter` | Valkey, no-op | `FABRICASSIST_RATE_LIMITER_BACKEND` |
 | `ConcurrencyGate` | Valkey, no-op | `FABRICASSIST_CONCURRENCY_GATE_BACKEND` |
 | `VisionEvidenceProvider` | mock, Gemini, OpenAI Responses | `FABRICASSIST_EVIDENCE_PROVIDER` |
-| `CarePlanningProvider` | mock, Gemini, OpenAI Responses | `FABRICASSIST_CARE_PLANNER_PROVIDER` |
+| `OptionalStainProposalProvider` | mock, Gemini, OpenAI Responses | module-owned garment-analysis provider setting |
 | `ConversationProvider` | mock, Gemini, OpenAI Responses | `FABRICASSIST_CHAT_PROVIDER` |
 | `ObjectStorage` | S3-compatible | `FABRICASSIST_OBJECT_STORAGE_BACKEND` |
 | `ProductInformationProvider` | mock, allow-listed HTTP JSON | `FABRICASSIST_PRODUCT_INFORMATION_PROVIDER` |
@@ -462,9 +462,12 @@ any network request.
 - revision number and parent/superseded revision nullable
 - triggering image IDs and evidence-delta metadata
 - status, active flag/pointer, created/finalized timestamps
+- pinned module/workflow, merged-schema, care/confidence/retry-policy versions,
+  and materially effective feature flags
 
-Prior revisions are never overwritten. Incremental extraction may process only
-new images, while activation requires validation of the fully merged dossier and
+Prior revisions are never overwritten. A delivery always resumes the workflow
+version pinned on its revision rather than adopting changed deployment settings.
+Incremental extraction may process only new images, while activation requires validation of the fully merged dossier and
 plan.
 
 #### `garment_observations`
@@ -494,23 +497,39 @@ a performed/completed service event exists.
 
 Index exact SHA-256. Perceptual hash lookup may initially use a narrowed candidate set and Hamming distance in application code; optimize only after measuring volume.
 
+#### `analysis_branch_results`
+
+- tenant and analysis-revision IDs, stable branch name, and unique
+  `(analysis_revision_id, branch_name)` constraint
+- normalized state (`pending`, `running`, `completed`, failure/input states),
+  attempt count capped at two, opaque claim token, and lease timestamps
+- provider/model/prompt/schema/preprocessing versions, request fingerprint,
+  confidence, uncertainty paths, validated result JSONB, and safe error category
+- started/completed timestamps
+
+This is the sole durable execution and business-read authority for a v2 branch.
+The claim token prevents a stale worker response from overwriting a branch after
+another delivery has reclaimed an expired lease. It stores validated JSON only,
+never framework checkpoints or provider SDK objects.
+
+#### `behavior_versions`
+
+- tenant ID, immutable behavior type/version/checksum, active or retired state,
+  and creation time
+
+This registry tracks module, workflow, prompt, schema, preprocessing, policy,
+and materially effective feature-flag assets that are not rulesets.
+
 #### `model_runs`
 
-- `id UUID PK`
-- `scan_id UUID FK`
-- `provider`
-- `model`
-- `operation`
-- `prompt_version`
-- `schema_version`
-- request fingerprint
-- latency
-- input/output token counts nullable
-- estimated cost nullable
-- status and error category
-- timestamps
+- `id UUID PK`, tenant/scan IDs, nullable analysis-revision and branch-result IDs
+- provider/model/operation, prompt/schema/response-model versions, and request fingerprint
+- retry number, image count, routed role counts, latency, input/output/total,
+  cached/thought/tool token counts, estimated cost, status/error, and completion time
 
-Do not store secret headers or raw presigned URLs.
+`model_runs` is immutable provider-usage audit data. It is linked to, but never
+supersedes, `analysis_branch_results` as branch-state authority. Do not store
+secret headers, raw provider objects, or raw presigned URLs.
 
 #### `label_extractions`
 
@@ -664,10 +683,22 @@ construction, photographed care/composition facts, materials, barcodes/brand
 labels, product lookup facts, visible stain/damage observations, original text,
 confidence, uncertainty, and source image/lookup/user/human references.
 
-### 9.2 Proposed care plan
+### 9.2 Deterministic v2 base plan and optional proposals
 
-`ProposedCarePlan` is AI-generated strict data, not arbitrary prose. A plan
-resembles:
+The v2 base care plan is a strict typed result derived in deterministic Python
+from the complete merged evidence dossier, authority rules, and relevant
+cleaning history. It is not generated by a mandatory planning LLM call.
+`ProposedCarePlan` remains a strict audit/validation model for optional
+model-backed proposals (for example, a policy-gated stain proposal), not the
+authority for the base recommendation. A typed plan resembles:
+
+The Phase 8 stain branch is default-off and runs only after the required
+inspection/label branches yield a usable deterministic policy, a stain issue,
+and suitable close-up evidence. Its branch result is persisted in the existing
+durable branch/model-run tables. Each proposed stain step receives an explicit
+accepted/blocked status, and only accepted steps are copied into the rendered
+validated projection; a failed or blocked optional branch never invalidates the
+safe deterministic base result.
 
 ```json
 {
@@ -722,7 +753,7 @@ class VisionEvidenceProvider(Protocol):
     ) -> GarmentEvidenceDelta:
         ...
 
-class CarePlanningProvider(Protocol):
+class OptionalStainProposalProvider(Protocol):
     async def propose_plan(
         self,
         *,
@@ -740,9 +771,10 @@ class ConversationProvider(Protocol):
         ...
 ```
 
-Evidence extraction, care planning, and conversation are independently selected
-and injected application ports. One concrete adapter may implement multiple
-ports, but each capability factory selects only its own strategy. Application
+Evidence extraction, optional proposal generation, and conversation are
+independently selected and injected application ports. One concrete adapter may
+implement multiple ports, but each capability factory selects only its own
+strategy. Application
 services receive non-secret `ProviderDescriptor` values for cache identity and
 never receive provider API keys, SDK clients, HTTP headers, endpoints, or the
 global settings object. Invocation results remain authoritative for recorded
@@ -766,7 +798,7 @@ external evidence. A product match never proves one physical garment instance.
 
 ### 10.2 Prompt strategy
 
-- Maintain separate versioned evidence, planning, repair, conversation, and
+- Maintain separate versioned evidence, optional-proposal, repair, conversation, and
   summary prompts in English for engineering consistency.
 - Send images and original user/label text without translating them first.
 - Instruct the model to preserve visible text verbatim and normalize meaning separately.
@@ -816,7 +848,7 @@ flowchart LR
     Original[Original Spanish/other input and label text]
     Extract[Structured multi-photo evidence]
     Product[Sourced product information]
-    Plan[AI-proposed typed care plan]
+    Plan[Deterministic typed v2 base plan]
     Validate[Deterministic validation]
     Templates[Localized templates]
     Explain[Optional constrained explanation]
@@ -944,14 +976,16 @@ sequenceDiagram
     API->>DB: Create draft scan
     API-->>Client: scan_id
     loop Each selected image (roles may repeat)
-        Client->>API: POST /scans/{id}/images with role and content type
+        Client->>API: POST /scans/{id}/images with role, viewpoint, and label scope
         API->>DB: Create server-owned image record
         API-->>Client: image_id + scoped presigned upload
         Client->>Obj: PUT image
         Client->>API: Complete image upload
     end
-    API->>DB: Mark supplied uploads complete
+    API->>Obj: Decode image and calculate local quality signals
+    API->>DB: Mark supplied uploads complete with quality and preprocessing metadata
     Client->>API: POST /scans/{id}/analyse
+    API->>API: Block clearly unusable images before provider dispatch
     API->>DB: Transition to queued
     API->>DB: Commit versioned job intent/outbox row
     API->>Queue: Publish idempotent identifier-only message
@@ -973,12 +1007,11 @@ sequenceDiagram
         Product-->>Worker: Sourced exact/probable/ambiguous/not-found result
     end
     Worker->>DB: Merge immutable/superseding evidence revision
-    Worker->>Model: Propose structured care plan from full dossier
-    Model-->>Worker: Proposed care plan
-    Worker->>Worker: Deterministically validate full proposal
+    Worker->>Worker: Derive deterministic base care plan from full dossier
+    Worker->>Worker: Deterministically validate base plan
     opt One retry for fixable proposal violations
-        Worker->>Model: Retry with machine-readable violations
-        Model-->>Worker: Revised proposed plan
+        Worker->>Model: Optional stain proposal retry with machine-readable violations
+        Model-->>Worker: Revised optional proposal
         Worker->>Worker: Revalidate
     end
     Worker->>DB: Store proposal, validation report, result and active revision
@@ -1020,9 +1053,9 @@ Suggested stages:
 6. `extract_new_evidence`
 7. `decode_and_lookup_products`
 8. `merge_evidence_revision`
-9. `propose_care_plan`
+9. `derive_deterministic_care_plan`
 10. `validate_care_plan`
-11. `retry_fixable_proposal_once`
+11. `validate_optional_stain_proposal_once`
 12. `resolve_validated_result_cache`
 13. `render_answers`
 14. `finalize_revision_and_scan`
@@ -1035,8 +1068,9 @@ Retry policy:
 - Schema failure: one constrained repair/retry at most, then review/failure.
 - Product not-found/ambiguous: persist the safe outcome and continue without
   blind retries; retry only categorized transient provider failures.
-- Deterministic proposal violation: one constrained planning retry when marked
-  repairable, otherwise block/review immediately.
+- Optional proposal violation: one constrained retry only when the proposal is
+  explicitly marked repairable; otherwise block/review immediately. The
+  deterministic base plan has no LLM retry path.
 - Authorization, invalid image, and deterministic validation failures: no blind retry.
 - Job exhaustion: persist `failed`, diagnostic category, and operator-visible retry action.
 
@@ -1294,7 +1328,6 @@ FABRICASSIST_S3_SECRET_KEY
 FABRICASSIST_S3_FORCE_PATH_STYLE
 
 FABRICASSIST_EVIDENCE_PROVIDER
-FABRICASSIST_CARE_PLANNER_PROVIDER
 FABRICASSIST_CHAT_PROVIDER
 FABRICASSIST_OBJECT_STORAGE_BACKEND
 FABRICASSIST_PRODUCT_INFORMATION_PROVIDER
@@ -1476,7 +1509,10 @@ Create Architecture Decision Records under `docs/adr/` for at least:
 - ADR-006: Provider-neutral vision adapter.
 - ADR-007: Direct-to-object-storage uploads.
 - ADR-008: Engram deferred; durable memory implemented with PostgreSQL and cache layers.
-- ADR-009: AI-proposed structured care plans with deterministic validation gates.
+- ADR-009: AI-proposed structured care plans with deterministic validation gates;
+  refined for the deterministic v2 base plan by ADR-019.
+- ADR-019: Garment-analysis module, native asyncio workflow, PostgreSQL branch
+  authority, and graph-engine adoption threshold.
 - ADR-010: Physical garment identity/history separated from product identity.
 - ADR-011: Trusted, sourced product-information lookup behind adapters.
 - ADR-012: Server-owned contextual conversation state in PostgreSQL.
@@ -1535,11 +1571,12 @@ Create Architecture Decision Records under `docs/adr/` for at least:
   construction evidence plus immutable/superseding delta merge semantics.
 - Extend mock and configured vision adapters with strict contract fixtures.
 
-### Commit 9 — AI planning and deterministic validation
+### Commit 9 — Deterministic care policy and validation
 
-- Add `CarePlanningProvider`, strict proposed-plan schema, versioned validation
-  policies, detergent validator, one constrained retry, and persisted reports.
-- Remove `decide_care()` and its legacy result/render path when the new planner,
+- Add the deterministic v2 care-policy engine, strict audit/proposal schemas,
+  versioned validation policies, detergent validator, optional constrained
+  proposal retry, and persisted reports.
+- Remove `decide_care()` and its legacy result/render path when the new policy,
   validator, and rich result become active. Do not retain a fallback execution path.
 - Add exhaustive prohibition, conflict, garment-only, sensitive-material, stain,
   and chat-claim safety tests.

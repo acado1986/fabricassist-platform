@@ -9,6 +9,12 @@ type AiRunType {
   completedAt: DateTime
 }
 
+type AnalysisBranchSummaryType {
+  branch: String!
+  status: String!
+  schemaVersion: String
+}
+
 type AnalysisRevisionType {
   id: UUID!
   scanId: UUID!
@@ -17,11 +23,20 @@ type AnalysisRevisionType {
   createdAt: DateTime!
 }
 
+type CareActionType {
+  code: String!
+  permission: String!
+  maximumTemperatureC: Int
+  process: String
+  evidencePaths: [String!]!
+  reasonKey: String!
+  professionalOnly: Boolean!
+}
+
 type CareResultType {
   id: UUID!
   status: String!
-  language: String!
-  data: JSON!
+  result: GarmentAnalysisResultType!
 }
 
 type ConversationMessageConnection {
@@ -35,6 +50,7 @@ type ConversationMessageType {
   status: String!
   text: String!
   createdAt: DateTime!
+  runId: UUID
 }
 
 type CurrentUserType {
@@ -46,6 +62,15 @@ type CurrentUserType {
 
 """Date with time (isoformat)"""
 scalar DateTime
+
+type EvidenceConflictType {
+  id: UUID!
+  fieldPath: String!
+  selectedValue: String
+  resolutionCode: String!
+  explanationKey: String!
+  severity: String!
+}
 
 type GarmentAnalysisHistoryConnection {
   items: [GarmentAnalysisHistoryType!]!
@@ -59,6 +84,38 @@ type GarmentAnalysisHistoryType {
   resultAvailable: Boolean!
   thumbnailScanId: UUID
   thumbnailImageId: UUID
+}
+
+type GarmentAnalysisResultType {
+  schemaVersion: String!
+  outcome: String!
+  warnings: [String!]!
+  category: String!
+  subtype: String
+  colors: [String!]!
+  pattern: String!
+  features: [String!]!
+  overallCondition: String!
+  issues: [GarmentIssueType!]!
+  visibleLabelText: [LabelTextType!]!
+  materials: [MaterialType!]!
+  labelWarnings: [String!]!
+  allowedActions: [CareActionType!]!
+  prohibitedActions: [CareActionType!]!
+  unknownActions: [CareActionType!]!
+  professionalOnlyActions: [CareActionType!]!
+  uncertainties: [String!]!
+  clearerImageRequests: [String!]!
+  conflicts: [EvidenceConflictType!]!
+  branches: [AnalysisBranchSummaryType!]!
+  stainSteps: [StainStepType!]!
+  historyEventIds: [UUID!]!
+  preferenceSource: String!
+  versions: [VersionType!]!
+  productBarcode: String
+  productLookupStatus: String!
+  productSource: String
+  productFacts: JSON
 }
 
 type GarmentConnection {
@@ -79,6 +136,7 @@ type GarmentDetailType {
   activeResult: CareResultType
   analyses: GarmentAnalysisHistoryConnection!
   serviceEvents: [ServiceEventType!]!
+  observations: [GarmentObservationType!]!
 }
 
 type GarmentHistoryConnection {
@@ -95,6 +153,32 @@ type GarmentHistoryItemType {
   lastAnalysisAt: DateTime
   analysedBefore: Boolean!
   cleanedBefore: Boolean!
+}
+
+type GarmentIssueType {
+  id: UUID!
+  kind: String!
+  severity: String!
+  location: String!
+  observedDescription: String!
+  confidence: Int!
+  sourceImageIds: [UUID!]!
+  suspectedCauses: [String!]!
+  confirmedCause: String
+  causeState: String!
+}
+
+type GarmentObservationType {
+  id: UUID!
+  observationType: String!
+  stability: String!
+  authority: String!
+  value: JSON!
+  evidenceIds: [UUID!]!
+  confidence: Float
+  analysisRevisionId: UUID!
+  supersedesObservationId: UUID
+  createdAt: DateTime!
 }
 
 type GarmentType {
@@ -119,6 +203,20 @@ type IdentityCandidateType {
 The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
 """
 scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
+
+type LabelTextType {
+  imageId: UUID!
+  text: String!
+  language: String!
+  confidence: Int!
+}
+
+type MaterialType {
+  material: String!
+  percentage: Float
+  confidence: Int!
+  sourceImageIds: [UUID!]!
+}
 
 type PageInfo {
   nextCursor: String
@@ -157,6 +255,9 @@ type ScanConnection {
 type ScanImageMetadataType {
   id: UUID!
   role: String!
+  viewpoint: String
+  labelScope: String
+  qualityState: String
   displayOrder: Int!
   width: Int
   height: Int
@@ -180,9 +281,22 @@ type ServiceEventType {
   createdAt: DateTime!
 }
 
+type StainStepType {
+  claimId: UUID!
+  status: String!
+  text: String
+  actionCode: String!
+  violationCodes: [String!]!
+}
+
 scalar UUID
 
 type UsageSummary {
   modelRunCount: Int!
   estimatedCostUsd: String!
+}
+
+type VersionType {
+  name: String!
+  value: String!
 }

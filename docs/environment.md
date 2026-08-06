@@ -59,11 +59,14 @@ inclusive. The prerelease profile applies the smaller pool and image limits show
 | `FABRICASSIST_PUBLICATION_RECOVERY_INTERVAL_SECONDS` | Integer `5..3600` | `30` |
 | `FABRICASSIST_PUBLICATION_RECOVERY_BATCH_SIZE` | Integer `1..1000` | `100` |
 | `FABRICASSIST_DELETION_MAX_ATTEMPTS` | Integer `1..100` | `5` |
-| `FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` | Integer `1..365` | `7` |
+| `FABRICASSIST_DEFAULT_IMAGE_RETENTION_DAYS` | Integer `1..365` | `30` |
 | `FABRICASSIST_UPLOAD_MAX_BYTES` | Positive integer bytes | `12582912` (12 MiB) |
 | `FABRICASSIST_UPLOAD_URL_MINUTES` | Integer `1..60` | `10` |
 | `FABRICASSIST_MAX_IMAGES_PER_SCAN` | Integer `1..20` (`1..3` prerelease) | `8` (`3` prerelease) |
 | `FABRICASSIST_ANALYSIS_LEASE_MINUTES` | Integer `1..30` | `5` |
+| `FABRICASSIST_GARMENT_ANALYSIS_STAIN_ENABLED` | `true`, `false` | `false` |
+| `FABRICASSIST_GARMENT_ANALYSIS_ENABLED` | `true`, `false` | `true` |
+| `FABRICASSIST_GARMENT_ANALYSIS_PRIVACY_APPROVED` | `true`, `false` | `false` |
 | `FABRICASSIST_VISION_TIMEOUT_SECONDS` | Integer `5..120` | `120` |
 | `FABRICASSIST_VISION_MAX_INPUT_TOKENS` | Integer `1024..128000` | `128000` |
 | `FABRICASSIST_VISION_MAX_OUTPUT_TOKENS` | Integer `256..16000` | `16000` |
@@ -175,6 +178,11 @@ AWS workload identity is configured, and are always secret. Upload limits and
 presign lifetime are controlled by `FABRICASSIST_UPLOAD_MAX_BYTES` and
 `FABRICASSIST_UPLOAD_URL_MINUTES`.
 
+At upload completion the storage adapter decodes the image and records local
+quality signals and the `image-quality-v1` preprocessing version. These signals
+are persisted with the image; clearly undersized images are blocked before
+analysis dispatch while borderline readability/glare remains a warning.
+
 ### Jobs and recovery
 
 - `FABRICASSIST_JOB_STAGE_BUDGET_SECONDS` bounds one analysis checkpoint.
@@ -220,3 +228,19 @@ make check-alpha-config
 After changing adapter selectors, restart the API and worker. For the prerelease profile, save
 the values in Render before running the protected live smoke; changing the
 repository example alone does not change Render's environment.
+
+### Garment-analysis v2 execution gate
+
+`FABRICASSIST_GARMENT_ANALYSIS_PROVIDER` selects the sole v2 branch adapter
+(`mock`, `gemini`, or `openai_responses`) and defaults to `mock`, which makes no
+network calls. `FABRICASSIST_GARMENT_ANALYSIS_GEMINI_MODEL` and
+`FABRICASSIST_GARMENT_ANALYSIS_OPENAI_MODEL` are optional branch-specific model
+overrides. `FABRICASSIST_GARMENT_ANALYSIS_STAIN_ENABLED` is an explicit,
+default-off feature flag for the conditional stain proposal branch. The branch
+is eligible only when the complete deterministic care policy is usable, a stain
+issue and suitable close-up are present, and no reusable stain result exists.
+`FABRICASSIST_GARMENT_ANALYSIS_ENABLED=false` is incident containment only: a
+production `/health/ready` request fails closed and never selects a legacy
+executor. Set `FABRICASSIST_GARMENT_ANALYSIS_PRIVACY_APPROVED=true` only after
+the live provider's retention, training, region, and deletion terms are recorded
+in `docs/privacy/subprocessors.md` and approved by the privacy owner.

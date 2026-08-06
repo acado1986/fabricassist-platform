@@ -6,11 +6,11 @@ import pytest
 from fabricassist.api.routes.conversations import string_items
 from fabricassist.application.conversations import answer_message, select_relevant_image_ids
 from fabricassist.application.policies import ConversationPolicy
-from fabricassist.domain.care import Cleaning, ProposedCarePlan
 from fabricassist.domain.conversations import (
     AssistantMessageProposal,
     ConversationContext,
 )
+from fabricassist.domain.garment_analysis.models import CandidateClaim
 from fabricassist.infrastructure.persistence.models import (
     ConversationMessage,
     ModelRun,
@@ -21,15 +21,15 @@ from fabricassist.infrastructure.persistence.models import (
 def test_structured_chat_claim_rejects_untyped_action() -> None:
     proposal = AssistantMessageProposal(text="Safe explanation")
     assert proposal.actionable_claims == []
-    claim = ProposedCarePlan(classification="provisional", cleaning=Cleaning(method="unknown"))
+    claim = CandidateClaim(claim_id=uuid4(), action_code="water_wash", text="Wash gently")
     structured = AssistantMessageProposal.model_validate(
         {
             "text": "x",
-            "actionable_claims": [{"plan": claim.model_dump(mode="json")}],
+            "actionable_claims": [{"claim": claim.model_dump(mode="json")}],
             "evidence_ids": [str(uuid4())],
         }
     )
-    assert structured.actionable_claims[0].plan.cleaning.method == "unknown"
+    assert structured.actionable_claims[0].claim.action_code == "water_wash"
 
 
 def test_relevant_images_prioritize_the_questioned_evidence_role() -> None:
@@ -93,9 +93,14 @@ async def test_duplicate_conversation_delivery_creates_one_assistant_message(
     context = ConversationContext(
         garment_id=user.garment_id,
         analysis_revision_id=user.analysis_revision_id,
-        dossier={},
-        validated_plan={},
-        validation={},
+        assessment={},
+        care_policy={
+            "care_policy_version": "care-policy-v2",
+            "policy_checksum": "test",
+            "outcome": "passed",
+        },
+        recommendation={"recommendation_id": str(uuid4()), "preference_source": "generic_policy"},
+        validation_report={},
     )
 
     async def context_for(*_args: object) -> ConversationContext:

@@ -28,6 +28,7 @@ from fabricassist.application.object_storage import (
     PresignedUpload,
     RetryableObjectStorageError,
 )
+from fabricassist.infrastructure.garment_analysis.images import assess_image_quality
 
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
@@ -172,11 +173,19 @@ class S3ObjectStorageAdapter:
             raise ValueError("Uploaded content is not a valid image.") from error
         if width <= 0 or height <= 0 or width * height > 40_000_000:
             raise ValueError("Uploaded image dimensions are unsafe.")
+        quality = assess_image_quality(body)
         return ObjectMetadata(
             content_type=content_type,
             byte_size=byte_size,
             width=width,
             height=height,
+            quality_state=quality.state,
+            blur_score=quality.blur_score,
+            brightness_score=quality.brightness_score,
+            contrast_score=quality.contrast_score,
+            glare_score=quality.glare_score,
+            crop_readability_score=quality.crop_readability_score,
+            orientation_degrees=quality.orientation_degrees,
         )
 
     def read_object(self, key: str) -> bytes:

@@ -12,7 +12,6 @@ import { spacing } from '@fabricassist/design-tokens';
 import {
   listReviewsApiV1ReviewsGet,
   reviewDetailApiV1ReviewsReviewIdGet,
-  type GarmentEvidenceDossier,
   type ReviewDetail,
   type ReviewResponse,
 } from '@fabricassist/api-client';
@@ -26,7 +25,8 @@ export default function ReviewQueue(): ReactNode {
   const [items, setItems] = useState<ReviewResponse[]>([]);
   const [selected, setSelected] = useState<ReviewDetail>();
   const [reason, setReason] = useState('');
-  const [dossier, setDossier] = useState('');
+  const [fieldPath, setFieldPath] = useState('');
+  const [correctedValue, setCorrectedValue] = useState('');
   const [failed, setFailed] = useState(false);
   const load = useCallback(async (): Promise<void> => {
     if (!token) return;
@@ -56,16 +56,20 @@ export default function ReviewQueue(): ReactNode {
     }
     const value = detail.data;
     setSelected(value);
-    setDossier(JSON.stringify(value.dossier, null, 2));
+    setFieldPath('');
+    setCorrectedValue('');
     setReason('');
   };
   const correct = async (): Promise<void> => {
     if (!selected) return;
     try {
-      const corrected = JSON.parse(dossier) as GarmentEvidenceDossier;
       const response = await restWrites.correctReview({
         path: { review_id: selected.id },
-        body: { dossier: corrected, reason },
+        body: {
+          field_path: fieldPath,
+          corrected_value: JSON.parse(correctedValue),
+          reason,
+        },
       });
       if (!response.data) throw new Error();
       await load();
@@ -124,9 +128,16 @@ export default function ReviewQueue(): ReactNode {
             <Text>{translate('reviewCorrection')}</Text>
             <TextInput
               accessibilityLabel={translate('reviewCorrection')}
-              multiline
-              value={dossier}
-              onChangeText={setDossier}
+              value={fieldPath}
+              onChangeText={setFieldPath}
+              placeholder="care.wash.permission"
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="Corrected JSON value"
+              value={correctedValue}
+              onChangeText={setCorrectedValue}
+              placeholder='"prohibited"'
               style={styles.input}
             />
             <TextInput

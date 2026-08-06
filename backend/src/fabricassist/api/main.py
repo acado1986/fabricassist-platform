@@ -62,6 +62,7 @@ from fabricassist.application.storefront_queries import StorefrontPrincipal, Sto
 from fabricassist.infrastructure.cache.factory import create_hot_cache
 from fabricassist.infrastructure.concurrency.factory import create_concurrency_gate
 from fabricassist.infrastructure.database import Database, DatabasePort
+from fabricassist.infrastructure.garment_analysis import create_garment_analysis_workflow
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 from fabricassist.infrastructure.jobs.qstash_inbound import (
     create_qstash_delivery_verifier,
@@ -78,7 +79,6 @@ from fabricassist.infrastructure.rate_limits.factory import create_rate_limiter
 from fabricassist.infrastructure.storage.factory import create_object_storage
 from fabricassist.infrastructure.telemetry import configure_telemetry, metrics_payload
 from fabricassist.infrastructure.vision.providers import (
-    create_care_planning_provider,
     create_conversation_provider,
     create_evidence_provider,
 )
@@ -102,10 +102,16 @@ def create_app(
     hot_cache = create_hot_cache(resolved_settings)
     concurrency_gate = create_concurrency_gate(resolved_settings)
     evidence_provider = create_evidence_provider(resolved_settings)
-    care_planning_provider = create_care_planning_provider(resolved_settings)
     conversation_provider = create_conversation_provider(resolved_settings)
     product_information_provider = create_product_information_provider(resolved_settings)
     storage = create_object_storage(resolved_settings)
+    garment_analysis_workflow = (
+        create_garment_analysis_workflow(
+            database=resolved_database, storage=storage, settings=resolved_settings
+        )
+        if isinstance(resolved_database, Database)
+        else None
+    )
     analysis_policy = AnalysisExecutionPolicy(
         hot_cache_ttl_seconds=resolved_settings.cache_hot_ttl_seconds,
         product_cache_minutes=resolved_settings.product_cache_minutes,
@@ -158,12 +164,12 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.database = resolved_database
     app.state.storage = storage
+    app.state.garment_analysis_workflow = garment_analysis_workflow
     app.state.job_dispatcher = job_dispatcher
     app.state.qstash_verifier = qstash_verifier
     app.state.hot_cache = hot_cache
     app.state.concurrency_gate = concurrency_gate
     app.state.evidence_provider = evidence_provider
-    app.state.care_planning_provider = care_planning_provider
     app.state.conversation_provider = conversation_provider
     app.state.product_information_provider = product_information_provider
     app.state.analysis_policy = analysis_policy
@@ -222,6 +228,12 @@ def create_app(
     def get_storage(request: Request) -> ObjectStorage:
         return request.app.state.storage  # type: ignore[no-any-return]
 
+    def get_garment_analysis_workflow(request: Request) -> object:
+        workflow = request.app.state.garment_analysis_workflow
+        if workflow is None:
+            raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Analysis workflow is unavailable.")
+        return workflow
+
     async def get_storefront_queries(
         session: AsyncSession = Depends(get_session),  # noqa: B008
         storage: ObjectStorage = Depends(get_storage),  # noqa: B008
@@ -242,9 +254,6 @@ def create_app(
 
     def get_evidence_provider(request: Request) -> object:
         return request.app.state.evidence_provider
-
-    def get_care_planning_provider(request: Request) -> object:
-        return request.app.state.care_planning_provider
 
     def get_conversation_provider(request: Request) -> object:
         return request.app.state.conversation_provider
@@ -297,6 +306,7 @@ def create_app(
     app.dependency_overrides[scans.get_storage] = get_storage
     app.dependency_overrides[scans.get_upload_policy] = lambda: upload_policy
     app.dependency_overrides[scans.get_job_dispatcher] = get_job_dispatcher
+    app.dependency_overrides[scans.get_settings] = get_settings
     app.dependency_overrides[runs.get_session] = get_session
     app.dependency_overrides[runs.get_current_user] = get_current_user
     app.dependency_overrides[runs.get_job_dispatcher] = get_job_dispatcher
@@ -312,21 +322,15 @@ def create_app(
     app.dependency_overrides[conversations.get_job_dispatcher] = get_job_dispatcher
     app.dependency_overrides[reviews.get_session] = get_session
     app.dependency_overrides[reviews.get_current_user] = get_current_user
-    app.dependency_overrides[reviews.get_care_planning_provider] = get_care_planning_provider
     app.dependency_overrides[internal_jobs.get_session] = get_session
     app.dependency_overrides[internal_jobs.get_database] = get_runtime_database
-    app.dependency_overrides[internal_jobs.get_storage] = get_storage
     app.dependency_overrides[internal_jobs.get_job_dispatcher] = get_job_dispatcher
     app.dependency_overrides[internal_jobs.get_qstash_verifier] = get_qstash_verifier
-    app.dependency_overrides[internal_jobs.get_hot_cache] = get_hot_cache
     app.dependency_overrides[internal_jobs.get_concurrency_gate] = get_concurrency_gate
-    app.dependency_overrides[internal_jobs.get_evidence_provider] = get_evidence_provider
-    app.dependency_overrides[internal_jobs.get_care_planning_provider] = get_care_planning_provider
-    app.dependency_overrides[internal_jobs.get_conversation_provider] = get_conversation_provider
-    app.dependency_overrides[internal_jobs.get_product_information_provider] = (
-        get_product_information_provider
+    app.dependency_overrides[internal_jobs.get_garment_analysis_workflow] = (
+        get_garment_analysis_workflow
     )
-    app.dependency_overrides[internal_jobs.get_analysis_policy] = get_analysis_policy
+    app.dependency_overrides[internal_jobs.get_conversation_provider] = get_conversation_provider
     app.dependency_overrides[internal_jobs.get_job_execution_policy] = get_job_execution_policy
     app.dependency_overrides[internal_jobs.get_conversation_policy] = get_conversation_policy
     app.include_router(auth.router)
@@ -377,6 +381,16 @@ def create_app(
         """Report readiness only when PostgreSQL accepts a safe probe."""
         if not await database_dependency.is_available():
             raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "Service dependencies are unavailable.")
+        if resolved_settings.environment == "production" and (
+            not resolved_settings.garment_analysis_enabled
+            or not resolved_settings.garment_analysis_privacy_approved
+            or app.state.garment_analysis_workflow is None
+        ):
+            raise ApiError(
+                503,
+                "ANALYSIS_GATE_NOT_READY",
+                "The current garment-analysis workflow is not approved and ready.",
+            )
         return {"status": "ok"}
 
     @app.get("/api/v1/bootstrap", tags=["health"])

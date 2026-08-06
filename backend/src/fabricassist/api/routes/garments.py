@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.lifecycle import enqueue_deletion
@@ -268,8 +268,6 @@ async def add_service_event(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> ServiceEventResponse:
-    if request.kind in {"performed", "completed"} and user.role not in {"operator", "admin"}:
-        raise HTTPException(403, "Only an operator can confirm a completed service.")
     await owned_garment(session, user, garment_id)
     event = GarmentServiceEvent(
         tenant_id=user.tenant_id,
@@ -281,6 +279,26 @@ async def add_service_event(
     session.add(event)
     await session.commit()
     return ServiceEventResponse(id=event.id, kind=event.kind, note=event.note)
+
+
+@router.delete("/{garment_id}/service-events/{event_id}", status_code=204)
+async def delete_service_event(
+    garment_id: UUID,
+    event_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    event = await session.scalar(
+        select(GarmentServiceEvent).where(
+            GarmentServiceEvent.id == event_id,
+            GarmentServiceEvent.garment_id == garment_id,
+            GarmentServiceEvent.tenant_id == user.tenant_id,
+        )
+    )
+    if event is None:
+        raise HTTPException(404, "Service event was not found.")
+    await session.delete(event)
+    await session.commit()
 
 
 @router.get("/{garment_id}/history", response_model=HistoryResponse)
@@ -367,6 +385,16 @@ async def delete_garment(
         )
         for run in runs:
             await session.delete(run)
+    # Merged garments point at the retained garment with a restrictive FK.
+    # Detach those tombstones before deleting the target garment.
+    await session.execute(
+        update(Garment)
+        .where(
+            Garment.tenant_id == user.tenant_id,
+            Garment.merged_into_id == garment.id,
+        )
+        .values(merged_into_id=None, merged_at=None)
+    )
     await session.execute(
         delete(GarmentIdentityConfirmation).where(
             GarmentIdentityConfirmation.tenant_id == user.tenant_id,
@@ -481,11 +509,14 @@ async def confirm_identity_candidate(
             )
         )
         if previous_garment is not None:
-            await archive_if_orphaned(
+            archived = await archive_if_orphaned(
                 session,
                 garment=previous_garment,
                 excluding_scan_id=scan.id,
             )
+            if archived:
+                previous_garment.merged_into_id = garment.id
+                previous_garment.merged_at = datetime.now(UTC)
     candidate.status = "confirmed"
     session.add(
         GarmentIdentityConfirmation(

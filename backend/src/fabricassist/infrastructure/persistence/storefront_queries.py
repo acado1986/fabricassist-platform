@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from fabricassist.application.garment_analysis_cursor import GarmentAnalysisCursor
 from fabricassist.application.garment_history_cursor import GarmentHistoryCursor
@@ -33,6 +34,8 @@ from fabricassist.application.storefront_queries import (
     StorefrontQueryPort,
     UsageView,
 )
+from fabricassist.domain.garment_analysis.models import FabricAssistAnalysisResult
+from fabricassist.infrastructure.persistence.garment_analysis_projection import analysis_result_view
 from fabricassist.infrastructure.persistence.models import (
     AiRun,
     AnalysisRevision,
@@ -46,7 +49,6 @@ from fabricassist.infrastructure.persistence.models import (
     GarmentObservation,
     GarmentServiceEvent,
     ModelRun,
-    RenderedAnswer,
     Scan,
     ScanImage,
 )
@@ -438,6 +440,7 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
             analysis_revision_id=garment.active_analysis_revision_id,
         )
         latest_thumbnail = thumbnail_by_scan.get(latest_scan.id) if latest_scan else None
+        superseding_observation = aliased(GarmentObservation)
         observations = list(
             (
                 await self._session.scalars(
@@ -445,6 +448,12 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
                     .where(
                         GarmentObservation.tenant_id == principal.tenant_id,
                         GarmentObservation.garment_id == garment.id,
+                        ~select(superseding_observation.id)
+                        .where(
+                            superseding_observation.supersedes_observation_id
+                            == GarmentObservation.id
+                        )
+                        .exists(),
                     )
                     .order_by(GarmentObservation.created_at.desc(), GarmentObservation.id.desc())
                 )
@@ -496,7 +505,12 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
                     id=observation.id,
                     observation_type=observation.observation_type,
                     stability=observation.stability,
+                    authority=observation.authority,
                     value=cast(dict[str, object], observation.value),
+                    evidence_ids=[UUID(value) for value in observation.evidence_ids],
+                    confidence=observation.confidence,
+                    analysis_revision_id=observation.analysis_revision_id,
+                    supersedes_observation_id=observation.supersedes_observation_id,
                     created_at=observation.created_at,
                 )
                 for observation in observations
@@ -624,6 +638,9 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
             ImageMetadataView(
                 id=row.id,
                 role=row.role,
+                viewpoint=row.viewpoint,
+                label_scope=row.label_scope,
+                quality_state=row.quality_state,
                 display_order=row.display_order,
                 width=row.width,
                 height=row.height,
@@ -672,6 +689,9 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
                     ImageMetadataView(
                         id=row.id,
                         role=row.role,
+                        viewpoint=row.viewpoint,
+                        label_scope=row.label_scope,
+                        quality_state=row.quality_state,
                         display_order=row.display_order,
                         width=row.width,
                         height=row.height,
@@ -737,21 +757,20 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
         )
         if result_row is None:
             return None
-        rendered = await self._session.scalar(
-            select(RenderedAnswer).where(
-                RenderedAnswer.care_result_id == result_row.id,
-                RenderedAnswer.tenant_id == principal.tenant_id,
-                RenderedAnswer.language == language,
-                RenderedAnswer.template_version == "rich-result-v2",
-            )
-        )
-        if rendered is None:
+        # Phase 9 deliberately reads only the versioned v2 canonical projection.
+        # Old rendered JSON is not a transport fallback; Phase 10 transforms retained
+        # results before enabling this feature for production traffic.
+        payload = result_row.canonical_data.get("garment_analysis_result")
+        if not isinstance(payload, dict):
+            return None
+        try:
+            canonical = FabricAssistAnalysisResult.model_validate(payload)
+        except ValueError:
             return None
         return CareResultView(
             id=result_row.id,
             status=result_row.status,
-            language=language,
-            data=cast(dict[str, object], rendered.answer),
+            result=analysis_result_view(canonical),
         )
 
     async def get_result_composite(
@@ -899,7 +918,12 @@ class SqlAlchemyStorefrontQueries(StorefrontQueryPort):
     @staticmethod
     def _message(row: ConversationMessage) -> ConversationMessageView:
         return ConversationMessageView(
-            id=row.id, role=row.role, status=row.status, text=row.text, created_at=row.created_at
+            id=row.id,
+            role=row.role,
+            status=row.status,
+            text=row.text,
+            created_at=row.created_at,
+            run_id=row.run_id,
         )
 
     @staticmethod

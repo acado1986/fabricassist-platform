@@ -11,7 +11,13 @@
 
 The product must support Android, iOS, and web from a shared React-based frontend. The backend must be Python-based and must orchestrate vision-capable language models, deterministic care rules, caching, persistence, and human review.
 
-AI components extract a strict structured evidence dossier and may propose a strict structured care plan and contextual follow-up answer. Every safety-relevant proposal must pass a deterministic, versioned Python validator before release. Free-form model prose is never the sole authority for an actionable instruction, and photographed care-label evidence remains authoritative.
+AI components extract a strict structured evidence dossier and may produce
+optional strict typed proposals and contextual follow-up answers. In v2, the
+base care plan is derived by deterministic, versioned Python policy from the
+complete merged evidence; every safety-relevant result or proposal must pass
+deterministic validation before release. Free-form model prose is never the
+sole authority for an actionable instruction, and photographed care-label
+evidence remains authoritative.
 
 ### 1.1 Product identity
 
@@ -113,7 +119,8 @@ The MVP may run for one cleaning company, but the schema must include `tenant_id
 6. A vision provider extracts a structured, source-referenced evidence dossier.
 7. Optional product-information adapters enrich the dossier with sourced barcode,
    brand, model, and manufacturer/catalog information.
-8. An AI planner proposes a structured care plan.
+8. The deterministic v2 care-policy engine derives a structured base care plan;
+   an optional policy-gated model proposal may supplement a specific branch.
 9. A deterministic validator accepts, warns, blocks, requests another image, or
    requires review. It never silently creates a different recommendation.
 10. The application renders the validated result in the selected language.
@@ -220,6 +227,12 @@ The MVP may run for one cleaning company, but the schema must include `tenant_id
 - **FR-QUALITY-003:** The response must provide actionable capture guidance such as “move closer,” “flatten the label,” or “avoid flash reflection.”
 - **FR-QUALITY-004:** Quality thresholds must be configurable and covered by tests using fixture images.
 
+The Phase 3 upload slice persists role-independent resolution, blur, brightness,
+contrast, glare, crop-readability, orientation, and preprocessing metadata on
+each image. Only the minimum-resolution hard bound blocks analysis; borderline
+signals remain available for branch-specific guidance rather than causing
+false rejection.
+
 ### 6.4 Scan lifecycle
 
 A scan status must use a controlled enum with at least:
@@ -250,9 +263,10 @@ Requirements:
 - **FR-AI-001:** Vision providers must be accessed through a provider-neutral Python interface.
 - **FR-AI-002:** The initial provider must be selected through configuration, not hard-coded in domain logic.
 - **FR-AI-003:** The provider must return data validated against a strict Pydantic schema.
-- **FR-AI-004:** Evidence extraction, care planning, and actionable chat output
-  must use separate strict typed contracts even when the same configured model
-  implements more than one operation.
+- **FR-AI-004:** Evidence extraction, optional care/stain proposals, and
+  actionable chat output must use separate strict typed contracts even when the
+  same configured model implements more than one operation; the v2 base care
+  plan is deterministic and does not require a planning-model call.
 - **FR-AI-005:** The extraction must preserve visible written text in its original language.
 - **FR-AI-006:** The extraction must normalize recognized meanings into language-independent care codes.
 - **FR-AI-007:** Every material fact and care symbol must include a confidence value or explicit `unknown` state.
@@ -262,10 +276,11 @@ Requirements:
 - **FR-AI-011:** Every extracted fact must identify its source image IDs and
   evidence type: photographed label, visual inference, user statement, verified
   lookup, or human correction.
-- **FR-AI-012:** The care planner must return a structured `ProposedCarePlan`
-  covering preparation, stain treatment, cleaning, detergent, drying, ironing,
-  professional care, prohibited actions, evidence references, uncertainty, and
-  follow-up questions.
+- **FR-AI-012:** Any configured optional care/stain proposal operation must
+  return a structured `ProposedCarePlan` covering its permitted fields;
+  `ProposedCarePlan` and `CareValidationReport` remain strict versioned
+  audit/validation models, while the v2 base plan is derived by deterministic
+  Python policy.
 - **FR-AI-013:** Visual stain classification must remain a hypothesis unless the
   user or verified evidence identifies the stain; the model must not guarantee
   removal.
@@ -714,7 +729,8 @@ The MVP is accepted when all of the following are demonstrable locally with Dock
    presigned URLs using supported repeated roles.
 3. The scan is processed asynchronously by a Python worker.
 4. Configured providers return a source-referenced, schema-validated evidence
-   dossier and structured proposed care plan.
+   dossier; deterministic v2 policy derives the base care plan and may invoke
+   an optional policy-gated proposal operation.
 5. The deterministic validator approves/warns/blocks the plan, and an approved
    rich result renders in Spanish and English.
 6. A repeated exact image is served without another paid model call.

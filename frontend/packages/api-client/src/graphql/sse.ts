@@ -9,6 +9,27 @@ export type RunEvent = {
 
 export type ParsedSseEvent = { id?: string; event: string; data: string };
 
+export function parseRunEvent(data: string): RunEvent | null {
+  try {
+    const value: unknown = JSON.parse(data);
+    if (!value || typeof value !== 'object') return null;
+    const event = value as Partial<RunEvent>;
+    if (
+      typeof event.schema_version !== 'number' ||
+      typeof event.event_id !== 'string' ||
+      typeof event.run_id !== 'string' ||
+      typeof event.sequence !== 'number' ||
+      typeof event.timestamp !== 'string' ||
+      !event.data ||
+      typeof event.data !== 'object'
+    )
+      return null;
+    return event as RunEvent;
+  } catch {
+    return null;
+  }
+}
+
 /** Incremental SSE parser: accepts partial and multiple event frames. */
 export class SseFrameParser {
   private buffer = '';

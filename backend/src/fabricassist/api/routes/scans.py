@@ -6,23 +6,30 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.ai_runs import AiRunStateError, create_analysis_run
-from fabricassist.application.analysis import TEMPLATE_VERSION, render_rich_result
+from fabricassist.application.garment_analysis import (
+    NORMALIZATION_VERSION,
+    normalize_image_bytes,
+)
 from fabricassist.application.job_orchestration import enqueue_analysis
 from fabricassist.application.jobs import JobDispatcher
 from fabricassist.application.lifecycle import enqueue_deletion, ensure_review_case
 from fabricassist.application.object_storage import ObjectStorage
 from fabricassist.application.policies import UploadPolicy
-from fabricassist.domain.care import CareValidationReport, ProposedCarePlan
-from fabricassist.domain.evidence import GarmentEvidenceDossier, ImageRole
+from fabricassist.domain.evidence import ImageRole
+from fabricassist.domain.garment_analysis.image_routing import (
+    ImageViewpoint,
+    LabelScope,
+    QualityState,
+)
 from fabricassist.domain.identity import GarmentIdentifierType, normalize_instance_identifier
 from fabricassist.infrastructure.persistence.models import (
     CareResult,
@@ -30,14 +37,18 @@ from fabricassist.infrastructure.persistence.models import (
     Garment,
     GarmentIdentifier,
     IdempotencyRecord,
-    RenderedAnswer,
     Scan,
     ScanImage,
     User,
 )
+from fabricassist.settings import Settings
 
 router = APIRouter(prefix="/api/v1/scans", tags=["scans"])
 Mime = Literal["image/jpeg", "image/png", "image/webp"]
+
+
+async def get_settings() -> Settings:  # replaced by application factory dependency
+    raise RuntimeError("Settings dependency was not configured.")
 
 
 class CreateScanRequest(BaseModel):
@@ -53,11 +64,29 @@ class ImageRequest(BaseModel):
     role: ImageRole
     content_type: Mime
     display_order: int = Field(default=0, ge=0)
+    viewpoint: ImageViewpoint = ImageViewpoint.UNKNOWN
+    label_scope: LabelScope = LabelScope.UNKNOWN
+
+    @model_validator(mode="after")
+    def metadata_matches_role(self) -> ImageRequest:
+        if self.viewpoint is not ImageViewpoint.UNKNOWN and self.role not in {
+            ImageRole.GARMENT_OVERVIEW,
+            ImageRole.CONSTRUCTION_DETAIL,
+        }:
+            raise ValueError("viewpoint is only valid for garment or construction views")
+        if self.label_scope is not LabelScope.UNKNOWN and self.role not in {
+            ImageRole.CARE_LABEL,
+            ImageRole.COMPOSITION_LABEL,
+        }:
+            raise ValueError("label_scope is only valid for label images")
+        return self
 
 
 class UploadInstruction(BaseModel):
     image_id: UUID
     role: ImageRole
+    viewpoint: ImageViewpoint = ImageViewpoint.UNKNOWN
+    label_scope: LabelScope = LabelScope.UNKNOWN
     url: str
     headers: dict[str, str]
     expires_at: datetime
@@ -128,6 +157,9 @@ class ScanImageResponse(BaseModel):
 
     image_id: UUID
     role: ImageRole
+    viewpoint: ImageViewpoint | None = None
+    label_scope: LabelScope | None = None
+    quality_state: QualityState | None = None
     detected_role: ImageRole | None = None
     display_order: int
     width: int | None = None
@@ -251,6 +283,8 @@ async def add_image(
             return UploadInstruction(
                 image_id=image.id,
                 role=ImageRole(image.role),
+                viewpoint=ImageViewpoint(image.viewpoint or ImageViewpoint.UNKNOWN),
+                label_scope=LabelScope(image.label_scope or LabelScope.UNKNOWN),
                 url=upload.url,
                 headers=upload.headers,
                 expires_at=upload.expires_at,
@@ -281,6 +315,8 @@ async def add_image(
         scan_id=scan.id,
         role=request.role.value,
         display_order=request.display_order,
+        viewpoint=request.viewpoint.value,
+        label_scope=request.label_scope.value,
         object_key=key,
         upload_token=uuid4(),
         upload_expires_at=datetime.now(UTC),
@@ -307,6 +343,8 @@ async def add_image(
     return UploadInstruction(
         image_id=image.id,
         role=request.role,
+        viewpoint=request.viewpoint,
+        label_scope=request.label_scope,
         url=upload.url,
         headers=upload.headers,
         expires_at=upload.expires_at,
@@ -372,6 +410,7 @@ async def complete_upload(
     if image.completed_at is None:
         metadata = storage.verify_image(image.object_key, request.content_type)
         image_sha256 = hashlib.sha256(storage.read_object(image.object_key)).hexdigest()
+        normalized = normalize_image_bytes(storage.read_object(image.object_key))
         duplicate = await session.scalar(
             select(ScanImage.id).where(
                 ScanImage.scan_id == scan.id,
@@ -388,6 +427,16 @@ async def complete_upload(
         image.width = metadata.width
         image.height = metadata.height
         image.sha256 = image_sha256
+        image.normalized_sha256 = normalized.sha256
+        image.preprocessing_version = NORMALIZATION_VERSION
+        image.quality_state = metadata.quality_state
+        image.blur_score = metadata.blur_score
+        image.brightness_score = metadata.brightness_score
+        image.contrast_score = metadata.contrast_score
+        image.glare_score = metadata.glare_score
+        image.crop_readability_score = metadata.crop_readability_score
+        image.orientation_degrees = metadata.orientation_degrees
+        image.quality_checked_at = datetime.now(UTC)
         image.completed_at = datetime.now(UTC)
         await session.commit()
     return await scan_detail(scan_id, session, user)
@@ -400,6 +449,7 @@ async def request_analysis(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
     dispatcher: Annotated[JobDispatcher, Depends(get_job_dispatcher)],
+    settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnalysisResponse:
     scan = await owned_scan(session, user, scan_id, for_update=True)
@@ -413,6 +463,26 @@ async def request_analysis(
     )
     if not count:
         raise HTTPException(409, "Complete at least one image before analysis.")
+    unusable_images = list(
+        (
+            await session.scalars(
+                select(ScanImage).where(
+                    ScanImage.scan_id == scan.id,
+                    ScanImage.quality_state == QualityState.UNUSABLE.value,
+                    ScanImage.completed_at.is_not(None),
+                    ScanImage.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
+    if any(
+        getattr(image, "quality_state", None) == QualityState.UNUSABLE.value
+        for image in unusable_images
+    ):
+        raise HTTPException(
+            422,
+            "One or more images are unusable. Retake a sharper, well-lit photo before analysis.",
+        )
     image_ids = list(
         (
             await session.scalars(
@@ -442,6 +512,7 @@ async def request_analysis(
         operation_key=f"run:{run.id}",
         correlation_id=str(http_request.state.correlation_id),
         dispatcher=dispatcher,
+        settings=settings,
         run_id=run.id,
     )
     return AnalysisResponse(
@@ -527,7 +598,6 @@ async def scan_result(
     scan_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[User, Depends(get_current_user)],
-    language: Literal["en", "es"] = "en",
 ) -> ResultResponse:
     scan = await owned_scan(session, user, scan_id)
     if scan.active_result_id is None:
@@ -535,35 +605,13 @@ async def scan_result(
     result = await session.get(CareResult, scan.active_result_id)
     if result is None:
         raise HTTPException(409, "Analysis result is not available yet.")
-    rendered = await session.scalar(
-        select(RenderedAnswer).where(
-            RenderedAnswer.care_result_id == result.id,
-            RenderedAnswer.language == language,
-            RenderedAnswer.template_version == TEMPLATE_VERSION,
-        )
-    )
-    if rendered is None:
-        canonical = result.canonical_data
-        answer = render_rich_result(
-            GarmentEvidenceDossier.model_validate(canonical["dossier"]),
-            ProposedCarePlan.model_validate(canonical["proposal"]),
-            CareValidationReport.model_validate(canonical["validation"]),
-            language,
-        )
-        rendered = RenderedAnswer(
-            id=uuid4(),
-            tenant_id=result.tenant_id,
-            care_result_id=result.id,
-            language=language,
-            template_version=TEMPLATE_VERSION,
-            answer=answer,
-        )
-        session.add(rendered)
-        await session.commit()
+    canonical = result.canonical_data.get("garment_analysis_result")
+    if not isinstance(canonical, dict):
+        raise HTTPException(410, "Historical result is unavailable in the current contract.")
     return ResultResponse(
         scan_id=scan.id,
         status=result.status,
-        result=rendered.answer if rendered else result.canonical_data,
+        result=cast(dict[str, object], canonical),
     )
 
 
@@ -653,6 +701,9 @@ async def list_scan_images(
         ScanImageResponse(
             image_id=image.id,
             role=ImageRole(image.role),
+            viewpoint=ImageViewpoint(image.viewpoint) if image.viewpoint else None,
+            label_scope=LabelScope(image.label_scope) if image.label_scope else None,
+            quality_state=QualityState(image.quality_state) if image.quality_state else None,
             detected_role=ImageRole(image.detected_role) if image.detected_role else None,
             display_order=image.display_order,
             width=image.width,

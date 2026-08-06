@@ -37,33 +37,6 @@ export type ApprovalRequest = {
 };
 
 /**
- * CareFact
- */
-export type CareFact = {
-    /**
-     * Code
-     */
-    code: string;
-    /**
-     * Confidence
-     */
-    confidence: number;
-    /**
-     * Original Text
-     */
-    original_text?: string;
-    /**
-     * Permission
-     */
-    permission: string;
-    source: EvidenceSource;
-    /**
-     * Temperature C
-     */
-    temperature_c?: number | null;
-};
-
-/**
  * CompleteUploadRequest
  */
 export type CompleteUploadRequest = {
@@ -105,11 +78,22 @@ export type ConfirmServiceRequest = {
  * CorrectionRequest
  */
 export type CorrectionRequest = {
-    dossier: GarmentEvidenceDossier;
+    /**
+     * Corrected Value
+     */
+    corrected_value: unknown;
+    /**
+     * Field Path
+     */
+    field_path: string;
     /**
      * Reason
      */
     reason: string;
+    /**
+     * Source Image Id
+     */
+    source_image_id?: string | null;
 };
 
 /**
@@ -169,17 +153,6 @@ export type DeletionResponse = {
 };
 
 /**
- * EvidenceSource
- */
-export type EvidenceSource = {
-    /**
-     * Image Id
-     */
-    image_id: string;
-    role: ImageRole;
-};
-
-/**
  * FeedbackRequest
  */
 export type FeedbackRequest = {
@@ -209,28 +182,6 @@ export type FeedbackResponse = {
      * Review Case Id
      */
     review_case_id?: string | null;
-};
-
-/**
- * GarmentEvidenceDossier
- */
-export type GarmentEvidenceDossier = {
-    /**
-     * Care Facts
-     */
-    care_facts?: Array<CareFact>;
-    /**
-     * Observations
-     */
-    observations?: Array<Observation>;
-    /**
-     * Schema Version
-     */
-    schema_version?: string;
-    /**
-     * Uncertainties
-     */
-    uncertainties?: Array<string>;
 };
 
 /**
@@ -359,13 +310,20 @@ export type ImageRequest = {
      * Display Order
      */
     display_order?: number;
+    label_scope?: LabelScope;
     role: ImageRole;
+    viewpoint?: ImageViewpoint;
 };
 
 /**
  * ImageRole
  */
 export type ImageRole = 'garment_overview' | 'care_label' | 'composition_label' | 'barcode_brand_label' | 'stain_closeup' | 'damage_closeup' | 'construction_detail' | 'other';
+
+/**
+ * ImageViewpoint
+ */
+export type ImageViewpoint = 'front' | 'back' | 'side' | 'detail' | 'unknown';
 
 /**
  * InvalidateLookupRequest
@@ -376,6 +334,11 @@ export type InvalidateLookupRequest = {
      */
     reason: string;
 };
+
+/**
+ * LabelScope
+ */
+export type LabelScope = 'care' | 'composition' | 'combined' | 'unknown';
 
 /**
  * LookupRequest
@@ -494,31 +457,9 @@ export type MessageResponse = {
 };
 
 /**
- * Observation
+ * QualityState
  */
-export type Observation = {
-    /**
-     * Confidence
-     */
-    confidence: number;
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * Kind
-     */
-    kind: string;
-    source: EvidenceSource;
-    /**
-     * Time Varying
-     */
-    time_varying?: boolean;
-    /**
-     * Value
-     */
-    value: string;
-};
+export type QualityState = 'usable' | 'borderline' | 'unusable' | 'unknown';
 
 /**
  * RejectCandidateRequest
@@ -711,7 +652,10 @@ export type ScanImageResponse = {
      * Image Id
      */
     image_id: string;
+    label_scope?: LabelScope | null;
+    quality_state?: QualityState | null;
     role: ImageRole;
+    viewpoint?: ImageViewpoint | null;
     /**
      * Width
      */
@@ -830,11 +774,13 @@ export type UploadInstruction = {
      * Image Id
      */
     image_id: string;
+    label_scope?: LabelScope;
     role: ImageRole;
     /**
      * Url
      */
     url: string;
+    viewpoint?: ImageViewpoint;
 };
 
 /**
@@ -1220,6 +1166,40 @@ export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses = {
 };
 
 export type AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponse = AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses[keyof AddServiceEventApiV1GarmentsGarmentIdServiceEventsPostResponses];
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Garment Id
+         */
+        garment_id: string;
+        /**
+         * Event Id
+         */
+        event_id: string;
+    };
+    query?: never;
+    url: '/api/v1/garments/{garment_id}/service-events/{event_id}';
+};
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteError = DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteErrors[keyof DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteErrors];
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponse = DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponses[keyof DeleteServiceEventApiV1GarmentsGarmentIdServiceEventsEventIdDeleteResponses];
 
 export type HandleHttpGetApiV1GraphqlGetData = {
     body?: never;
@@ -2087,12 +2067,7 @@ export type ScanResultApiV1ScansScanIdResultGetData = {
          */
         scan_id: string;
     };
-    query?: {
-        /**
-         * Language
-         */
-        language?: 'en' | 'es';
-    };
+    query?: never;
     url: '/api/v1/scans/{scan_id}/result';
 };
 

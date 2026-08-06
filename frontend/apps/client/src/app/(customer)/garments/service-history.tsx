@@ -1,0 +1,361 @@
+import { useState, type ReactNode } from 'react';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useQuery as useApolloQuery } from '@apollo/client';
+import { useMutation } from '@tanstack/react-query';
+import { router, useLocalSearchParams } from 'expo-router';
+import { colors, radii, spacing } from '@fabricassist/design-tokens';
+import { GarmentDetailDocument } from '@fabricassist/api-client';
+import { useSession } from '../../../auth/session';
+import { FoundationShell } from '../../../components/FoundationShell';
+import { useTranslation } from '../../../i18n/TranslationProvider';
+
+export default function ServiceHistoryPage(): ReactNode {
+  const { garmentId } = useLocalSearchParams<{ garmentId: string }>();
+  const { token, apiClient, restWrites } = useSession();
+  const { locale, translate } = useTranslation();
+  const { data, refetch: refreshGarmentDetail } = useApolloQuery(
+    GarmentDetailDocument,
+    {
+      skip: !token,
+      variables: { garmentId, first: 20, after: null, language: locale },
+    },
+  );
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [kind, setKind] = useState<'planned' | 'performed' | 'completed'>(
+    'planned',
+  );
+  const [action, setAction] = useState('water_wash');
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const actionLabels: Record<string, string> =
+    locale === 'es'
+      ? {
+          water_wash: 'Lavado con agua',
+          hand_wash: 'Lavado a mano',
+          machine_wash: 'Lavado a máquina',
+          dry_clean: 'Limpieza en seco',
+          tumble_dry: 'Secado en secadora',
+          air_dry: 'Secado al aire',
+          iron: 'Planchado',
+          steam: 'Vapor',
+          stain_treatment: 'Tratamiento de manchas',
+          repair: 'Reparación',
+          other: 'Otro',
+        }
+      : {
+          water_wash: 'Water wash',
+          hand_wash: 'Hand wash',
+          machine_wash: 'Machine wash',
+          dry_clean: 'Dry clean',
+          tumble_dry: 'Tumble dry',
+          air_dry: 'Air dry',
+          iron: 'Iron',
+          steam: 'Steam',
+          stain_treatment: 'Stain treatment',
+          repair: 'Repair',
+          other: 'Other',
+        };
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiClient.delete({
+        url: `/api/v1/garments/${garmentId}/service-events/${id}`,
+      });
+      if (response.error) throw new Error('SERVICE_EVENT_DELETE_FAILED');
+    },
+    onSuccess: async () => {
+      await refreshGarmentDetail();
+    },
+  });
+  const add = useMutation({
+    mutationFn: async () => {
+      const response = await restWrites.addServiceEvent({
+        path: { garment_id: garmentId },
+        body: {
+          kind,
+          note: `${actionLabels[action]}${note.trim() ? ` — ${note.trim()}` : ''}`,
+        },
+      });
+      if (!response.data) throw new Error('SERVICE_EVENT_FAILED');
+      return response.data;
+    },
+    onSuccess: async () => {
+      setNote('');
+      await refreshGarmentDetail();
+    },
+  });
+  const events = data?.garmentDetail?.serviceEvents ?? [];
+  const sortedEvents = [...events].sort((a, b) => {
+    const order = { planned: 0, performed: 1, completed: 2 };
+    return (
+      (order[a.kind as keyof typeof order] ?? 99) -
+        (order[b.kind as keyof typeof order] ?? 99) ||
+      b.createdAt.localeCompare(a.createdAt)
+    );
+  });
+  return (
+    <FoundationShell
+      title={translate('serviceHistory')}
+      description={translate('garmentHistoryDescription')}
+    >
+      <ScrollView contentContainerStyle={styles.content}>
+        <Pressable onPress={() => router.back()}>
+          <Text style={styles.back}>‹ {translate('garmentHistoryTitle')}</Text>
+        </Pressable>
+        <View style={styles.editor}>
+          <Text style={styles.label}>{translate('serviceEventType')}</Text>
+          <View style={styles.kinds}>
+            {(['planned', 'performed', 'completed'] as const).map((k) => (
+              <Pressable
+                key={k}
+                onPress={() => setKind(k)}
+                style={[styles.kind, kind === k && styles.active]}
+              >
+                <Text style={kind === k ? styles.activeText : styles.text}>
+                  {translate(
+                    `serviceKind${k.charAt(0).toUpperCase()}${k.slice(1)}` as
+                      | 'serviceKindPlanned'
+                      | 'serviceKindPerformed'
+                      | 'serviceKindCompleted',
+                  )}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.label}>{translate('serviceCleaningAction')}</Text>
+          <Pressable
+            onPress={() => setActionsOpen(!actionsOpen)}
+            style={styles.dropdown}
+          >
+            <Text style={styles.text}>{actionLabels[action]}</Text>
+            <Text style={styles.chevron}>⌄</Text>
+          </Pressable>
+          {actionsOpen ? (
+            <View style={styles.options}>
+              {Object.entries(actionLabels).map(([value, label]) => (
+                <Pressable
+                  key={value}
+                  onPress={() => {
+                    setAction(value);
+                    setActionsOpen(false);
+                  }}
+                  style={styles.option}
+                >
+                  <Text style={styles.text}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          <TextInput
+            multiline
+            value={note}
+            onChangeText={setNote}
+            placeholder={translate('serviceEventNotePlaceholder')}
+            style={styles.input}
+          />
+          <Pressable onPress={() => add.mutate()} style={styles.primary}>
+            <Text style={styles.primaryText}>
+              {translate('addServiceEvent')}
+            </Text>
+          </Pressable>
+        </View>
+        {add.isError ? (
+          <Text style={styles.error}>{translate('serviceSaveFailed')}</Text>
+        ) : null}
+        {(['planned', 'performed', 'completed'] as const).map((type) => {
+          const group = sortedEvents.filter((event) => event.kind === type);
+          return group.length ? (
+            <View key={type} style={styles.group}>
+              <Text style={styles.groupTitle}>
+                {translate(
+                  `serviceKind${type.charAt(0).toUpperCase()}${type.slice(1)}` as
+                    | 'serviceKindPlanned'
+                    | 'serviceKindPerformed'
+                    | 'serviceKindCompleted',
+                )}
+              </Text>
+              {group.map((e) => (
+                <View key={e.id} style={styles.card}>
+                  {e.note ? <Text style={styles.text}>{e.note}</Text> : null}
+                  <Text style={styles.date}>
+                    {formatEventDate(e.createdAt, locale)}
+                  </Text>
+                  <Pressable
+                    onPress={() => setPendingDelete(e.id)}
+                    disabled={remove.isPending}
+                    style={styles.delete}
+                  >
+                    <Text style={styles.deleteText}>
+                      {translate('serviceDelete')}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null;
+        })}
+      </ScrollView>
+      <Modal
+        transparent
+        visible={pendingDelete !== null}
+        animationType="fade"
+        onRequestClose={() => setPendingDelete(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {translate('serviceDeleteTitle')}
+            </Text>
+            <Text style={styles.modalBody}>
+              {translate('serviceDeleteBody')}
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setPendingDelete(null)}
+                style={styles.cancel}
+              >
+                <Text style={styles.cancelText}>
+                  {translate('serviceCancel')}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (pendingDelete) remove.mutate(pendingDelete);
+                  setPendingDelete(null);
+                }}
+                style={styles.confirm}
+              >
+                <Text style={styles.confirmText}>
+                  {translate('serviceDelete')}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </FoundationShell>
+  );
+}
+function formatEventDate(value: string, locale: 'en' | 'es'): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(locale === 'es' ? 'es-ES' : 'en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+const styles = StyleSheet.create({
+  content: { gap: spacing.medium },
+  back: { color: colors.primary, fontWeight: '700' },
+  editor: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.medium,
+    gap: spacing.small,
+    padding: spacing.medium,
+  },
+  label: { color: colors.text, fontWeight: '700' },
+  kinds: { flexDirection: 'row', gap: spacing.xsmall, flexWrap: 'wrap' },
+  kind: {
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.small,
+    padding: spacing.small,
+  },
+  active: { backgroundColor: colors.primary, borderColor: colors.primary },
+  text: { color: colors.text },
+  activeText: { color: colors.background, fontWeight: '700' },
+  input: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.small,
+    minHeight: 96,
+    padding: spacing.small,
+    textAlignVertical: 'top',
+  },
+  dropdown: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.small,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.small,
+  },
+  chevron: { color: colors.primary, fontSize: 18, fontWeight: '800' },
+  options: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.small,
+  },
+  option: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    padding: spacing.small,
+  },
+  primary: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: radii.small,
+    padding: spacing.medium,
+  },
+  primaryText: { color: colors.background, fontWeight: '700' },
+  card: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.medium,
+    gap: spacing.xsmall,
+    padding: spacing.medium,
+  },
+  cardTitle: { color: colors.text, fontWeight: '800' },
+  date: { color: colors.muted, fontSize: 12 },
+  modalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: spacing.medium,
+  },
+  modalCard: {
+    backgroundColor: colors.background,
+    borderRadius: radii.medium,
+    gap: spacing.small,
+    maxWidth: 380,
+    padding: spacing.medium,
+    width: '100%',
+  },
+  modalTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
+  modalBody: { color: colors.muted, lineHeight: 20 },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.small,
+    justifyContent: 'flex-end',
+    marginTop: spacing.small,
+  },
+  cancel: {
+    borderColor: colors.border,
+    borderRadius: radii.small,
+    borderWidth: 1,
+    padding: spacing.small,
+  },
+  cancelText: { color: colors.text, fontWeight: '700' },
+  confirm: {
+    backgroundColor: colors.danger,
+    borderRadius: radii.small,
+    padding: spacing.small,
+  },
+  confirmText: { color: colors.background, fontWeight: '800' },
+  group: { gap: spacing.small },
+  groupTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  delete: { alignSelf: 'flex-end', padding: spacing.xsmall },
+  deleteText: { color: colors.danger, fontWeight: '700' },
+  error: { color: colors.danger, fontWeight: '700' },
+});

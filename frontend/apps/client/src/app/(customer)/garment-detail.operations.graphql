@@ -28,8 +28,40 @@ query GarmentDetail(
     activeResult {
       id
       status
-      language
-      data
+      result {
+        outcome
+        category
+        overallCondition
+        warnings
+        unknownActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        professionalOnlyActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        clearerImageRequests
+        allowedActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        prohibitedActions {
+          code
+          permission
+          maximumTemperatureC
+        }
+        uncertainties
+        conflicts {
+          id
+          fieldPath
+          severity
+          explanationKey
+        }
+      }
     }
     analyses {
       items {
@@ -48,6 +80,18 @@ query GarmentDetail(
       id
       kind
       note
+      createdAt
+    }
+    observations {
+      id
+      observationType
+      stability
+      authority
+      value
+      evidenceIds
+      confidence
+      analysisRevisionId
+      supersedesObservationId
       createdAt
     }
   }

@@ -22,8 +22,7 @@ from fabricassist.application.job_execution import (
     execute_checkpoint,
 )
 from fabricassist.application.jobs import AnalysisJobMessage
-from fabricassist.application.policies import AnalysisExecutionPolicy, JobExecutionPolicy
-from fabricassist.infrastructure.cache.noop import NoOpHotCacheAdapter
+from fabricassist.application.policies import JobExecutionPolicy
 from fabricassist.infrastructure.concurrency.noop import NoOpConcurrencyGateAdapter
 from fabricassist.infrastructure.jobs.config import QStashJobDispatcherConfig, QStashVerifierConfig
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
@@ -189,9 +188,7 @@ async def test_checkpoint_persists_and_recovers_unpublished_continuation() -> No
 
 
 @pytest.mark.asyncio
-async def test_execute_analysis_stage_uses_shared_application_pipeline(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_execute_analysis_stage_uses_v2_workflow_only() -> None:
     from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
 
     initial = message()
@@ -207,43 +204,29 @@ async def test_execute_analysis_stage_uses_shared_application_pipeline(
     session = CheckpointSession([operation], scan)
     calls: list[object] = []
 
-    async def record_analysis(**kwargs: object) -> None:
-        calls.append(kwargs)
+    class RecordingWorkflow:
+        async def execute(self, request: object) -> None:
+            calls.append(request)
 
-    monkeypatch.setattr("fabricassist.application.job_execution.analyse_scan", record_analysis)
-    database = object()
-    storage = object()
     result = await execute_checkpoint(
         session=session,  # type: ignore[arg-type]
         message=job,
         execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
-        analysis_policy=AnalysisExecutionPolicy(
-            hot_cache_ttl_seconds=86_400,
-            product_cache_minutes=1_440,
-        ),
-        database=database,  # type: ignore[arg-type]
-        storage=storage,  # type: ignore[arg-type]
-        evidence_provider=object(),  # type: ignore[arg-type]
-        care_planning_provider=object(),  # type: ignore[arg-type]
-        product_information_provider=object(),  # type: ignore[arg-type]
-        hot_cache=NoOpHotCacheAdapter(),
+        garment_analysis_workflow=RecordingWorkflow(),  # type: ignore[arg-type]
         concurrency_gate=NoOpConcurrencyGateAdapter(),
     )
 
     assert result.outcome is StageResult.COMPLETE
     assert result.continuation is None
     assert len(calls) == 1
-    assert calls[0]["database"] is database  # type: ignore[index]
-    assert calls[0]["storage"] is storage  # type: ignore[index]
+    assert calls[0].reference.revision_id == job.revision_id  # type: ignore[union-attr]
     assert operation.status == "completed"
     assert session.commit_count == 2
     assert "analysis_job_operations.stage =" in str(session.scalar_statements[0])
 
 
 @pytest.mark.asyncio
-async def test_execute_analysis_stage_records_a_safe_terminal_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_execute_analysis_stage_records_a_safe_terminal_error() -> None:
     from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
 
     initial = message()
@@ -258,43 +241,34 @@ async def test_execute_analysis_stage_records_a_safe_terminal_error(
     )
     session = CheckpointSession([operation], scan)
 
+    class FailingWorkflow:
+        async def execute(self, _request: object) -> None:
+            raise RuntimeError("private provider payload must never reach client state")
+
     async def fail_analysis(**_kwargs: object) -> None:
         raise RuntimeError("private provider payload must never reach client state")
 
-    monkeypatch.setattr("fabricassist.application.job_execution.analyse_scan", fail_analysis)
     with pytest.raises(AnalysisExecutionError) as raised:
         await execute_checkpoint(
             session=session,  # type: ignore[arg-type]
             message=job,
             execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
-            analysis_policy=AnalysisExecutionPolicy(
-                hot_cache_ttl_seconds=86_400,
-                product_cache_minutes=1_440,
-            ),
-            database=object(),  # type: ignore[arg-type]
-            storage=object(),  # type: ignore[arg-type]
-            evidence_provider=object(),  # type: ignore[arg-type]
-            care_planning_provider=object(),  # type: ignore[arg-type]
-            product_information_provider=object(),  # type: ignore[arg-type]
-            hot_cache=NoOpHotCacheAdapter(),
+            garment_analysis_workflow=FailingWorkflow(),  # type: ignore[arg-type]
             concurrency_gate=NoOpConcurrencyGateAdapter(),
         )
 
-    assert raised.value.code == "ANALYSIS_INTERNAL_ERROR"
+    assert raised.value.code == "ANALYSIS_EXECUTION_ERROR"
     assert raised.value.cause_type == "RuntimeError"
     assert scan.status == "failed"
     assert scan.analysis_stage == "failed"
-    assert scan.analysis_error_code == "ANALYSIS_INTERNAL_ERROR"
+    assert scan.analysis_error_code == "ANALYSIS_EXECUTION_ERROR"
     assert scan.progress_percent == 100
     assert operation.status == "failed"
     assert operation.lease_expires_at is None
 
 
 @pytest.mark.asyncio
-async def test_execute_analysis_stage_releases_lease_before_a_retry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from fabricassist.application.object_storage import RetryableObjectStorageError
+async def test_execute_analysis_stage_releases_lease_before_a_timeout_retry() -> None:
     from fabricassist.infrastructure.persistence.models import AnalysisJobOperation, Scan
 
     initial = message()
@@ -309,25 +283,16 @@ async def test_execute_analysis_stage_releases_lease_before_a_retry(
     )
     session = CheckpointSession([operation], scan)
 
-    async def transient_failure(**_kwargs: object) -> None:
-        raise RetryableObjectStorageError("synthetic outage")
+    class TimeoutWorkflow:
+        async def execute(self, _request: object) -> None:
+            raise TimeoutError("synthetic outage")
 
-    monkeypatch.setattr("fabricassist.application.job_execution.analyse_scan", transient_failure)
     with pytest.raises(TemporaryJobError):
         await execute_checkpoint(
             session=session,  # type: ignore[arg-type]
             message=job,
             execution_policy=JobExecutionPolicy(stage_budget_seconds=75),
-            analysis_policy=AnalysisExecutionPolicy(
-                hot_cache_ttl_seconds=86_400,
-                product_cache_minutes=1_440,
-            ),
-            database=object(),  # type: ignore[arg-type]
-            storage=object(),  # type: ignore[arg-type]
-            evidence_provider=object(),  # type: ignore[arg-type]
-            care_planning_provider=object(),  # type: ignore[arg-type]
-            product_information_provider=object(),  # type: ignore[arg-type]
-            hot_cache=NoOpHotCacheAdapter(),
+            garment_analysis_workflow=TimeoutWorkflow(),  # type: ignore[arg-type]
             concurrency_gate=NoOpConcurrencyGateAdapter(),
         )
 
@@ -369,8 +334,6 @@ def test_internal_route_retries_when_continuation_publication_fails() -> None:
     body = job.model_dump_json().encode()
     app = create_app(settings())
     app.dependency_overrides[internal_jobs.get_session] = lambda: session
-    app.dependency_overrides[internal_jobs.get_database] = lambda: object()
-    app.dependency_overrides[internal_jobs.get_storage] = lambda: object()
     app.dependency_overrides[internal_jobs.get_job_dispatcher] = lambda: FailingDispatcher()
 
     with TestClient(app) as client:

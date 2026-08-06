@@ -7,12 +7,10 @@ personal graph partially removed.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fabricassist.application.object_storage import (
@@ -21,27 +19,22 @@ from fabricassist.application.object_storage import (
     PermanentObjectStorageError,
     RetryableObjectStorageError,
 )
-from fabricassist.application.planning import CarePlanningProvider
-from fabricassist.domain.care import validate_care_plan
-from fabricassist.domain.evidence import GarmentEvidenceDossier
 from fabricassist.infrastructure.persistence.models import (
     AnalysisRevision,
     AuditEvent,
     CareResult,
+    ConversationThread,
     DeletionRequest,
     EvidenceCorrection,
-    EvidenceDossier,
     Garment,
-    ModelRun,
+    GarmentIdentityConfirmation,
+    GarmentServiceEvent,
     ObjectDeletionOutbox,
-    ProposedPlan,
-    RenderedAnswer,
     ReviewCase,
     RevisionImage,
     Scan,
     ScanImage,
     Tenant,
-    ValidationReport,
 )
 
 
@@ -97,25 +90,38 @@ async def ensure_review_case(session: AsyncSession, scan: Scan) -> ReviewCase:
     return review
 
 
-async def apply_human_correction(
+async def apply_human_correction_v2(
     session: AsyncSession,
     *,
     review: ReviewCase,
     actor_id: UUID,
-    dossier: GarmentEvidenceDossier,
+    field_path: str,
+    corrected_value: object,
     reason: str,
-    care_planning_provider: CarePlanningProvider,
+    source_image_id: UUID | None = None,
 ) -> CareResult:
-    """Create successor artifacts; never mutate the provider's original evidence."""
-    # Import here: analysis creates review cases, while corrections reuse its renderer.
-    from fabricassist.application.analysis import TEMPLATE_VERSION, render_rich_result
+    """Append a typed v2 overlay and deterministically finalize a successor.
+
+    No care-planning model or legacy renderer participates in correction.
+    """
+    from fabricassist.application.garment_analysis import AnalysisReference
+    from fabricassist.infrastructure.garment_analysis.persistence import (
+        SqlAlchemyGarmentAnalysisFinalizationRepository,
+    )
+    from fabricassist.infrastructure.persistence.models import AnalysisBranchResult
 
     original = await session.get(AnalysisRevision, review.analysis_revision_id)
-    if original is None:
+    scan = await session.get(Scan, review.scan_id, with_for_update=True)
+    if original is None or scan is None:
         raise ValueError("Review source revision no longer exists.")
-    scan = await session.get(Scan, review.scan_id)
-    if scan is None:
-        raise ValueError("Review scan no longer exists.")
+    if source_image_id is not None:
+        permitted = await session.scalar(
+            select(RevisionImage).where(
+                RevisionImage.revision_id == original.id, RevisionImage.image_id == source_image_id
+            )
+        )
+        if permitted is None:
+            raise ValueError("Correction image is not part of the reviewed revision.")
     latest = await session.scalar(
         select(AnalysisRevision.revision_number)
         .where(AnalysisRevision.scan_id == scan.id)
@@ -130,109 +136,53 @@ async def apply_human_correction(
         revision_number=int(latest or 0) + 1,
         supersedes_revision_id=original.id,
         status="processing",
+        module_version=original.module_version,
+        workflow_version=original.workflow_version,
+        merged_schema_version=original.merged_schema_version,
+        care_policy_version=original.care_policy_version,
+        confidence_policy_version=original.confidence_policy_version,
+        retry_policy_version=original.retry_policy_version,
+        effective_feature_flags=dict(original.effective_feature_flags),
     )
     session.add(revision)
-    prior_images = list(
-        (
-            await session.scalars(
-                select(RevisionImage).where(RevisionImage.revision_id == original.id)
-            )
-        ).all()
-    )
-    for item in prior_images:
+    for image in (
+        await session.scalars(select(RevisionImage).where(RevisionImage.revision_id == original.id))
+    ).all():
         session.add(
             RevisionImage(
-                tenant_id=review.tenant_id, revision_id=revision.id, image_id=item.image_id
+                tenant_id=review.tenant_id, revision_id=revision.id, image_id=image.image_id
             )
         )
-    evidence = EvidenceDossier(
-        id=uuid4(),
-        tenant_id=review.tenant_id,
-        analysis_revision_id=revision.id,
-        payload=dossier.model_dump(mode="json"),
-    )
-    session.add(evidence)
-    planning_result = await care_planning_provider.propose_plan(dossier)
-    proposal = planning_result.proposal
-    session.add(
-        ModelRun(
-            id=uuid4(),
-            tenant_id=review.tenant_id,
-            scan_id=scan.id,
-            operation="human_correction_planning",
-            provider=planning_result.provider,
-            model=planning_result.model,
-            prompt_version="care-planning-v1",
-            schema_version="proposed-care-plan-v1",
-            request_fingerprint=hashlib.sha256(
-                json.dumps(dossier.model_dump(mode="json"), sort_keys=True).encode()
-            ).hexdigest(),
-            status="completed",
-            latency_ms=planning_result.latency_ms,
-            input_tokens=planning_result.input_tokens,
-            output_tokens=planning_result.output_tokens,
-            estimated_cost_usd=0 if planning_result.provider == "mock" else None,
+    for branch in (
+        await session.scalars(
+            select(AnalysisBranchResult).where(
+                AnalysisBranchResult.analysis_revision_id == original.id
+            )
         )
-    )
-    report = validate_care_plan(dossier, proposal)
-    plan = ProposedPlan(
-        id=uuid4(),
-        tenant_id=review.tenant_id,
-        analysis_revision_id=revision.id,
-        retry_number=0,
-        payload=proposal.model_dump(mode="json"),
-    )
-    session.add(plan)
-    await session.flush()
-    validation = ValidationReport(
-        id=uuid4(),
-        tenant_id=review.tenant_id,
-        proposed_plan_id=plan.id,
-        payload=report.model_dump(mode="json"),
-    )
-    session.add(validation)
-    await session.flush()
-    result = CareResult(
-        id=uuid4(),
-        tenant_id=review.tenant_id,
-        analysis_revision_id=revision.id,
-        dossier_id=evidence.id,
-        proposed_plan_id=plan.id,
-        validation_report_id=validation.id,
-        status=report.outcome.value,
-        canonical_data={
-            "dossier": dossier.model_dump(mode="json"),
-            "proposal": proposal.model_dump(mode="json"),
-            "validation": report.model_dump(mode="json"),
-        },
-    )
-    session.add(result)
-    for language in ("en", "es"):
+    ).all():
+        if branch.status != "completed" or branch.result_payload is None:
+            continue
         session.add(
-            RenderedAnswer(
+            AnalysisBranchResult(
                 id=uuid4(),
                 tenant_id=review.tenant_id,
-                care_result_id=result.id,
-                language=language,
-                template_version=TEMPLATE_VERSION,
-                answer=render_rich_result(dossier, proposal, report, language),
+                analysis_revision_id=revision.id,
+                branch_name=branch.branch_name,
+                status="completed",
+                attempt_count=branch.attempt_count,
+                provider=branch.provider,
+                model=branch.model,
+                prompt_version=branch.prompt_version,
+                schema_version=branch.schema_version,
+                preprocessing_version=branch.preprocessing_version,
+                request_fingerprint=branch.request_fingerprint,
+                overall_confidence=branch.overall_confidence,
+                uncertain_fields=list(branch.uncertain_fields),
+                result_payload=dict(branch.result_payload),
+                started_at=branch.started_at,
+                completed_at=branch.completed_at,
             )
         )
-    revision.status = "completed"
-    scan.active_analysis_revision_id = revision.id
-    scan.active_result_id = result.id
-    scan.status = (
-        "completed"
-        if report.outcome.value in {"passed", "passed_with_warnings"}
-        else "needs_review"
-    )
-    if review.garment_id is not None:
-        garment = await session.get(Garment, review.garment_id)
-        if garment is not None:
-            garment.active_analysis_revision_id = revision.id
-            garment.active_result_id = result.id
-    review.status = "corrected"
-    review.approved_result_id = None
     session.add(
         EvidenceCorrection(
             id=uuid4(),
@@ -242,9 +192,30 @@ async def apply_human_correction(
             corrected_revision_id=revision.id,
             actor_user_id=actor_id,
             reason=reason,
-            correction=dossier.model_dump(mode="json"),
+            correction={"field_path": field_path, "corrected_value": corrected_value},
+            field_path=field_path,
+            corrected_value=corrected_value,
+            source_image_id=source_image_id,
+            source="operator",
+            confirmation="accepted",
         )
     )
+    await session.flush()
+    reference = AnalysisReference(
+        tenant_id=review.tenant_id, scan_id=scan.id, run_id=uuid4(), revision_id=revision.id
+    )
+    finalized = await SqlAlchemyGarmentAnalysisFinalizationRepository(session).finalize_if_ready(
+        reference=reference
+    )
+    if finalized is None:
+        raise RuntimeError("Correction successor has incomplete v2 branch evidence.")
+    result = await session.scalar(
+        select(CareResult).where(CareResult.analysis_revision_id == revision.id)
+    )
+    if result is None:
+        raise RuntimeError("V2 correction finalization did not persist a result.")
+    review.status = "corrected"
+    review.approved_result_id = None
     audit(
         session,
         tenant_id=review.tenant_id,
@@ -254,7 +225,8 @@ async def apply_human_correction(
         resource_id=review.id,
         safe_metadata={
             "new_revision_id": str(revision.id),
-            "validation_outcome": report.outcome.value,
+            "field_path": field_path,
+            "validation_outcome": result.status,
         },
     )
     return result
@@ -328,6 +300,85 @@ async def retention_candidates(session: AsyncSession) -> list[ScanImage]:
         if image.completed_at is not None
         and image.completed_at + timedelta(days=tenant.image_retention_days) <= now
     ]
+
+
+async def cleanup_merged_garments(
+    session: AsyncSession, *, grace_period_days: int = 30, limit: int = 100
+) -> int:
+    """Delete old merged tombstones only when no durable references remain."""
+    cutoff = datetime.now(UTC) - timedelta(days=grace_period_days)
+    garments = list(
+        (
+            await session.scalars(
+                select(Garment)
+                .where(
+                    Garment.merged_into_id.is_not(None),
+                    Garment.merged_at.is_not(None),
+                    Garment.merged_at <= cutoff,
+                    ~select(Scan.id).where(Scan.garment_id == Garment.id).exists(),
+                    ~select(AnalysisRevision.id)
+                    .where(AnalysisRevision.garment_id == Garment.id)
+                    .exists(),
+                    ~select(GarmentServiceEvent.id)
+                    .where(GarmentServiceEvent.garment_id == Garment.id)
+                    .exists(),
+                    ~select(ConversationThread.id)
+                    .where(ConversationThread.garment_id == Garment.id)
+                    .exists(),
+                )
+                .order_by(Garment.merged_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+    )
+    for garment in garments:
+        audit(
+            session,
+            tenant_id=garment.tenant_id,
+            actor_user_id=None,
+            event_type="garment.merge_cleanup",
+            resource_type="garment",
+            resource_id=garment.id,
+            safe_metadata={"target_garment_id": str(garment.merged_into_id)},
+        )
+        await session.execute(
+            delete(GarmentIdentityConfirmation).where(
+                GarmentIdentityConfirmation.garment_id == garment.id
+            )
+        )
+        await session.delete(garment)
+    if garments:
+        await session.commit()
+    return len(garments)
+
+
+async def run_retention_once(
+    session: AsyncSession,
+    storage: ObjectStorage,
+    *,
+    merged_garment_retention_days: int = 30,
+    batch_size: int = 100,
+    max_deletion_attempts: int = 5,
+) -> tuple[int, int]:
+    """Run image retention, merged-garment cleanup, and object deletion recovery."""
+    for image in await retention_candidates(session):
+        await enqueue_deletion(
+            session,
+            tenant_id=image.tenant_id,
+            user_id=None,
+            resource_type="scan",
+            resource_id=image.scan_id,
+            images=[image],
+        )
+    await session.commit()
+    merged = await cleanup_merged_garments(
+        session, grace_period_days=merged_garment_retention_days, limit=batch_size
+    )
+    deleted = await process_object_deletions(
+        session, storage, limit=batch_size, max_attempts=max_deletion_attempts
+    )
+    return merged, deleted
 
 
 async def process_object_deletions(

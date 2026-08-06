@@ -20,8 +20,104 @@ query ResultComposite($scanId: UUID!, $language: String!) {
     result {
       id
       status
-      language
-      data
+      result {
+        schemaVersion
+        outcome
+        warnings
+        category
+        subtype
+        colors
+        pattern
+        features
+        overallCondition
+        issues {
+          id
+          kind
+          severity
+          location
+          observedDescription
+          confidence
+          suspectedCauses
+          confirmedCause
+          causeState
+        }
+        visibleLabelText {
+          imageId
+          text
+          language
+          confidence
+        }
+        materials {
+          material
+          percentage
+          confidence
+        }
+        labelWarnings
+        allowedActions {
+          code
+          permission
+          maximumTemperatureC
+          process
+          reasonKey
+          professionalOnly
+        }
+        prohibitedActions {
+          code
+          permission
+          maximumTemperatureC
+          process
+          reasonKey
+          professionalOnly
+        }
+        unknownActions {
+          code
+          permission
+          maximumTemperatureC
+          process
+          reasonKey
+          professionalOnly
+        }
+        professionalOnlyActions {
+          code
+          permission
+          maximumTemperatureC
+          process
+          reasonKey
+          professionalOnly
+        }
+        uncertainties
+        clearerImageRequests
+        conflicts {
+          id
+          fieldPath
+          selectedValue
+          resolutionCode
+          explanationKey
+          severity
+        }
+        branches {
+          branch
+          status
+          schemaVersion
+        }
+        stainSteps {
+          claimId
+          status
+          text
+          actionCode
+          violationCodes
+        }
+        historyEventIds
+        preferenceSource
+        versions {
+          name
+          value
+        }
+        productBarcode
+        productLookupStatus
+        productSource
+        productFacts
+      }
     }
     garment {
       id

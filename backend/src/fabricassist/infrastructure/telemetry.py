@@ -95,6 +95,21 @@ SSE_DISCONNECTS: Final = Counter(
     "fabricassist_sse_disconnects_total",
     "AI-run SSE disconnects before a terminal event.",
 )
+GARMENT_ANALYSIS_BRANCHES: Final = Counter(
+    "fabricassist_garment_analysis_branches_total",
+    "Durable v2 garment-analysis branch terminal transitions.",
+    ("branch", "status", "provider"),
+)
+GARMENT_ANALYSIS_BRANCH_LATENCY: Final = Histogram(
+    "fabricassist_garment_analysis_branch_latency_seconds",
+    "Provider latency for v2 garment-analysis branches.",
+    ("branch", "provider"),
+)
+GARMENT_ANALYSIS_BRANCH_TOKENS: Final = Histogram(
+    "fabricassist_garment_analysis_branch_tokens",
+    "Total model tokens by v2 garment-analysis branch.",
+    ("branch", "provider"),
+)
 
 _configured_services: set[str] = set()
 

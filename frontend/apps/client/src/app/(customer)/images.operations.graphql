@@ -2,6 +2,9 @@ query ScanImageMetadata($scanId: UUID!) {
   imageMetadata(scanId: $scanId) {
     id
     role
+    viewpoint
+    labelScope
+    qualityState
     displayOrder
     width
     height

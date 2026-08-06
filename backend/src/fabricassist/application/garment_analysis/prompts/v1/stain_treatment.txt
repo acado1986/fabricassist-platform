@@ -1,0 +1,1 @@
+Describe stain treatment as hypotheses, never guarantee removal, and do not recommend professional solvents for consumer use. Return JSON matching the supplied schema; cite only supplied image IDs.

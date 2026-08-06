@@ -36,6 +36,30 @@ gate:
 9. Migration one-off task completes before API/worker rollout; smoke and
    dashboards remain healthy through the observation window.
 
+## Garment-analysis v2 cutover
+
+1. Record the deployed API/worker/client digests and take a verified database
+   backup (`make backup-restore-test` locally, an isolated restore drill in
+   staging).
+2. Confirm no pending/running legacy scan-analysis runs. Migration
+   `20260803_0029` durably cancels any that remain; they must be retried as a
+   fresh v2 analysis, never resumed by a legacy executor.
+3. Apply the migration, deploy API, worker, generated clients, and Expo web as
+   one release, then run `make release-check`, GraphQL/OpenAPI drift checks, and
+   the authenticated smoke suite.
+4. Set `FABRICASSIST_GARMENT_ANALYSIS_ENABLED=true` and set the privacy approval
+   assertion only after the record in `docs/privacy/subprocessors.md` is signed.
+   A disabled or unapproved production gate returns readiness failure; it never
+   falls back to v1.
+5. During the observation window, watch v2 branch calls/errors/latency/tokens,
+   review and clearer-image rates, and durable branch retries. Keep the backup
+   reference with the release record.
+
+If a rollback is necessary, stop new analysis writes and forward-fix with a
+post-migration-compatible release. Restore the verified pre-cutover backup only
+under the disaster-recovery authorization; never pair old application code with
+the transformed schema.
+
 Unperformed external gates remain **pending**, never implicitly passed.
 The current owner/status record is maintained in
 [`docs/release-approvals.md`](../release-approvals.md).

@@ -18,41 +18,29 @@ from fabricassist.application.job_execution import TemporaryJobError, execute_ch
 from fabricassist.application.job_orchestration import publish_operation
 from fabricassist.application.jobs import AnalysisJobMessage
 from fabricassist.application.lifecycle import (
-    enqueue_deletion,
-    process_object_deletions,
-    retention_candidates,
+    run_retention_once,
 )
 from fabricassist.application.limits import (
     ConcurrencyLimitExceeded,
     LimitBackendUnavailable,
 )
 from fabricassist.application.object_storage import ObjectStorage
-from fabricassist.application.policies import (
-    AnalysisExecutionPolicy,
-    ConversationPolicy,
-    JobExecutionPolicy,
-)
-from fabricassist.application.vision import VisionProviderError
-from fabricassist.infrastructure.cache.factory import create_hot_cache
+from fabricassist.application.policies import ConversationPolicy, JobExecutionPolicy
+from fabricassist.domain.garment_analysis.parity import ExecutionSnapshot
 from fabricassist.infrastructure.concurrency.factory import create_concurrency_gate
 from fabricassist.infrastructure.database import Database
+from fabricassist.infrastructure.garment_analysis import create_garment_analysis_workflow
 from fabricassist.infrastructure.jobs.factory import create_job_dispatcher
 from fabricassist.infrastructure.persistence.models import (
     AnalysisJobOperation,
+    AnalysisRevision,
     ConversationMessage,
     Scan,
 )
-from fabricassist.infrastructure.product_information.factory import (
-    create_product_information_provider,
-)
 from fabricassist.infrastructure.storage.factory import create_object_storage
 from fabricassist.infrastructure.telemetry import measure_job
-from fabricassist.infrastructure.vision.providers import (
-    create_care_planning_provider,
-    create_conversation_provider,
-    create_evidence_provider,
-)
-from fabricassist.settings import Settings
+from fabricassist.infrastructure.vision.providers import create_conversation_provider
+from fabricassist.settings import ModelCapabilityProvider, Settings
 
 
 @contextmanager
@@ -82,22 +70,20 @@ async def _execute_analysis_job(
     message: AnalysisJobMessage,
 ) -> None:
     async with database.session_factory() as session:
+        revision = await session.get(AnalysisRevision, message.revision_id)
+        execution_settings = settings
+        if revision is not None and revision.execution_snapshot:
+            snapshot = ExecutionSnapshot.model_validate(revision.execution_snapshot)
+            execution_settings = _settings_for_execution_snapshot(settings, snapshot)
         result = await execute_checkpoint(
             session=session,
             message=message,
-            database=database,
-            storage=storage,
             execution_policy=JobExecutionPolicy(
                 stage_budget_seconds=settings.job_stage_budget_seconds
             ),
-            analysis_policy=AnalysisExecutionPolicy(
-                hot_cache_ttl_seconds=settings.cache_hot_ttl_seconds,
-                product_cache_minutes=settings.product_cache_minutes,
+            garment_analysis_workflow=create_garment_analysis_workflow(
+                database=database, storage=storage, settings=execution_settings
             ),
-            evidence_provider=create_evidence_provider(settings),
-            care_planning_provider=create_care_planning_provider(settings),
-            product_information_provider=create_product_information_provider(settings),
-            hot_cache=create_hot_cache(settings),
             concurrency_gate=create_concurrency_gate(settings),
         )
         if result.continuation is None:
@@ -116,6 +102,22 @@ async def _execute_analysis_job(
                 operation=continuation,
                 dispatcher=create_job_dispatcher(settings),
             )
+
+
+def _settings_for_execution_snapshot(settings: Settings, snapshot: ExecutionSnapshot) -> Settings:
+    """Reconstruct only revision-pinned analysis settings for a retry."""
+    provider = ModelCapabilityProvider(snapshot.provider)
+    updates: dict[str, object] = {
+        "garment_analysis_provider": provider,
+        "garment_analysis_stain_enabled": snapshot.effective_feature_flags.get(
+            "stain_analysis", False
+        ),
+    }
+    if provider is ModelCapabilityProvider.GEMINI:
+        updates["garment_analysis_gemini_model"] = snapshot.model
+    elif provider is ModelCapabilityProvider.OPENAI_RESPONSES:
+        updates["garment_analysis_openai_model"] = snapshot.model
+    return settings.model_copy(update=updates)
 
 
 async def _run_message_with_limit(database: Database, settings: Settings, message_id: UUID) -> None:
@@ -178,9 +180,6 @@ def execute_analysis_job_task(self: Any, payload: str) -> None:
         TemporaryJobError,
     ) as error:
         raise self.retry(exc=error, countdown=30) from error
-    except VisionProviderError as error:
-        asyncio.run(_mark_analysis_failed(database, UUID(scan_id), error.code))
-        raise
     except Exception:
         asyncio.run(_mark_analysis_failed(database, UUID(scan_id), "ANALYSIS_INTERNAL_ERROR"))
         raise
@@ -210,20 +209,12 @@ def process_retention_task(self: Any) -> None:
 
     async def run() -> None:
         async with database.session_factory() as session:
-            for image in await retention_candidates(session):
-                await enqueue_deletion(
-                    session,
-                    tenant_id=image.tenant_id,
-                    user_id=None,
-                    resource_type="scan",
-                    resource_id=image.scan_id,
-                    images=[image],
-                )
-            await session.commit()
-            await process_object_deletions(
+            await run_retention_once(
                 session,
                 create_object_storage(settings),
-                max_attempts=settings.deletion_max_attempts,
+                merged_garment_retention_days=settings.merged_garment_retention_days,
+                batch_size=settings.publication_recovery_batch_size,
+                max_deletion_attempts=settings.deletion_max_attempts,
             )
 
     try:

@@ -120,6 +120,7 @@ async def start_run(
             operation_key=f"run:{run.id}",
             correlation_id=run.correlation_id,
             dispatcher=dispatcher,
+            settings=request.app.state.settings,
             run_id=run.id,
         )
         if operation.status == "failed":
@@ -200,6 +201,7 @@ async def retry_run(
         operation_key=f"run:{run.id}",
         correlation_id=run.correlation_id,
         dispatcher=dispatcher,
+        settings=request.app.state.settings,
         run_id=run.id,
     )
     return response(run)

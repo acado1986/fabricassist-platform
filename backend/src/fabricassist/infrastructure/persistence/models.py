@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -213,6 +214,41 @@ class ScanImage(Base):
             ),
             name="ck_scan_images_role",
         ),
+        CheckConstraint(
+            "viewpoint IN ('front','back','side','detail','unknown') OR viewpoint IS NULL",
+            name="ck_scan_images_viewpoint",
+        ),
+        CheckConstraint(
+            "viewpoint IS NULL OR viewpoint = 'unknown' OR role IN "
+            "('garment_overview','construction_detail')",
+            name="ck_scan_images_viewpoint_role",
+        ),
+        CheckConstraint(
+            "label_scope IN ('care','composition','combined','unknown') OR label_scope IS NULL",
+            name="ck_scan_images_label_scope",
+        ),
+        CheckConstraint(
+            "label_scope IS NULL OR label_scope = 'unknown' OR role IN "
+            "('care_label','composition_label')",
+            name="ck_scan_images_label_scope_role",
+        ),
+        CheckConstraint(
+            "quality_state IN ('usable','borderline','unusable','unknown') "
+            "OR quality_state IS NULL",
+            name="ck_scan_images_quality_state",
+        ),
+        CheckConstraint(
+            "(blur_score BETWEEN 0 AND 1 OR blur_score IS NULL) AND "
+            "(brightness_score BETWEEN 0 AND 1 OR brightness_score IS NULL) AND "
+            "(contrast_score BETWEEN 0 AND 1 OR contrast_score IS NULL) AND "
+            "(glare_score BETWEEN 0 AND 1 OR glare_score IS NULL) AND "
+            "(crop_readability_score BETWEEN 0 AND 1 OR crop_readability_score IS NULL)",
+            name="ck_scan_images_quality_scores",
+        ),
+        CheckConstraint(
+            "orientation_degrees IN (0,90,180,270) OR orientation_degrees IS NULL",
+            name="ck_scan_images_orientation_degrees",
+        ),
         CheckConstraint("byte_size > 0 OR byte_size IS NULL", name="ck_scan_images_byte_size"),
         CheckConstraint("width > 0 OR width IS NULL", name="ck_scan_images_width"),
         CheckConstraint("height > 0 OR height IS NULL", name="ck_scan_images_height"),
@@ -231,6 +267,18 @@ class ScanImage(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     detected_role: Mapped[str | None] = mapped_column(String(32))
+    viewpoint: Mapped[str | None] = mapped_column(String(16))
+    label_scope: Mapped[str | None] = mapped_column(String(16))
+    quality_state: Mapped[str | None] = mapped_column(String(16))
+    blur_score: Mapped[float | None] = mapped_column(Float)
+    brightness_score: Mapped[float | None] = mapped_column(Float)
+    contrast_score: Mapped[float | None] = mapped_column(Float)
+    glare_score: Mapped[float | None] = mapped_column(Float)
+    crop_readability_score: Mapped[float | None] = mapped_column(Float)
+    orientation_degrees: Mapped[int | None] = mapped_column(Integer)
+    quality_checked_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    preprocessing_version: Mapped[str | None] = mapped_column(String(50))
+    normalized_object_key: Mapped[str | None] = mapped_column(Text)
     object_key: Mapped[str] = mapped_column(Text, nullable=False)
     upload_token: Mapped[UUID] = mapped_column(Uuid, nullable=False, unique=True, default=uuid4)
     upload_expires_at: Mapped[datetime] = mapped_column(UtcTimestamp, nullable=False)
@@ -314,7 +362,10 @@ class RulesetVersion(Base):
 
 class Garment(Base):
     __tablename__ = "garments"
-    __table_args__ = (Index("ix_garments_tenant_id", "tenant_id"),)
+    __table_args__ = (
+        Index("ix_garments_tenant_id", "tenant_id"),
+        Index("ix_garments_merged_into_id", "merged_into_id"),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
@@ -322,6 +373,10 @@ class Garment(Base):
     user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
     active_analysis_revision_id: Mapped[UUID | None] = mapped_column(Uuid)
     active_result_id: Mapped[UUID | None] = mapped_column(Uuid)
+    merged_into_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garments.id", ondelete="RESTRICT")
+    )
+    merged_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     display_name: Mapped[str | None] = mapped_column(String(200))
     archived_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
@@ -333,7 +388,14 @@ class AnalysisRevision(Base):
     __tablename__ = "analysis_revisions"
     __table_args__ = (
         UniqueConstraint("scan_id", "revision_number", name="uq_analysis_revisions_scan_number"),
+        CheckConstraint(
+            "char_length(module_version) >= 1", name="ck_analysis_revisions_module_version"
+        ),
+        CheckConstraint(
+            "char_length(workflow_version) >= 1", name="ck_analysis_revisions_workflow_version"
+        ),
         Index("ix_analysis_revisions_tenant_id", "tenant_id"),
+        Index("ix_analysis_revisions_tenant_workflow", "tenant_id", "workflow_version"),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -350,6 +412,32 @@ class AnalysisRevision(Base):
         Uuid, ForeignKey("analysis_revisions.id", ondelete="SET NULL")
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="processing")
+    # Values are pinned at revision creation so redelivery cannot adopt changed settings.
+    module_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="garment-analysis-v1"
+    )
+    workflow_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="garment-analysis-v1"
+    )
+    merged_schema_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    care_policy_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    confidence_policy_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    retry_policy_version: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="unknown"
+    )
+    effective_feature_flags: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    execution_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -368,9 +456,118 @@ class RevisionImage(Base):
     )
 
 
+class AnalysisBranchResult(Base):
+    """The sole durable state for a garment-analysis provider branch.
+
+    The lease token prevents a stale worker from completing work reclaimed by a
+    later delivery. Result payloads are validated JSON, never provider SDK objects.
+    """
+
+    __tablename__ = "analysis_branch_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "analysis_revision_id", "branch_name", name="uq_analysis_branch_revision_name"
+        ),
+        CheckConstraint(
+            "branch_name IN ('garment_inspection', 'label_extraction', 'stain_treatment', "
+            "'barcode_enrichment')",
+            name="ck_analysis_branch_results_name",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'retryable_failed', "
+            "'permanent_failed', 'needs_input', 'not_provided')",
+            name="ck_analysis_branch_results_status",
+        ),
+        CheckConstraint(
+            "attempt_count BETWEEN 0 AND 2", name="ck_analysis_branch_results_attempt_count"
+        ),
+        CheckConstraint(
+            "overall_confidence BETWEEN 0 AND 100 OR overall_confidence IS NULL",
+            name="ck_analysis_branch_results_confidence",
+        ),
+        CheckConstraint(
+            "(status = 'running' AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL) "
+            "OR (status <> 'running' AND claim_token IS NULL)",
+            name="ck_analysis_branch_results_lease_state",
+        ),
+        CheckConstraint(
+            "status <> 'completed' OR result_payload IS NOT NULL",
+            name="ck_analysis_branch_results_completed_payload",
+        ),
+        Index("ix_analysis_branch_results_tenant_status", "tenant_id", "status"),
+        Index("ix_analysis_branch_results_revision_status", "analysis_revision_id", "status"),
+        Index("ix_analysis_branch_results_lease", "status", "lease_expires_at"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    branch_name: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    claim_token: Mapped[UUID | None] = mapped_column(Uuid)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    provider: Mapped[str | None] = mapped_column(String(100))
+    model: Mapped[str | None] = mapped_column(String(200))
+    prompt_version: Mapped[str | None] = mapped_column(String(100))
+    schema_version: Mapped[str | None] = mapped_column(String(100))
+    preprocessing_version: Mapped[str | None] = mapped_column(String(100))
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    overall_confidence: Mapped[int | None] = mapped_column(Integer)
+    uncertain_fields: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    cache_provenance: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    result_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_category: Mapped[str | None] = mapped_column(String(100))
+    started_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class BehaviorVersion(Base):
+    """Immutable registry for workflow behavior assets outside ruleset_versions."""
+
+    __tablename__ = "behavior_versions"
+    __table_args__ = (
+        CheckConstraint(
+            "behavior_type IN ('module', 'workflow', 'prompt', 'schema', 'preprocessing', "
+            "'confidence_policy', 'retry_policy', 'stain_policy', 'feature_flags')",
+            name="ck_behavior_versions_type",
+        ),
+        CheckConstraint("status IN ('active', 'retired')", name="ck_behavior_versions_status"),
+        UniqueConstraint(
+            "tenant_id", "behavior_type", "version", name="uq_behavior_versions_tenant_type_version"
+        ),
+        Index("ix_behavior_versions_tenant_type", "tenant_id", "behavior_type"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    behavior_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    version: Mapped[str] = mapped_column(String(100), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
 class ModelRun(Base):
     __tablename__ = "model_runs"
-    __table_args__ = (Index("ix_model_runs_tenant_scan", "tenant_id", "scan_id"),)
+    __table_args__ = (
+        Index("ix_model_runs_tenant_scan", "tenant_id", "scan_id"),
+        Index("ix_model_runs_revision_branch", "analysis_revision_id", "analysis_branch_result_id"),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
@@ -378,6 +575,15 @@ class ModelRun(Base):
     scan_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
     )
+    analysis_revision_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE")
+    )
+    analysis_branch_result_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_branch_results.id", ondelete="CASCADE")
+    )
+    retry_number: Mapped[int | None] = mapped_column(Integer)
+    image_count: Mapped[int | None] = mapped_column(Integer)
+    role_counts: Mapped[dict[str, int] | None] = mapped_column(JSONB)
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -388,8 +594,14 @@ class ModelRun(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    cached_tokens: Mapped[int | None] = mapped_column(Integer)
+    thought_tokens: Mapped[int | None] = mapped_column(Integer)
+    tool_tokens: Mapped[int | None] = mapped_column(Integer)
+    response_model_version: Mapped[str | None] = mapped_column(String(100))
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     error_category: Mapped[str | None] = mapped_column(String(100))
+    completed_at: Mapped[datetime | None] = mapped_column(UtcTimestamp)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -535,8 +747,23 @@ class GarmentServiceEvent(Base):
         CheckConstraint(
             "kind IN ('planned', 'performed', 'completed')", name="ck_garment_service_events_kind"
         ),
+        CheckConstraint(
+            "outcome IN ('successful', 'damaging', 'unknown')",
+            name="ck_garment_service_events_outcome",
+        ),
+        CheckConstraint(
+            "water_temperature_c BETWEEN 10 AND 95 OR water_temperature_c IS NULL",
+            name="ck_garment_service_events_water_temperature",
+        ),
         Index("ix_garment_service_events_garment_created", "garment_id", "created_at"),
         Index("ix_garment_service_events_tenant_id", "tenant_id"),
+        Index(
+            "ix_garment_service_events_tenant_garment_outcome",
+            "tenant_id",
+            "garment_id",
+            "outcome",
+            "occurred_at",
+        ),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
@@ -548,6 +775,31 @@ class GarmentServiceEvent(Base):
     user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="SET NULL"))
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
+    method: Mapped[str] = mapped_column(String(80), nullable=False, server_default="unknown")
+    water_temperature_c: Mapped[int | None] = mapped_column(Integer)
+    cycle: Mapped[str | None] = mapped_column(String(80))
+    detergent_category: Mapped[str | None] = mapped_column(String(120))
+    detergent_text: Mapped[str | None] = mapped_column(String(500))
+    stain_products: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    drying_method: Mapped[str | None] = mapped_column(String(80))
+    ironing_method: Mapped[str | None] = mapped_column(String(80))
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False, server_default="unknown")
+    observed_effects: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    confirmed_by: Mapped[str] = mapped_column(String(80), nullable=False, server_default="unknown")
+    occurred_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+    detail_schema_version: Mapped[str] = mapped_column(
+        String(80), nullable=False, server_default="service-event-v1"
+    )
+    detail_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    exact_garment_confirmed: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    invalidated: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    superseded_by_event_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("garment_service_events.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )
@@ -622,7 +874,14 @@ class GarmentIdentityConfirmation(Base):
 
 class GarmentObservation(Base):
     __tablename__ = "garment_observations"
-    __table_args__ = (Index("ix_garment_observations_garment_created", "garment_id", "created_at"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "analysis_revision_id",
+            "projection_key",
+            name="uq_garment_observations_revision_projection",
+        ),
+        Index("ix_garment_observations_garment_created", "garment_id", "created_at"),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
@@ -634,8 +893,13 @@ class GarmentObservation(Base):
         Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
     )
     observation_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    projection_key: Mapped[str] = mapped_column(
+        String(160), nullable=False, server_default="legacy"
+    )
     stability: Mapped[str] = mapped_column(String(20), nullable=False)
+    authority: Mapped[str] = mapped_column(String(80), nullable=False, server_default="unknown")
     value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     confidence: Mapped[float | None] = mapped_column(nullable=True)
     supersedes_observation_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("garment_observations.id", ondelete="SET NULL")
@@ -812,12 +1076,15 @@ class ProductLookupRun(Base):
     scan_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False
     )
+    analysis_revision_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="SET NULL")
+    )
     barcode: Mapped[str] = mapped_column(String(32), nullable=False)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
     schema_version: Mapped[str] = mapped_column(
-        String(64), nullable=False, server_default="product-lookup-v1"
+        String(64), nullable=False, server_default="product-lookup-v2"
     )
     product_profile_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("product_profiles.id", ondelete="SET NULL")
@@ -980,14 +1247,27 @@ class EvidenceCorrection(Base):
 
     __tablename__ = "evidence_corrections"
     __table_args__ = (
+        CheckConstraint(
+            "source IN ('customer', 'operator', 'system')", name="ck_evidence_corrections_source"
+        ),
+        CheckConstraint(
+            "confirmation IN ('pending_review', 'accepted', 'rejected')",
+            name="ck_evidence_corrections_confirmation",
+        ),
         Index("ix_evidence_corrections_tenant_revision", "tenant_id", "corrected_revision_id"),
+        Index(
+            "ix_evidence_corrections_tenant_original_field",
+            "tenant_id",
+            "original_revision_id",
+            "field_path",
+        ),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
     )
-    review_case_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("review_cases.id", ondelete="CASCADE"), nullable=False
+    review_case_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("review_cases.id", ondelete="CASCADE")
     )
     original_revision_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("analysis_revisions.id", ondelete="RESTRICT"), nullable=False
@@ -1000,6 +1280,51 @@ class EvidenceCorrection(Base):
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     correction: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    field_path: Mapped[str] = mapped_column(String(160), nullable=False, server_default="unknown")
+    previous_value: Mapped[Any | None] = mapped_column(JSONB)
+    corrected_value: Mapped[Any | None] = mapped_column(JSONB)
+    source_image_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("scan_images.id", ondelete="SET NULL")
+    )
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="operator")
+    confirmation: Mapped[str] = mapped_column(String(20), nullable=False, server_default="accepted")
+    supersedes_correction_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("evidence_corrections.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcTimestamp, nullable=False, server_default=func.now()
+    )
+
+
+class EvidenceConflictRecord(Base):
+    """Immutable v2 conflict projection; branch payloads remain untouched."""
+
+    __tablename__ = "evidence_conflicts"
+    __table_args__ = (
+        CheckConstraint("char_length(field_path) >= 1", name="ck_evidence_conflicts_field_path"),
+        UniqueConstraint(
+            "analysis_revision_id",
+            "field_path",
+            "resolution_code",
+            name="uq_evidence_conflicts_revision_field_resolution",
+        ),
+        Index("ix_evidence_conflicts_tenant_revision", "tenant_id", "analysis_revision_id"),
+        Index("ix_evidence_conflicts_tenant_safety", "tenant_id", "safety_critical"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False
+    )
+    analysis_revision_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("analysis_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    field_path: Mapped[str] = mapped_column(String(160), nullable=False)
+    values: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    selected_value: Mapped[Any | None] = mapped_column(JSONB)
+    resolution_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    explanation_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    safety_critical: Mapped[bool] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UtcTimestamp, nullable=False, server_default=func.now()
     )

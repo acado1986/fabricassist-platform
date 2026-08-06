@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from fabricassist.domain.care import ProposedCarePlan
+from fabricassist.domain.garment_analysis.models import CandidateClaim
 
 CONVERSATION_SCHEMA_VERSION = "conversation-v1"
 CONVERSATION_PROMPT_VERSION = "conversation-v1"
@@ -29,11 +29,11 @@ class MessageStatus(StrEnum):
 
 
 class ActionableClaim(BaseModel):
-    """A proposed safety-relevant action, validated before release."""
+    """A v2 candidate claim, deterministically gated before customer delivery."""
 
     model_config = ConfigDict(extra="forbid")
 
-    plan: ProposedCarePlan
+    claim: CandidateClaim
 
 
 class AssistantMessageProposal(BaseModel):
@@ -56,9 +56,10 @@ class ConversationContext(BaseModel):
 
     garment_id: UUID
     analysis_revision_id: UUID
-    dossier: dict[str, object]
-    validated_plan: dict[str, object]
-    validation: dict[str, object]
+    assessment: dict[str, object]
+    care_policy: dict[str, object]
+    recommendation: dict[str, object]
+    validation_report: dict[str, object]
     service_history: list[dict[str, object]] = Field(default_factory=list, max_length=20)
     summary: dict[str, object] | None = None
     recent_messages: list[dict[str, object]] = Field(default_factory=list, max_length=12)

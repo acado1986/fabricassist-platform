@@ -1,0 +1,12 @@
+{
+  "version": "retry-policy-v1",
+  "maximum_model_attempts": 2,
+  "automatic_retries": 1,
+  "retryable_categories": [
+    "timeout",
+    "network",
+    "rate_limit",
+    "server_error",
+    "schema_invalid"
+  ]
+}

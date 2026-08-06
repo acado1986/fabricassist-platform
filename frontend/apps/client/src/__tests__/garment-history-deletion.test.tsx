@@ -102,9 +102,9 @@ test('history list closes the dialog after confirmed garment deletion', async ()
 
   await fireEvent.press(screen.getByLabelText('deleteGarmentConfirmAction'));
 
-  expect(mockMutate).toHaveBeenCalledWith(
+  expect(mockMutate).toHaveBeenCalledWith([
     '1ee6e701-c7c0-4a3d-a64f-353996a7b1c0',
-  );
+  ]);
   await waitFor(() => {
     expect(screen.queryByText('deleteGarmentConfirmDescription')).toBeNull();
   });

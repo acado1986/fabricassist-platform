@@ -18,3 +18,13 @@ Alert owners must route API 5xx/queue age to on-call and review/deletion/validat
 signals to operational owners. Never add tenant/user/scan IDs, object keys,
 presigned URLs, label/chat text, prompts, or credentials as metric labels/log
 fields.
+# Garment-analysis v2 signals
+
+The v2 executor records `fabricassist_garment_analysis_branches_total`,
+`fabricassist_garment_analysis_branch_latency_seconds`, and
+`fabricassist_garment_analysis_branch_tokens`. Labels are limited to stable
+branch, terminal status, and provider values; scan, tenant, user, image, and run
+identifiers remain in protected structured logs/traces rather than Prometheus
+labels. Alert on sustained `permanent_failed` branches, retryable failures,
+increased `needs_better_image`/`needs_review` outcomes, and token/latency budget
+breaches from `model_runs`.

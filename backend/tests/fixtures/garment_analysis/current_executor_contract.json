@@ -1,0 +1,12 @@
+{
+  "executor": "fabricassist.application.garment_analysis.GarmentAnalysisWorkflow",
+  "required_keyword_parameters": [
+    "self",
+    "request"
+  ],
+  "characteristics": [
+    "creates a tenant-owned analysis revision",
+    "creates revision-image membership",
+    "activates a care result on the scan"
+  ]
+}

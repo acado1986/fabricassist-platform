@@ -1,0 +1,1 @@
+Extract only visible care and composition label evidence. Preserve visible text in its original language. Do not infer missing symbols. Return JSON matching the supplied schema; cite only supplied image IDs.

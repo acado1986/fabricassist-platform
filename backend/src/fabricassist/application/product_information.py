@@ -21,6 +21,8 @@ from fabricassist.infrastructure.persistence.models import (
     Scan,
 )
 
+PRODUCT_LOOKUP_SCHEMA_VERSION = "product-lookup-v2"
+
 
 @dataclass(frozen=True)
 class ProductLookupResult:
@@ -92,7 +94,7 @@ async def lookup_and_record(
             ProductLookupRun.tenant_id == scan.tenant_id,
             ProductLookupRun.barcode == barcode,
             ProductLookupRun.request_fingerprint == fingerprint,
-            ProductLookupRun.schema_version == "product-lookup-v1",
+            ProductLookupRun.schema_version == PRODUCT_LOOKUP_SCHEMA_VERSION,
             ProductLookupRun.invalidated_at.is_(None),
             ProductLookupRun.created_at >= cache_after,
         )
@@ -143,7 +145,7 @@ async def lookup_and_record(
         provider=result.provider,
         status=result.status.value,
         request_fingerprint=fingerprint,
-        schema_version="product-lookup-v1",
+        schema_version=PRODUCT_LOOKUP_SCHEMA_VERSION,
         product_profile_id=profile.id if profile else None,
         safe_snapshot={
             "source_name": result.source_name,

@@ -56,58 +56,6 @@
         "title": "ApprovalRequest",
         "type": "object"
       },
-      "CareFact": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Code",
-            "type": "string"
-          },
-          "confidence": {
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Confidence",
-            "type": "integer"
-          },
-          "original_text": {
-            "default": "",
-            "maxLength": 5000,
-            "title": "Original Text",
-            "type": "string"
-          },
-          "permission": {
-            "pattern": "^(allowed|prohibited|unknown)$",
-            "title": "Permission",
-            "type": "string"
-          },
-          "source": {
-            "$ref": "#/components/schemas/EvidenceSource"
-          },
-          "temperature_c": {
-            "anyOf": [
-              {
-                "maximum": 95.0,
-                "minimum": 10.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Temperature C"
-          }
-        },
-        "required": [
-          "code",
-          "permission",
-          "confidence",
-          "source"
-        ],
-        "title": "CareFact",
-        "type": "object"
-      },
       "CompleteUploadRequest": {
         "additionalProperties": false,
         "properties": {
@@ -178,18 +126,36 @@
       "CorrectionRequest": {
         "additionalProperties": false,
         "properties": {
-          "dossier": {
-            "$ref": "#/components/schemas/GarmentEvidenceDossier"
+          "corrected_value": {
+            "title": "Corrected Value"
+          },
+          "field_path": {
+            "pattern": "^[a-z][a-z0-9_.\\[\\]-]{0,159}$",
+            "title": "Field Path",
+            "type": "string"
           },
           "reason": {
             "maxLength": 2000,
             "minLength": 3,
             "title": "Reason",
             "type": "string"
+          },
+          "source_image_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Image Id"
           }
         },
         "required": [
-          "dossier",
+          "field_path",
+          "corrected_value",
           "reason"
         ],
         "title": "CorrectionRequest",
@@ -283,25 +249,6 @@
         "title": "DeletionResponse",
         "type": "object"
       },
-      "EvidenceSource": {
-        "additionalProperties": false,
-        "properties": {
-          "image_id": {
-            "format": "uuid",
-            "title": "Image Id",
-            "type": "string"
-          },
-          "role": {
-            "$ref": "#/components/schemas/ImageRole"
-          }
-        },
-        "required": [
-          "image_id",
-          "role"
-        ],
-        "title": "EvidenceSource",
-        "type": "object"
-      },
       "FeedbackRequest": {
         "additionalProperties": false,
         "properties": {
@@ -363,39 +310,6 @@
           "id"
         ],
         "title": "FeedbackResponse",
-        "type": "object"
-      },
-      "GarmentEvidenceDossier": {
-        "additionalProperties": false,
-        "properties": {
-          "care_facts": {
-            "items": {
-              "$ref": "#/components/schemas/CareFact"
-            },
-            "title": "Care Facts",
-            "type": "array"
-          },
-          "observations": {
-            "items": {
-              "$ref": "#/components/schemas/Observation"
-            },
-            "title": "Observations",
-            "type": "array"
-          },
-          "schema_version": {
-            "default": "garment-evidence-v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "uncertainties": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Uncertainties",
-            "type": "array"
-          }
-        },
-        "title": "GarmentEvidenceDossier",
         "type": "object"
       },
       "GarmentResponse": {
@@ -593,8 +507,16 @@
             "title": "Display Order",
             "type": "integer"
           },
+          "label_scope": {
+            "$ref": "#/components/schemas/LabelScope",
+            "default": "unknown"
+          },
           "role": {
             "$ref": "#/components/schemas/ImageRole"
+          },
+          "viewpoint": {
+            "$ref": "#/components/schemas/ImageViewpoint",
+            "default": "unknown"
           }
         },
         "required": [
@@ -618,6 +540,17 @@
         "title": "ImageRole",
         "type": "string"
       },
+      "ImageViewpoint": {
+        "enum": [
+          "front",
+          "back",
+          "side",
+          "detail",
+          "unknown"
+        ],
+        "title": "ImageViewpoint",
+        "type": "string"
+      },
       "InvalidateLookupRequest": {
         "additionalProperties": false,
         "properties": {
@@ -631,6 +564,16 @@
         ],
         "title": "InvalidateLookupRequest",
         "type": "object"
+      },
+      "LabelScope": {
+        "enum": [
+          "care",
+          "composition",
+          "combined",
+          "unknown"
+        ],
+        "title": "LabelScope",
+        "type": "string"
       },
       "LookupRequest": {
         "additionalProperties": false,
@@ -837,50 +780,15 @@
         "title": "MessageResponse",
         "type": "object"
       },
-      "Observation": {
-        "additionalProperties": false,
-        "properties": {
-          "confidence": {
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Confidence",
-            "type": "integer"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "kind": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Kind",
-            "type": "string"
-          },
-          "source": {
-            "$ref": "#/components/schemas/EvidenceSource"
-          },
-          "time_varying": {
-            "default": false,
-            "title": "Time Varying",
-            "type": "boolean"
-          },
-          "value": {
-            "maxLength": 5000,
-            "minLength": 1,
-            "title": "Value",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "value",
-          "confidence",
-          "source"
+      "QualityState": {
+        "enum": [
+          "usable",
+          "borderline",
+          "unusable",
+          "unknown"
         ],
-        "title": "Observation",
-        "type": "object"
+        "title": "QualityState",
+        "type": "string"
       },
       "RejectCandidateRequest": {
         "additionalProperties": false,
@@ -1206,8 +1114,38 @@
             "title": "Image Id",
             "type": "string"
           },
+          "label_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LabelScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quality_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QualityState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "role": {
             "$ref": "#/components/schemas/ImageRole"
+          },
+          "viewpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageViewpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "width": {
             "anyOf": [
@@ -1422,12 +1360,20 @@
             "title": "Image Id",
             "type": "string"
           },
+          "label_scope": {
+            "$ref": "#/components/schemas/LabelScope",
+            "default": "unknown"
+          },
           "role": {
             "$ref": "#/components/schemas/ImageRole"
           },
           "url": {
             "title": "Url",
             "type": "string"
+          },
+          "viewpoint": {
+            "$ref": "#/components/schemas/ImageViewpoint",
+            "default": "unknown"
           }
         },
         "required": [
@@ -2080,6 +2026,52 @@
           }
         },
         "summary": "Add Service Event",
+        "tags": [
+          "garments"
+        ]
+      }
+    },
+    "/api/v1/garments/{garment_id}/service-events/{event_id}": {
+      "delete": {
+        "operationId": "delete_service_event_api_v1_garments__garment_id__service_events__event_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "garment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Garment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Service Event",
         "tags": [
           "garments"
         ]
@@ -3456,20 +3448,6 @@
             "schema": {
               "format": "uuid",
               "title": "Scan Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "language",
-            "required": false,
-            "schema": {
-              "default": "en",
-              "enum": [
-                "en",
-                "es"
-              ],
-              "title": "Language",
               "type": "string"
             }
           }

@@ -40,6 +40,25 @@ def test_application_and_domain_do_not_import_infrastructure_sdks() -> None:
     assert violations == []
 
 
+def test_garment_analysis_domain_isolation() -> None:
+    domain_root = SOURCE / "domain" / "garment_analysis"
+    forbidden = (
+        "fastapi",
+        "sqlalchemy",
+        "celery",
+        "redis",
+        "boto3",
+        "google.genai",
+        "httpx",
+    )
+    violations: list[str] = []
+    for path in python_sources(domain_root):
+        for module in imports(path):
+            if module in forbidden or module.startswith(tuple(f"{name}." for name in forbidden)):
+                violations.append(f"{path.relative_to(BACKEND)} imports {module}")
+    assert violations == []
+
+
 def test_application_capabilities_do_not_read_global_settings() -> None:
     capability_services = (
         "analysis.py",
@@ -74,6 +93,32 @@ def test_garment_history_application_contract_is_transport_neutral() -> None:
     forbidden = {"sqlalchemy", "fabricassist.application.object_storage"}
     assert imports(path).isdisjoint(forbidden)
     assert "fabricassist.infrastructure.persistence" not in path.read_text()
+
+
+def test_garment_analysis_public_seam_does_not_depend_on_old_executor() -> None:
+    module_root = SOURCE / "application" / "garment_analysis"
+    forbidden = {
+        "fabricassist.application.analysis",
+        "fabricassist.application.lifecycle",
+        "fabricassist.infrastructure.persistence",
+    }
+    for path in python_sources(module_root):
+        assert imports(path).isdisjoint(forbidden), path.relative_to(BACKEND)
+        assert "fabricassist.application.analysis" not in path.read_text(), path.relative_to(
+            BACKEND
+        )
+
+
+def test_only_public_garment_analysis_package_is_available_to_external_consumers() -> None:
+    internal_root = SOURCE / "application" / "garment_analysis"
+    violations: list[str] = []
+    for path in python_sources(SOURCE):
+        if path.is_relative_to(internal_root):
+            continue
+        for module in imports(path):
+            if module.startswith("fabricassist.application.garment_analysis."):
+                violations.append(f"{path.relative_to(BACKEND)} imports {module}")
+    assert violations == []
 
 
 def test_valkey_capability_adapters_do_not_import_sibling_capabilities() -> None:

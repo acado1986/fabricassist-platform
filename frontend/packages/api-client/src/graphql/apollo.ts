@@ -179,13 +179,21 @@ export function createApolloClient({
             messages: {
               keyArgs: ['scanId'],
               merge(existing, incoming) {
-                const items = [...(existing?.items ?? [])];
-                const seen = new Set(
+                const incomingItems = incoming.items as { id: string }[];
+                const incomingById = new Map<string, { id: string }>(
+                  incomingItems.map((item: { id: string }) => [item.id, item]),
+                );
+                const items = (existing?.items ?? []).map(
+                  (item: { id: string }) => incomingById.get(item.id) ?? item,
+                );
+                const existingIds = new Set(
                   items.map((item: { id: string }) => item.id),
                 );
-                for (const item of incoming.items as { id: string }[]) {
-                  if (!seen.has(item.id)) items.push(item);
-                }
+                items.push(
+                  ...incomingItems.filter(
+                    (item: { id: string }) => !existingIds.has(item.id),
+                  ),
+                );
                 return { ...incoming, items };
               },
             },
