@@ -7,10 +7,10 @@
     "generate": "pnpm --dir ../.. exec openapi-ts -i ../docs/api/openapi.json -o packages/api-client/src/generated --client @hey-api/client-fetch"
   },
   "dependencies": {
-    "@apollo/client": "^3.14.1",
+    "@apollo/client": "^4.2.12",
     "@graphql-typed-document-node/core": "^3.2.0",
     "@hey-api/client-fetch": "^0.13.1",
-    "graphql": "^16.14.2",
+    "graphql": "^17.0.2",
     "zod": "^4.4.3"
   }
 }
